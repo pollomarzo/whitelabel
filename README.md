@@ -35,7 +35,9 @@ test renders a real PDF through the bundled CLI):
 | `src/yaml-io.ts` | working-tree myst.yml round-trips (Document API, never sed — [R3]). |
 | `src/build.ts` | **`oak build`**: the two-pass orchestrator ([R52]); myst edge injected for testing. |
 | `src/myst.ts` | the mystmd edge (the one module importing bundled myst-cli — [R51]); sets the current project+site pointers via `findCurrent*AndLoad` so `build` renders HTML ([R59]). |
-| `src/cli.ts` | `oak` entry point; `build` implemented, other verbs stubbed by slice. |
+| `src/cli.ts` | `oak` entry point; `build` + `deposit`/`release` implemented; `deploy-preview`/`notify`/`validate`/`bootstrap`/`upgrade` stubbed by slice. |
+| `src/zenodo.ts` | **`oak deposit`**: the zenodo-deposit.py port (prepare/publish/status); paginated + id-first lookups, `deposit/` bundle, tenant bytes from journal.yml. HTTP + git/gh injected as seams; no myst-cli import. |
+| `src/gh.ts` | git/gh side effects (`GitContext` + DOI PR / release asset / comment / issue), kept out of `zenodo.ts` so the deposit logic stays network-free under test. |
 | `templates/typst/` | the engine's generic typst template (seeded from lapreprint-typst; used by path for offline PDF — design dec. 2). |
 | `test/fixture-*`, `test/integration.test.ts` | the release-safety canary (design §12 step 0). |
 
@@ -96,9 +98,15 @@ rejected options: `release-delivery-decision.md`.
 - **✅ Live [R18] validation — DONE (2026-07-12).** The frozen shim + release delivery ([R57])
   ran on a real runner; both composite-action spikes confirmed, Pages deploy green ([R58]–[R64]).
   Bugs found+fixed en route: `ci/run.sh` exec bit ([R64a]) + the site-pointer bug ([R59]).
-- **Slice 3 — `zenodo.ts`** (NOW the frontier; port of zenodo-deposit.py: paginate all lookups [R20]/[R35],
-  `deposit/` folder [R28], id-first identity [R7], tenant bytes → journal.yml [R19]) + deploy;
-  unstubs `oak deposit`/`release`. `deploy-preview`/`notify` (slice 2-shim) unstub alongside.
+- **✅ Slice 3 — `zenodo.ts` — DONE (2026-07-12).** Port of zenodo-deposit.py: paginated lookups
+  [R20]/[R35], `deposit/` folder [R28], id-first identity [R7], tenant bytes → journal.yml [R19],
+  version-agnostic prepare (the tag carries the version, at publish). `oak deposit`/`release`
+  unstubbed. **Verified live against the Zenodo sandbox:** prepare→draft, publish→PDF + all bundle
+  files + metadata parity, and id-first reuse across a simulated repo move (the [R7] guarantee).
+- **Frontier now:** `deploy-preview`/`notify` (slice 2-shim) + `validate` (slice 4) still stubbed.
+  Slice-3 loose ends: geetha's sentinel `id` still unfixed ([R12], blocks id-first in prod); the
+  gh side effects (DOI PR / release asset / issue) are wired but only exercised in CI; pagination
+  is unit-tested only (the sandbox account has <100 depositions).
 - **Deferred here:** `--no-site-template` uses myst's default theme (network); a pinned
   local/cached theme + the cover-page/summary typst feature port are follow-ups.
 
