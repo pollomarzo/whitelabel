@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+# cut-engine-release.sh — the ONE way to make an engine *ref* runnable ([R57]).
+#
+# A runnable engine ⟺ a release. This builds dist/cli.cjs and commits it ONTO THE TAG'S
+# LEAF COMMIT (never onto main or any branch), pushes ONLY the tag, and creates a GH
+# (pre-)release. It runs identically in CI (the cut-engine-release workflow) and by hand —
+# the release path is the product, so there is exactly one path.
+#
+#   scripts/cut-engine-release.sh v0.3.0-dev.4     # dev pre-release (accumulate + prune)
+#   scripts/cut-engine-release.sh v1.2.0           # real release (immutable, never re-cut)
+#
+# A '-' in the version (semver pre-release) ⇒ marked --prerelease. Requires: node+npm, typst
+# on PATH (the release-safety canary renders the fixture PDF), and gh authed (GH_TOKEN in CI).
+#
+# NOTE ([R57]): the bundle is delivered by being *committed at the tag*, NOT uploaded as a
+# Release asset — a committed git object replays on the interim→canonical home move; a Release
+# asset does not. The GH release itself is just the marker/pre-release flag + a page.
+set -euo pipefail
+
+version="${1:-}"
+cd "$(cd "$(dirname "$0")/.." && pwd)"   # engine root
+
+# --- validate the version shape -------------------------------------------------------
+if [[ ! "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+  echo "::error::version must look like v1.2.0 or v1.2.0-dev.4 (got '${version:-<empty>}')" >&2
+  exit 1
+fi
+
+# --- refuse to clobber an existing tag ------------------------------------------------
+# Real vX.Y.Z are immutable; dev releases accumulate as a NEW N (never reuse a moving tag).
+if git rev-parse -q --verify "refs/tags/$version" >/dev/null 2>&1 \
+   || git ls-remote --exit-code --tags origin "refs/tags/$version" >/dev/null 2>&1; then
+  echo "::error::tag $version already exists — bump the version (dev releases accumulate)" >&2
+  exit 1
+fi
+
+# --- release only a clean source commit -----------------------------------------------
+# The build steps below touch only gitignored paths (node_modules/, dist/), so a clean tree
+# here guarantees the leaf's tree = exactly this source commit + dist/cli.cjs.
+if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
+  echo "::error::working tree has uncommitted tracked changes — commit or stash first" >&2
+  exit 1
+fi
+src_sha="$(git rev-parse HEAD)"
+
+# --- release-safety canary (§12 step 0): a bad tag breaks every tenant -----------------
+npm ci
+npm run bundle             # esbuild → dist/cli.cjs
+npm test                   # unit + the integration canary (renders the fixture PDF; needs typst)
+npm run build:fixture      # second, standalone render through the freshly-built bundle
+
+# --- build the leaf commit WITHOUT moving any branch (git plumbing) --------------------
+# dist/ is gitignored; force-add it into the index, snapshot the index as a tree, and make a
+# detached commit parented on the source commit. HEAD/branches never move — so `main` is not
+# advanced (handoff constraint 1: pushing never forces the developer to pull).
+git config user.name  "${GIT_AUTHOR_NAME:-oak-release-bot}"
+git config user.email "${GIT_AUTHOR_EMAIL:-oak-release-bot@users.noreply.github.com}"
+git add -f dist/cli.cjs
+tree="$(git write-tree)"
+leaf="$(git commit-tree "$tree" -p "$src_sha" -m "release: $version (engine bundle)")"
+git reset -q               # unstage; dist/cli.cjs returns to being an ignored untracked file
+
+# --- tag the leaf, push ONLY the tag (never HEAD/a branch) -----------------------------
+git tag -a "$version" -m "$version" "$leaf"
+git push origin "refs/tags/$version"
+
+# --- GH (pre-)release: a '-' in the version ⇒ prerelease -------------------------------
+prerelease=()
+[[ "$version" == *-* ]] && prerelease=(--prerelease)
+gh release create "$version" "${prerelease[@]}" \
+  --title "$version" \
+  --notes "Engine bundle release ([R57]): \`dist/cli.cjs\` is committed at this tag (not an asset)."
+
+echo "cut $version at ${leaf} (source ${src_sha})"

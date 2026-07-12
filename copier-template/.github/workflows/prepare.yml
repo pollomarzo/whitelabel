@@ -1,0 +1,35 @@
+name: Prepare Zenodo deposit
+
+# Editor dispatches DOI reservation (design §1d). Reserves/reuses a draft and opens the
+# one-file myst.yml PR writing project.doi/github/date ([R22]) — the CLI opens that PR
+# itself via GH_TOKEN (no peter-evans action; the write is a YAML round-trip, [R3]).
+# `--sandbox` is an explicit human choice here ([R4]); a prod prepare may replace a
+# committed sandbox DOI ([R29]).
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version string for the deposit (e.g. 1.0.0)"
+        required: true
+        type: string
+      sandbox:
+        description: "Use the Zenodo sandbox (rehearsal) instead of production"
+        type: boolean
+        default: true
+
+permissions:
+  contents: write # commit the DOI PR branch
+  pull-requests: write # open the DOI PR
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/engine
+        with:
+          args: deposit prepare --version ${{ inputs.version }} ${{ inputs.sandbox && '--sandbox' || '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ZENODO_TOKEN: ${{ inputs.sandbox && secrets.ZENODO_TOKEN_SANDBOX || secrets.ZENODO_TOKEN }}

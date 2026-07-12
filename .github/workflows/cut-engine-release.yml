@@ -1,0 +1,56 @@
+# cut-engine-release — the ONE way to make an engine *ref* runnable ([R57]).
+# Builds dist/cli.cjs and commits it onto the tag's leaf commit (never onto main), pushes only
+# the tag, and creates a GH (pre-)release. Manual dispatch — releases are deliberate, not on-push.
+name: cut-engine-release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release tag: vX.Y.Z, or vX.Y.Z-dev.N for a dev pre-release (accumulate + prune)."
+        required: true
+      ref:
+        description: "Source ref/SHA to release (default: the branch this workflow runs from)."
+        required: false
+
+# Push the tag + create the release. Nothing here writes to a branch, so no forced pull-after-push.
+permissions:
+  contents: write
+
+# Never let two cuts race a tag.
+concurrency:
+  group: cut-engine-release
+  cancel-in-progress: false
+
+env:
+  # Pin to the engine's [R34] typst binary version once that is defined; used only to run the
+  # release-safety canary (the integration test renders the fixture PDF and needs typst on PATH).
+  TYPST_VERSION: "0.13.1"
+
+jobs:
+  cut:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+          fetch-depth: 0          # full history so the tag push is clean (not shallow)
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24        # matches the dev environment the bundle is validated on
+          cache: npm
+
+      - name: Install typst (release-safety canary renders the fixture PDF)
+        run: |
+          curl -fsSL "https://github.com/typst/typst/releases/download/v${TYPST_VERSION}/typst-x86_64-unknown-linux-musl.tar.xz" \
+            | tar -xJ
+          sudo install -m 0755 typst-x86_64-unknown-linux-musl/typst /usr/local/bin/typst
+          typst --version
+
+      - name: Cut the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GIT_AUTHOR_NAME: "github-actions[bot]"
+          GIT_AUTHOR_EMAIL: "41898282+github-actions[bot]@users.noreply.github.com"
+        run: scripts/cut-engine-release.sh "${{ inputs.version }}"

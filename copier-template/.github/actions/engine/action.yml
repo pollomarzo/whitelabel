@@ -1,0 +1,59 @@
+name: engine
+description: >-
+  Resolve the engine ref from myst.yml, check out the pinned ENGINE repo at that ref,
+  and dispatch a verb to it. The ONE place the pins live (design §6a, §1a). Frozen +
+  CODEOWNERS-gated; all *logic* lives behind the engine version, improvable by a bump.
+
+inputs:
+  args:
+    description: "verb + args for the engine (e.g. 'build', 'release --tag v1.0.0')"
+    required: true
+
+runs:
+  using: composite
+  steps:
+    # --- resolve the engine ref from the paper's own myst.yml (raw, pre-extends) ------
+    # Quoted key form ["oaktree-sapling"] — an unquoted hyphenated key is yq-version
+    # sensitive ([R14]); explicit guard so a missing options block fails LOUDLY, not as a
+    # baffling downstream checkout error.
+    - id: ref
+      shell: bash
+      run: |
+        ref=$(yq '.project.options["oaktree-sapling"].version // ""' myst.yml)
+        if [ -z "$ref" ] || [ "$ref" = "null" ]; then
+          echo "::error::project.options.oaktree-sapling.version missing from myst.yml"
+          exit 1
+        fi
+        echo "ref=$ref" >> "$GITHUB_OUTPUT"
+
+    # --- pins.yml = the single source of truth, read by CI *and* local oak (dec. 21) --
+    - id: pins
+      shell: bash
+      run: |
+        pins=.github/actions/engine/pins.yml
+        echo "engine=$(yq '.engine_repo' "$pins")" >> "$GITHUB_OUTPUT"
+        echo "instance=$(yq '.instance_repo // "."' "$pins")" >> "$GITHUB_OUTPUT"
+
+    # --- check out ENGINE@ref. Pinned `repository:` ⇒ the ref provably resolves inside
+    # the engine repo; only the ref floats (design §6a, [R9]). Ref-class trust (raw SHA /
+    # PR-merge refs from forks) is enforced by `oak validate` inside the engine ([R41]).
+    - uses: actions/checkout@v4
+      with:
+        repository: ${{ steps.pins.outputs.engine }}
+        ref: ${{ steps.ref.outputs.ref }}
+        path: .engine
+
+    # --- OPT-IN per-paper execution env only (design §0/[R44]): micromamba iff the paper
+    # ships paper-environment.yml. No file → no Python anywhere.
+    - uses: mamba-org/setup-micromamba@add3a49764cedee8ee24e82dfde87f5bc2914462 # v2.0.7
+      if: ${{ hashFiles('paper-environment.yml') != '' }}
+      with:
+        environment-file: paper-environment.yml
+        cache-environment: true
+
+    # --- dispatch. INSTANCE_REPO comes from pins.yml ('.' when co-located, repo=journal).
+    # Debuggability: run.sh echoes what it resolved at the top of every run.
+    - shell: bash
+      env:
+        INSTANCE_REPO: ${{ steps.pins.outputs.instance }}
+      run: .engine/ci/run.sh ${{ inputs.args }}

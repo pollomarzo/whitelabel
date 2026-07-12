@@ -1,0 +1,13 @@
+version: 1
+
+# Fixture brand (design §5). The journal's visual identity — logo, colors, nav, footer.
+# Materialized as REAL files (logo.svg beside this) because typst/theme load brand
+# assets by path, not URL ([R38], dec. 19). Moved here from the website's nexus.yml.
+site:
+  options:
+    logo_text: Fixture Journal
+    logo: ./logo.svg
+    logo_url: https://fixture.example.org
+  nav:
+  - title: Gallery
+    url: https://fixture.example.org

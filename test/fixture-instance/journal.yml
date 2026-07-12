@@ -1,0 +1,21 @@
+# Fixture INSTANCE-CONFIG manifest (design §3). Data only — the tenant's journal
+# identity. Additive-only per dec. 24: an older engine ignores unknown keys.
+name: Fixture Journal
+url: https://fixture.example.org
+
+tier: paper
+
+# The template's placeholder id `oak validate` must reject on real papers (finding 1:
+# the sentinel is instance-defined, not a global constant). ISP's is
+# `isp-micropublication-template` — the exact id geetha shipped by mistake ([R12]).
+id_sentinel: fixture-template-placeholder
+id_pattern: "^fixture-\\d{4}-[a-z0-9-]+$"
+
+preview:
+  provider: artifact          # no Cloudflare secrets → degrade to artifact link ([R6])
+  branch_pattern: paper-{repo}-{pr}
+
+zenodo:
+  community: fixture-community
+  description_blurb: >-
+    This paper was created as part of the Fixture Journal.

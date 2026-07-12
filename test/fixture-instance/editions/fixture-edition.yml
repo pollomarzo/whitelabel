@@ -1,0 +1,15 @@
+version: 1
+
+# Fixture edition (design §5, ported shape of isp-micropublication-2025.yml). Instance
+# data only — venue/license/funding. It declares NO `exports:` ([R52]): the complete
+# typst export lives wholly in the engine's paper-base.yml, because myst merges exports
+# by id whole-entry (no field merge), so splitting `articles` here from the skeleton
+# there would race and drop fields. compose() injects the engine-pinned template.
+# This file must NOT carry `extends:`; compose() assembles the chain.
+project:
+  subject: Micropublication
+  venue: Fixture Journal 2026
+  license: CC-BY-4.0
+  open_access: true
+  funding: |
+    Fixture Journal

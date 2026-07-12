@@ -1,0 +1,9 @@
+# The frozen shim is the trust boundary (design §6a): action.yml runs engine code at a
+# ref, and pins.yml names the engine + instance repos (code-adjacent). Gate everything
+# under .github/ — including pins.yml and CODEOWNERS itself — behind the editors, so an
+# author PR can float the engine *ref* (data) but cannot redirect a token-bearing run to
+# unreviewed code. copier replaces the owner below at bootstrap. NB a personal-account repo
+# (the interim/lab tier) has no org team, so it names the user directly ([R56]); an org
+# tenant uses a team like @your-org/editors.
+/.github/                @pollomarzo
+/CODEOWNERS              @pollomarzo

@@ -1,0 +1,33 @@
+name: Publish Zenodo deposit
+
+# Tag push populates the Zenodo draft (design §1e). `oak release` builds, deposits
+# (env DERIVED from the committed project.doi prefix — kills the awk sniff, [R4]/[R8]),
+# attaches the debug bundle to the tag's GitHub Release ([R24]), and posts the commit
+# comment / failure issue via gh — all behind the version knob. The required-reviewer
+# environment is the human gate before any token-bearing run; the actual public DOI is
+# still minted by a human clicking Publish on Zenodo (design §8). Both tokens are passed;
+# the CLI selects by DOI prefix.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write # attach the Release bundle + commit comment
+  issues: write # open the editor-action issue on failure
+
+jobs:
+  publish:
+    environment: zenodo-publish # required-reviewer gate — provisioned by bootstrap ([R10])
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # git archive + PR discovery need history
+      - uses: ./.github/actions/engine
+        with:
+          args: release --tag ${{ github.ref_name }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ZENODO_TOKEN: ${{ secrets.ZENODO_TOKEN }}
+          ZENODO_TOKEN_SANDBOX: ${{ secrets.ZENODO_TOKEN_SANDBOX }}

@@ -1,0 +1,49 @@
+name: Preview deploy
+
+# Stage 2 of the always-split preview (design §6a, dec. 13, [R16]). Runs in BASE-repo
+# context after Paper CI completes, so it holds the preview secret that fork PRs never
+# get. It ONLY downloads Stage 1's inert artifact and deploys it — it never rebuilds fork
+# content (that would reopen the injection hole through the shim's back door). The engine
+# ref + action code come from the BASE default branch (guaranteed by workflow_run).
+
+on:
+  workflow_run:
+    workflows: ["Paper CI"]
+    types: [completed]
+
+permissions:
+  contents: read
+  actions: read # download the cross-run artifact
+  pull-requests: write # sticky preview comment + new-version reminder ([R16])
+
+concurrency:
+  # head_branch alone collides across forks (two forks PRing from `main` would cancel each
+  # other's previews) — key on head repo too ([R15]).
+  group: preview-${{ github.event.workflow_run.head_repository.full_name }}-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    if: >-
+      ${{ github.event.workflow_run.event == 'pull_request' &&
+          github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4 # BASE default branch ⇒ engine ref AND action code from base
+      - uses: actions/download-artifact@v4
+        with:
+          name: paper-build
+          path: site
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+      # deploys the inert artifact (deletes .pr-number first — [R26]); if no Cloudflare
+      # secrets are present, `oak deploy-preview` degrades to an artifact-link comment
+      # instead of failing ([R6]). It also posts the new-version reminder here, where it
+      # has pull-requests: write (fork Stage-1 runs never do) — [R16].
+      - uses: ./.github/actions/engine
+        with:
+          args: deploy-preview site
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

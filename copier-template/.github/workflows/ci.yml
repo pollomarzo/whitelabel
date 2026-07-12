@@ -1,0 +1,57 @@
+name: Paper CI
+
+# Stage 1 of the always-split preview (design §6a, dec. 13). Builds on every PR + push
+# with NO secrets and a read-only token, so fork PRs get full validation + a build. The
+# preview DEPLOY happens in preview-deploy.yml (workflow_run, base context) because forks
+# never receive secrets. Pages deploy (push to main) rides here behind a job-scoped token.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read # the untrusted build job never holds pages/id-token ([R13])
+
+concurrency:
+  group: ${{ github.event_name == 'pull_request' && format('ci-{0}', github.head_ref) || 'ci-main' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build: # NO secrets, read-only token — safe for fork PRs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/engine
+        with:
+          args: build
+      - name: Stash PR number # workflow_run.pull_requests is EMPTY for forks (§6a)
+        if: ${{ github.event_name == 'pull_request' }}
+        run: echo "${{ github.event.pull_request.number }}" > _build/html/.pr-number
+      - uses: actions/upload-artifact@v4
+        with:
+          name: paper-build
+          path: _build/html
+          if-no-files-found: error
+
+  deploy-pages:
+    if: ${{ github.event_name != 'pull_request' }}
+    needs: build
+    permissions: # deploy perms live HERE, not on the untrusted build job ([R13])
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.d.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: paper-build
+          path: site
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - id: d
+        uses: actions/deploy-pages@v4
