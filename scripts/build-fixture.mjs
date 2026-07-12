@@ -38,7 +38,7 @@ execFileSync(
     tmp,
     '--instance',
     join(engineDir, 'test', 'fixture-instance'),
-    '--no-site-template', // myst default theme for HTML; PDF uses the in-engine template
+    '--exports-only', // offline PDF canary via the in-engine template (HTML needs a network theme zip)
   ],
   { stdio: 'inherit' },
 );
