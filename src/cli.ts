@@ -166,10 +166,7 @@ async function cmdDeposit(argv: string[]): Promise<number> {
     // sandbox rehearsal with no gh/token just leaves the write for the human to PR.
     if (out.exitCode === 0 && !has(rest, 'no-pr') && process.env.GH_TOKEN) {
       try {
-        const url = gh.openDoiPr(resolve(mystPath, '..'), {
-          conceptDoi: String(out.result.concept_doi),
-          version: flag(rest, 'version') ?? 'draft',
-        });
+        const url = gh.openDoiPr(resolve(mystPath, '..'), { conceptDoi: String(out.result.concept_doi) });
         process.stderr.write(`deposit prepare: opened DOI PR ${url}\n`);
       } catch (e) {
         process.stderr.write(`::warning::deposit prepare: DOI PR not opened (${(e as Error).message})\n`);

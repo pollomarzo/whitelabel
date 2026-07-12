@@ -58,15 +58,17 @@ export function originRepo(repoRoot: string): string | null {
  * peter-evans action). Creates a branch, commits just myst.yml, pushes, and `gh pr create`s.
  * Returns the PR URL. Requires `GH_TOKEN`/`gh` auth (the §1d job supplies it).
  */
-export function openDoiPr(repoRoot: string, opts: { conceptDoi: string; version: string }): string {
-  const branch = `zenodo-doi-${opts.version}`;
+export function openDoiPr(repoRoot: string, opts: { conceptDoi: string }): string {
+  // Version-agnostic branch: prepare only reserves the concept DOI (the version is the tag,
+  // applied later at publish). Re-prepares force-push over the same branch.
+  const branch = 'zenodo-doi';
   git(repoRoot, ['checkout', '-B', branch]);
   git(repoRoot, ['add', 'myst.yml']);
   git(repoRoot, ['commit', '-m', `chore: reserve Zenodo DOI ${opts.conceptDoi}`]);
   git(repoRoot, ['push', '-u', 'origin', branch, '--force']);
   return gh([
     'pr', 'create',
-    '--title', `Reserve Zenodo DOI (${opts.version})`,
+    '--title', 'Reserve Zenodo DOI',
     '--body', `Stamps the reserved concept DOI \`${opts.conceptDoi}\` into \`myst.yml\`. Merge before tagging.`,
     '--head', branch,
   ]);
