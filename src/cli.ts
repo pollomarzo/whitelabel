@@ -97,8 +97,13 @@ async function cmdBuild(argv: string[]): Promise<number> {
     engineRepo,
     baseUrl,
     assetOverrides,
+    // --exports-only builds just the typst PDF (offline canary; no network theme).
     // --no-exports builds HTML only (until the typst-template release zip exists).
-    buildOpts: has(argv, 'no-exports') ? { all: false, html: true } : { all: true, html: true },
+    buildOpts: has(argv, 'exports-only')
+      ? { exportsOnly: true }
+      : has(argv, 'no-exports')
+        ? { all: false, html: true }
+        : { all: true, html: true },
     edge: createMystEdge(),
   });
   for (const w of res.warnings) process.stderr.write(`::warning::${w}\n`);

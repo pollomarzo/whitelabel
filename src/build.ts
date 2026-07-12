@@ -16,6 +16,9 @@ import { readDoc, writeDoc, setExtends, applyOwnOverride, readEngineCoordinateRa
 export interface BuildOpts {
   all?: boolean;
   html?: boolean;
+  /** Build only the typst export, no HTML site — the offline canary path (site HTML
+   *  needs a network theme zip; validated live in CI instead). */
+  exportsOnly?: boolean;
 }
 
 /** The seam to mystmd (myst.ts implements it with the bundled myst-cli). */

@@ -48,7 +48,9 @@ describe.skipIf(!runnable)('fixture build through the bundled CLI', () => {
         tmp,
         '--instance',
         join(engineDir, 'test', 'fixture-instance'),
-        '--no-site-template',
+        // Offline canary: PDF + compose only. The HTML site needs a network theme zip,
+        // so it is validated by the live shim run in CI, not this portable unit test.
+        '--exports-only',
       ],
       { stdio: 'pipe' },
     );
