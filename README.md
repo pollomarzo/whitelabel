@@ -6,11 +6,17 @@ template — referenced by every journal via a single `options.oaktree-sapling.v
 coordinate. This tree is the in-progress port from `isp-actions-config` +
 `oaktree-sapling` scripts + `zenodo-deposit.py`.
 
-**Home:** developed on `pollomarzo/oaktree-sapling` (interim, personal account) to avoid
-the disruptive legacy-repo rename; moves to canonical `open-scholar-nexus/oaktree-sapling`
-later via replayed commits on a clean branch ([R56], defers [R30]). Because the home is
-named in exactly one place (`pins.yml` `engine_repo`), the move is a one-line owner swap +
-re-cut releases (release *assets* don't replay with git).
+**Home:** developed on `pollomarzo/whitelabel` (interim, personal account; renamed from
+`oaktree-sapling` 2026-07-12, [R58]) to avoid the disruptive legacy-repo rename; moves to a
+canonical org repo later via replayed commits on a clean branch ([R56], defers [R30]). The
+home is named in two places (`pins.yml` `engine_repo` + the `cli.ts` fallback), so the move is
+a one-line owner swap + re-cut releases (`dist/cli.cjs` replays — committed at the tag; only
+true Release assets don't, [R57]). The repo *name* is one of three independent roles of
+"oaktree-sapling" — only the repo changed; the `options.oaktree-sapling.*` myst key + the npm
+package/bin are unchanged ([R58]).
+
+**Live-validated 2026-07-12** — the full shim ran on a real runner; [R18] closed ([R58]–[R64]).
+See `../testing.md` + `../interim-fixtures/PROVISIONING.md`.
 
 See `../design.md` (what/why), `../implementation.md` (how), `../existing-implementation.md`
 (the port sources).
@@ -28,7 +34,7 @@ test renders a real PDF through the bundled CLI):
 | `src/assets.ts` | version-matched typst-template + theme-zip URLs (closes [R5]). |
 | `src/yaml-io.ts` | working-tree myst.yml round-trips (Document API, never sed — [R3]). |
 | `src/build.ts` | **`oak build`**: the two-pass orchestrator ([R52]); myst edge injected for testing. |
-| `src/myst.ts` | the mystmd edge (the one module importing bundled myst-cli — [R51]). |
+| `src/myst.ts` | the mystmd edge (the one module importing bundled myst-cli — [R51]); sets the current project+site pointers via `findCurrent*AndLoad` so `build` renders HTML ([R59]). |
 | `src/cli.ts` | `oak` entry point; `build` implemented, other verbs stubbed by slice. |
 | `templates/typst/` | the engine's generic typst template (seeded from lapreprint-typst; used by path for offline PDF — design dec. 2). |
 | `test/fixture-*`, `test/integration.test.ts` | the release-safety canary (design §12 step 0). |
@@ -76,14 +82,21 @@ rejected options: `release-delivery-decision.md`.
    options. Guarded end-to-end (the fixture's real youtube survives the whole pipeline).
 4. **Dual layouts** (e.g. `tahiri/Paper/`) — layout enforcement must reject a *stray
    secondary* `myst.yml`, not just a missing top-level one. (Deferred to `oak validate`.)
+5. **HTML needs the current-site pointer** ([R59], live run) — `loadConfig` fills the store's
+   `sites` map but not `currentSitePath`, so `build` skipped HTML. `myst.ts` calls
+   `findCurrentProjectAndLoad`/`findCurrentSiteAndLoad` before `build`. Offline canaries use
+   `--exports-only` since HTML needs a network theme zip ([R60]).
+6. **Instance brand needs a resolvable favicon + absolute asset paths** ([R61]/[R62], live run) —
+   a missing site favicon is a *fatal* prerender error; relative `./logo.svg` doesn't resolve
+   through `extends` (resolved vs the paper, not the brand dir). Interim fixture uses URLs; the
+   owed fix is `compose()` absolutizing instance-relative paths (typst watermark needs real paths).
 
 ## Next
 
-- **Live [R18] validation (untested).** The frozen shim (`copier-template/`) and the
-  release delivery ([R57]) are authored but not yet run against a real runner. Stand up
-  the interim fixture repos and cut `v0.0.0-dev.1` per `../interim-fixtures/PROVISIONING.md`
-  to close the two composite-action spikes ([R18]) — the one thing local parsing can't verify.
-- **Slice 3 — `zenodo.ts`** (port of zenodo-deposit.py: paginate all lookups [R20]/[R35],
+- **✅ Live [R18] validation — DONE (2026-07-12).** The frozen shim + release delivery ([R57])
+  ran on a real runner; both composite-action spikes confirmed, Pages deploy green ([R58]–[R64]).
+  Bugs found+fixed en route: `ci/run.sh` exec bit ([R64a]) + the site-pointer bug ([R59]).
+- **Slice 3 — `zenodo.ts`** (NOW the frontier; port of zenodo-deposit.py: paginate all lookups [R20]/[R35],
   `deposit/` folder [R28], id-first identity [R7], tenant bytes → journal.yml [R19]) + deploy;
   unstubs `oak deposit`/`release`. `deploy-preview`/`notify` (slice 2-shim) unstub alongside.
 - **Deferred here:** `--no-site-template` uses myst's default theme (network); a pinned
