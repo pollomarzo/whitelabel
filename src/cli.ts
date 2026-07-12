@@ -8,7 +8,7 @@
  * dep only loads when actually building.
  */
 import { join, resolve } from 'node:path';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { parseDocument } from 'yaml';
 
 // dist/cli.cjs is an esbuild CJS bundle ([R51]), so `__dirname` is the bundle's dir
@@ -30,8 +30,6 @@ type Verb =
 const STUB_SLICE: Partial<Record<Verb, string>> = {
   validate: 'slice 4',
   'deploy-preview': 'slice 2 (shim)',
-  deposit: 'slice 3',
-  release: 'slice 3',
   notify: 'slice 2 (shim)',
   bootstrap: 'slice 5',
   upgrade: 'slice 5',
@@ -67,7 +65,9 @@ function readEngineRepo(paperRoot: string): string {
   return 'pollomarzo/whitelabel';
 }
 
-async function cmdBuild(argv: string[]): Promise<number> {
+/** Run the two-pass build for a paper; shared by `oak build` and `oak release`. Returns the
+ *  resolved paper root (its `_build/exports` now holds the PDF `release` deposits). */
+async function buildPaper(argv: string[]): Promise<{ paperRoot: string; resolvedId?: string }> {
   const paperRoot = resolve(flag(argv, 'paper') ?? '.');
   const instanceRoot = has(argv, 'no-instance')
     ? null
@@ -107,8 +107,7 @@ async function cmdBuild(argv: string[]): Promise<number> {
     edge: createMystEdge(),
   });
   for (const w of res.warnings) process.stderr.write(`::warning::${w}\n`);
-  process.stderr.write(`oak build: done (id=${res.resolvedProject.id ?? '?'})\n`);
-  return 0;
+  return { paperRoot, resolvedId: res.resolvedProject.id };
 
   function mustInstance(): string {
     process.stderr.write(
@@ -119,16 +118,176 @@ async function cmdBuild(argv: string[]): Promise<number> {
   }
 }
 
+async function cmdBuild(argv: string[]): Promise<number> {
+  const { resolvedId } = await buildPaper(argv);
+  process.stderr.write(`oak build: done (id=${resolvedId ?? '?'})\n`);
+  return 0;
+}
+
+/** myst.yml path from --myst, or <--paper|.>/myst.yml. */
+function mystPathOf(argv: string[]): string {
+  return resolve(flag(argv, 'myst') ?? join(flag(argv, 'paper') ?? '.', 'myst.yml'));
+}
+function instanceRootOf(argv: string[]): string | null {
+  const i = flag(argv, 'instance');
+  return i ? resolve(i) : null;
+}
+function emit(result: Record<string, unknown>): void {
+  process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+}
+
+/** `oak deposit <prepare|publish|status>` — the Zenodo deposit verbs (slice 3). */
+async function cmdDeposit(argv: string[]): Promise<number> {
+  const sub = argv[0];
+  const rest = argv.slice(1);
+  const z = await import('./zenodo.js');
+  const gh = await import('./gh.js');
+
+  const mystPath = mystPathOf(rest);
+  const instanceRoot = instanceRootOf(rest);
+  const sandbox = has(rest, 'sandbox');
+  const siteUrl = flag(rest, 'site-url') ?? process.env.SITE_URL;
+  const token = flag(rest, 'token') ?? process.env.ZENODO_TOKEN;
+  if (!token) {
+    process.stderr.write('no token: set ZENODO_TOKEN or pass --token\n');
+    return 2;
+  }
+  const api = new z.ZenodoApi(z.createFetchTransport(), z.apiBase(sandbox), token);
+
+  if (sub === 'prepare') {
+    const repo = flag(rest, 'repo') ?? process.env.GITHUB_REPOSITORY;
+    if (!repo) {
+      process.stderr.write('deposit prepare: pass --repo owner/repo (or set GITHUB_REPOSITORY)\n');
+      return 2;
+    }
+    const out = await z.cmdPrepare({ mystPath, repo, siteUrl, sandbox, api, instanceRoot });
+    emit(out.result);
+    // Open the DOI PR over the working-tree myst.yml write ([R3]/§1d). Best-effort: a local
+    // sandbox rehearsal with no gh/token just leaves the write for the human to PR.
+    if (out.exitCode === 0 && !has(rest, 'no-pr') && process.env.GH_TOKEN) {
+      try {
+        const url = gh.openDoiPr(resolve(mystPath, '..'), {
+          conceptDoi: String(out.result.concept_doi),
+          version: flag(rest, 'version') ?? 'draft',
+        });
+        process.stderr.write(`deposit prepare: opened DOI PR ${url}\n`);
+      } catch (e) {
+        process.stderr.write(`::warning::deposit prepare: DOI PR not opened (${(e as Error).message})\n`);
+      }
+    }
+    return out.exitCode;
+  }
+
+  if (sub === 'publish') {
+    const pdf = flag(rest, 'pdf');
+    const tag = flag(rest, 'tag');
+    if (!pdf || !tag) {
+      process.stderr.write('deposit publish: --pdf and --tag are required\n');
+      return 2;
+    }
+    const out = await z.cmdPublish({
+      mystPath, pdf: resolve(pdf), tag, siteUrl, sandbox,
+      bundleOut: resolve(flag(rest, 'bundle-out') ?? '_bundle'),
+      api, git: gh.realGitContext, instanceRoot,
+    });
+    emit(out.result);
+    return out.exitCode;
+  }
+
+  if (sub === 'status') {
+    const out = await z.cmdStatus({ mystPath, siteUrl, sandbox, api, instanceRoot });
+    emit(out.result);
+    return out.exitCode;
+  }
+
+  process.stderr.write('oak deposit: usage: oak deposit <prepare|publish|status> [...]\n');
+  return 2;
+}
+
+/** Find the built PDF under `_build/exports` (the typst export). */
+function findExportedPdf(paperRoot: string): string | null {
+  const dir = join(paperRoot, '_build', 'exports');
+  if (!existsSync(dir)) return null;
+  const hit = readdirSync(dir, { recursive: true }).find((f) => String(f).endsWith('.pdf'));
+  return hit ? join(dir, String(hit)) : null;
+}
+
+/** `oak release --tag vX` — build + deposit publish + attach the bundle to the tag Release,
+ *  post a commit comment / failure issue via gh (§1e). Env is derived from the committed DOI. */
+async function cmdRelease(argv: string[]): Promise<number> {
+  const tag = flag(argv, 'tag');
+  if (!tag) {
+    process.stderr.write('oak release: --tag vX.Y.Z is required\n');
+    return 2;
+  }
+  const z = await import('./zenodo.js');
+  const gh = await import('./gh.js');
+
+  const { paperRoot } = await buildPaper(argv);
+  const mystPath = mystPathOf(argv);
+
+  const doi = parseDocument(readFileSync(mystPath, 'utf8')).getIn(['project', 'doi']);
+  if (typeof doi !== 'string' || !doi) {
+    process.stderr.write('oak release: project.doi missing — run prepare and merge that PR first.\n');
+    return 2;
+  }
+  const sandbox = z.isSandboxDoi(doi);
+  const token = flag(argv, 'token') ?? (sandbox ? process.env.ZENODO_TOKEN_SANDBOX : process.env.ZENODO_TOKEN);
+  if (!token) {
+    process.stderr.write(`no token: set ${sandbox ? 'ZENODO_TOKEN_SANDBOX' : 'ZENODO_TOKEN'}\n`);
+    return 2;
+  }
+
+  const pdf = findExportedPdf(paperRoot);
+  if (!pdf) {
+    process.stderr.write('oak release: no PDF under _build/exports (did the typst export run?)\n');
+    return 2;
+  }
+
+  const api = new z.ZenodoApi(z.createFetchTransport(), z.apiBase(sandbox), token);
+  const bundleOut = resolve(flag(argv, 'bundle-out') ?? '_bundle');
+  const out = await z.cmdPublish({
+    mystPath, pdf, tag,
+    siteUrl: flag(argv, 'site-url') ?? process.env.SITE_URL,
+    sandbox, bundleOut, api, git: gh.realGitContext, instanceRoot: instanceRootOf(argv),
+  });
+  emit(out.result);
+
+  if (out.exitCode === 0 && process.env.GH_TOKEN) {
+    try {
+      const files = readdirSync(bundleOut).map((f) => join(bundleOut, f));
+      gh.uploadReleaseAsset(paperRoot, tag, files);
+      const sha = await gh.realGitContext.headSha(paperRoot);
+      gh.postCommitComment(paperRoot, sha, `Zenodo draft populated: ${out.result.draft_url ?? out.result.version_doi}`);
+    } catch (e) {
+      process.stderr.write(`::warning::oak release: gh post-steps failed (${(e as Error).message})\n`);
+    }
+  } else if (out.exitCode !== 0 && process.env.GH_TOKEN) {
+    try {
+      gh.openFailureIssue(paperRoot, `Zenodo publish failed for ${tag}`, String(out.result.message ?? 'unknown error'));
+    } catch {
+      /* best-effort */
+    }
+  }
+  return out.exitCode;
+}
+
 async function main(argv: string[]): Promise<number> {
   const verb = argv[0] as Verb | undefined;
   if (verb === 'build') return cmdBuild(argv.slice(1));
+  if (verb === 'deposit') return cmdDeposit(argv.slice(1));
+  if (verb === 'release') return cmdRelease(argv.slice(1));
   if (verb && verb in STUB_SLICE) {
     process.stderr.write(`oak ${verb}: not implemented yet (${STUB_SLICE[verb]}).\n`);
     return 1;
   }
   process.stderr.write(
-    `oak: usage: oak build [--paper <dir>] [--instance <dir> | --no-instance] ` +
-      `[--base-url <url>] [--no-site-template]\n`,
+    `oak: usage:\n` +
+      `  oak build   [--paper <dir>] [--instance <dir> | --no-instance] [--base-url <url>] [--no-site-template]\n` +
+      `  oak deposit prepare --repo <owner/repo> [--site-url <url>] [--sandbox] [--instance <dir>]\n` +
+      `  oak deposit publish --pdf <path> --tag <vX.Y.Z> [--site-url <url>] [--sandbox] [--instance <dir>]\n` +
+      `  oak deposit status  [--sandbox] [--instance <dir>]\n` +
+      `  oak release --tag <vX.Y.Z> [--paper <dir>] [--instance <dir>] [--site-url <url>]\n`,
   );
   return 2;
 }

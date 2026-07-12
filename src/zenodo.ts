@@ -1,0 +1,760 @@
+/**
+ * zenodo.ts — the Zenodo deposit port (slice 3). A faithful port of
+ * `isp-actions-config/scripts/zenodo-deposit.py` (prepare / publish / status), with the
+ * design's corrections baked in:
+ *
+ *  - **Tenant bytes leave the code ([R19]).** The hardcoded ISP description blurb and the
+ *    `neuromatch` community move to `journal.yml` `zenodo:` (both optional — a fresh tenant
+ *    has neither). See `loadJournalZenodo`.
+ *  - **Every lookup paginates ([R20]/[R35.1]).** The python capped at `size=100` in three
+ *    places (both `find_by_github` calls + `latest_version_dep_id`); past 100 depositions
+ *    lookup silently missed and `prepare` minted a duplicate concept DOI. `listMyDepositions`
+ *    here walks `page=1..` until a short page, so all three call sites paginate.
+ *  - **Identity is id-first ([R7]).** Every deposit carries the myst `project.id` as a URN
+ *    related identifier (`urn:oaktree-sapling:<id>`) alongside the github URL; lookup matches
+ *    the id first, github-URL second. The deposit key then survives a repo move/merge (§9).
+ *  - **Supplements come from `deposit/` ([R28]).** The old implicit root glob
+ *    (`*.csv/png/txt/zip/bib`) is gone; files in the paper's `deposit/` folder upload verbatim
+ *    beside the engine's four fixed files, and a name collision with those four is a hard error.
+ *  - **Provenance's review PR uses `gh api` ([R35.2])**, injected via `GitContext.reviewPr`,
+ *    not a commit-subject `#\d+` regex.
+ *
+ * Kept from the python: the single-JSON result envelope (`status` field — the workflows'
+ * error-reporting contract), idempotent draft reuse, `--sandbox` endpoint switch, and the
+ * publish metadata-overwrite guarantee ([R22]).
+ *
+ * SEAMS (so the deposit logic is unit-testable with no network / no git): the Zenodo HTTP
+ * transport (`ZenodoTransport`) and the git/gh side (`GitContext`) are injected. The real
+ * transport is `createFetchTransport()` (global `fetch`, Node 24); the real git context lives
+ * in `gh.ts`. This module does NOT import myst-cli — the abstract text is read from the myst
+ * HTML build's JSON artifacts on disk (keeping myst.ts the only myst-cli importer).
+ */
+import { readFileSync, writeFileSync, existsSync, mkdirSync, rmSync, copyFileSync, readdirSync, statSync } from 'node:fs';
+import { join, resolve, basename } from 'node:path';
+import { readDoc, writeDoc } from './yaml-io.js';
+import { JournalConfig, type ZenodoConfig } from './schema.js';
+
+export const ZENODO_PROD = 'https://zenodo.org/api';
+export const ZENODO_SANDBOX = 'https://sandbox.zenodo.org/api';
+const PREFIX_PROD = '10.5281/zenodo.';
+const PREFIX_SANDBOX = '10.5072/zenodo.';
+
+const ORCID_RE = /^\d{4}-\d{4}-\d{4}-\d{3}[\dX]$/;
+
+/** Extra document part appended to the Zenodo description (e.g. shared authorship). */
+const ZENODO_EXTRA_PART = 'zenodo_extra_description';
+
+/** The engine's four fixed deposit files; a `deposit/` file may not collide with them ([R28]). */
+const RESERVED_BUNDLE_NAMES = ['paper.pdf', 'source.zip', 'myst.yml', 'publication-provenance.json'];
+
+export function apiBase(sandbox: boolean): string {
+  return sandbox ? ZENODO_SANDBOX : ZENODO_PROD;
+}
+function doiPrefix(sandbox: boolean): string {
+  return sandbox ? PREFIX_SANDBOX : PREFIX_PROD;
+}
+export function isSandboxDoi(doi: string): boolean {
+  return doi.startsWith(PREFIX_SANDBOX);
+}
+
+/** The id-first identity anchor ([R7]): a location-independent URN stored as a related
+ *  identifier so the deposit key survives a repo move (the github URL would change). */
+export function paperUrn(id: string): string {
+  return `urn:oaktree-sapling:${id}`;
+}
+
+/* --------------------------------------------------------------------------
+ * HTTP transport seam
+ * ------------------------------------------------------------------------ */
+
+export interface TransportResponse {
+  ok: boolean;
+  status: number;
+  text: string;
+  json(): unknown;
+}
+
+export interface ZenodoTransport {
+  request(
+    method: string,
+    url: string,
+    opts: {
+      params?: Record<string, string | number>;
+      json?: unknown;
+      body?: Uint8Array;
+      headers?: Record<string, string>;
+      timeoutMs?: number;
+    },
+  ): Promise<TransportResponse>;
+}
+
+/** The real transport: global `fetch` (Node 24). Mirrors the python `request` helper —
+ *  the access token rides as a query param, and a non-2xx logs the body to stderr. */
+export function createFetchTransport(): ZenodoTransport {
+  return {
+    async request(method, url, opts) {
+      const u = new URL(url);
+      for (const [k, v] of Object.entries(opts.params ?? {})) u.searchParams.set(k, String(v));
+      const headers: Record<string, string> = { ...opts.headers };
+      let body: string | Uint8Array | undefined;
+      if (opts.json !== undefined) {
+        body = JSON.stringify(opts.json);
+        headers['Content-Type'] = 'application/json';
+      } else if (opts.body !== undefined) {
+        body = opts.body;
+      }
+      const res = await fetch(u, {
+        method,
+        headers,
+        body,
+        signal: AbortSignal.timeout(opts.timeoutMs ?? 60_000),
+      });
+      const text = await res.text();
+      if (!res.ok) {
+        process.stderr.write(`\n[zenodo ${method} ${u.pathname}] ${res.status}\n  ${text.slice(0, 2000)}\n`);
+      }
+      return { ok: res.ok, status: res.status, text, json: () => (text ? JSON.parse(text) : null) };
+    },
+  };
+}
+
+/* --------------------------------------------------------------------------
+ * git / gh seam (implemented by gh.ts)
+ * ------------------------------------------------------------------------ */
+
+export interface GitContext {
+  /** `git -C <root> rev-parse HEAD`. */
+  headSha(repoRoot: string): Promise<string>;
+  /** `git -C <root> archive --format=zip -o <outZip> HEAD`. */
+  gitArchive(repoRoot: string, outZip: string): Promise<void>;
+  /** The PR that introduced <sha>, via `gh api` ([R35.2]); null when none / gh unavailable. */
+  reviewPr(repoRoot: string, sha: string): Promise<string | null>;
+}
+
+/* --------------------------------------------------------------------------
+ * Zenodo API (all lookups paginate — [R20]/[R35.1])
+ * ------------------------------------------------------------------------ */
+
+// Depositions are loosely typed — Zenodo owns the shape, we read a few fields by name.
+export type Deposition = Record<string, any>;
+
+export class ZenodoError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly body: string,
+  ) {
+    super(message);
+  }
+}
+
+export class ZenodoApi {
+  constructor(
+    private readonly t: ZenodoTransport,
+    readonly api: string,
+    private readonly token: string,
+  ) {}
+
+  private async call(method: string, path: string, opts: Parameters<ZenodoTransport['request']>[2] = {}): Promise<TransportResponse> {
+    const params = { ...opts.params, access_token: this.token };
+    const res = await this.t.request(method, `${this.api}${path}`, { ...opts, params });
+    if (!res.ok) throw new ZenodoError(`Zenodo ${method} ${path} → ${res.status}`, res.status, res.text);
+    return res;
+  }
+
+  /** Paginated listing — walks `page=1..` at `size=100` until a short page. Replaces the
+   *  python's single unpaginated `size=100` fetch at all three lookup call sites ([R20]). */
+  async listMyDepositions(opts: { q?: string } = {}): Promise<Deposition[]> {
+    const size = 100;
+    const out: Deposition[] = [];
+    for (let page = 1; ; page++) {
+      const params: Record<string, string | number> = { size, page };
+      if (opts.q) params.q = opts.q;
+      const res = await this.call('GET', '/deposit/depositions', { params });
+      const batch = res.json() as Deposition[];
+      if (!Array.isArray(batch) || batch.length === 0) break;
+      out.push(...batch);
+      if (batch.length < size) break;
+    }
+    return out;
+  }
+
+  async getDeposition(depId: string | number): Promise<Deposition> {
+    return (await this.call('GET', `/deposit/depositions/${depId}`)).json() as Deposition;
+  }
+
+  async createDeposition(metadata: Record<string, unknown>): Promise<Deposition> {
+    return (await this.call('POST', '/deposit/depositions', { json: { metadata } })).json() as Deposition;
+  }
+
+  async updateMetadata(depId: string | number, metadata: Record<string, unknown>): Promise<Deposition> {
+    return (await this.call('PUT', `/deposit/depositions/${depId}`, { json: { metadata } })).json() as Deposition;
+  }
+
+  async uploadFile(bucketUrl: string, name: string, data: Uint8Array): Promise<void> {
+    // Bucket PUT is a bare URL (not under `/api`), so it bypasses `call`'s path join.
+    const res = await this.t.request('PUT', `${bucketUrl}/${name}`, {
+      params: { access_token: this.token },
+      body: data,
+      timeoutMs: 600_000,
+    });
+    if (!res.ok) throw new ZenodoError(`upload ${name} → ${res.status}`, res.status, res.text);
+  }
+
+  /** id-first, github-URL fallback ([R7]). Targeted `q` queries first (each paginated); a
+   *  full unfiltered scan runs only when BOTH targeted queries came back empty — mirroring
+   *  the python's `if not items:` fallback, but keyed on the id URN before the github URL. */
+  async findDeposit(opts: { paperId?: string; githubUrl: string }): Promise<Deposition | null> {
+    const urn = opts.paperId ? paperUrn(opts.paperId) : null;
+    let anyItems = false;
+
+    if (urn) {
+      const items = await this.listMyDepositions({ q: `related.identifier:"${urn}"` });
+      anyItems ||= items.length > 0;
+      const hit = matchRelated(items, urn);
+      if (hit) return hit;
+    }
+    {
+      const items = await this.listMyDepositions({ q: `related.identifier:"${opts.githubUrl}"` });
+      anyItems ||= items.length > 0;
+      const hit = matchRelated(items, opts.githubUrl);
+      if (hit) return hit;
+    }
+    if (!anyItems) {
+      const all = await this.listMyDepositions();
+      return (urn && matchRelated(all, urn)) || matchRelated(all, opts.githubUrl) || null;
+    }
+    return null;
+  }
+
+  /** Newest deposition for a concept DOI (paginated — the third [R35.1] site). */
+  async latestVersionDepId(conceptDoi: string): Promise<number | null> {
+    let items = await this.listMyDepositions({ q: `conceptdoi:"${conceptDoi}"` });
+    if (items.length === 0) {
+      const m = /zenodo\.(\d+)/.exec(conceptDoi);
+      if (m) items = await this.listMyDepositions({ q: `conceptrecid:${m[1]}` });
+    }
+    items.sort((a, b) => String(b.created ?? '').localeCompare(String(a.created ?? '')));
+    return items[0]?.id ?? null;
+  }
+}
+
+function matchRelated(items: Deposition[], identifier: string): Deposition | null {
+  for (const it of items) {
+    for (const ri of it.metadata?.related_identifiers ?? []) {
+      if (ri.identifier === identifier) return it;
+    }
+  }
+  return null;
+}
+
+export function conceptDoiFor(dep: Deposition, sandbox: boolean): string {
+  // `conceptdoi` is only set after first publish; before that, build from `conceptrecid`.
+  return dep.conceptdoi ?? `${doiPrefix(sandbox)}${dep.conceptrecid}`;
+}
+
+/* --------------------------------------------------------------------------
+ * Description-part extraction (reads the myst HTML build's JSON, no myst-cli)
+ * ------------------------------------------------------------------------ */
+
+const TEXT_LEAVES = new Set(['text', 'inlineMath', 'inlineCode']);
+
+function flattenText(node: any, buf: string[]): void {
+  if (TEXT_LEAVES.has(node?.type)) {
+    buf.push(node.value ?? '');
+    return;
+  }
+  for (const child of node?.children ?? []) flattenText(child, buf);
+}
+
+/**
+ * Plain-text paragraphs for a named frontmatter part from the myst HTML build
+ * (`_build/site/content/<page>.json` → `frontmatter.parts.<name>.mdast`). Zenodo
+ * descriptions render neither math nor markup, so we flatten to text. Returns null when the
+ * part is absent or no build artifact exists (e.g. at prepare time, which doesn't build).
+ */
+export function partParagraphs(repoRoot: string, partName: string): string[] | null {
+  const contentDir = join(repoRoot, '_build', 'site', 'content');
+  if (!existsSync(contentDir)) return null;
+  const files = readdirSync(contentDir)
+    .filter((f) => f.endsWith('.json'))
+    .sort();
+  for (const f of files) {
+    let data: any;
+    try {
+      data = JSON.parse(readFileSync(join(contentDir, f), 'utf8'));
+    } catch {
+      continue;
+    }
+    const part = data?.frontmatter?.parts?.[partName];
+    const mdast = part && typeof part === 'object' ? (part.mdast ?? part) : part;
+    if (!mdast || typeof mdast !== 'object') continue;
+    const paras: string[] = [];
+    const visit = (node: any): void => {
+      if (node?.type === 'paragraph') {
+        const buf: string[] = [];
+        flattenText(node, buf);
+        const text = buf.join('').trim();
+        if (text) paras.push(text);
+        return; // don't descend past a paragraph
+      }
+      for (const child of node?.children ?? []) visit(child);
+    };
+    visit(mdast);
+    if (paras.length === 0) {
+      const buf: string[] = [];
+      flattenText(mdast, buf);
+      const text = buf.join('').trim();
+      if (text) paras.push(text);
+    }
+    if (paras.length > 0) return paras;
+  }
+  return null;
+}
+
+export const abstractParagraphs = (repoRoot: string): string[] | null => partParagraphs(repoRoot, 'abstract');
+export const zenodoExtraParagraphs = (repoRoot: string): string[] | null =>
+  partParagraphs(repoRoot, ZENODO_EXTRA_PART);
+
+/* --------------------------------------------------------------------------
+ * Metadata builder — tenant bytes now come from journal.yml ([R19])
+ * ------------------------------------------------------------------------ */
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#x27;');
+}
+
+function youtubeUrl(project: any): string | null {
+  const fromOptions = project.options?.youtube;
+  if (fromOptions) return String(fromOptions).trim();
+  const fromSocial = project.social?.youtube;
+  if (fromSocial) return String(fromSocial).trim();
+  return null;
+}
+
+export interface MetadataInput {
+  project: any;
+  paperId?: string;
+  githubUrl: string;
+  siteUrl?: string;
+  zenodo: ZenodoConfig;
+  version?: string;
+  publicationDate?: string;
+  abstractParas?: string[] | null;
+  extraDescParas?: string[] | null;
+}
+
+export function buildMetadata(input: MetadataInput): Record<string, unknown> {
+  const { project, paperId, githubUrl, siteUrl, zenodo, version, publicationDate, abstractParas, extraDescParas } = input;
+
+  const creators: Array<Record<string, string>> = [];
+  for (const a of project.authors ?? []) {
+    const c: Record<string, string> = { name: String(a.name) };
+    const affs = a.affiliations ?? [];
+    if (affs.length) c.affiliation = String(affs[0]);
+    const orcid = String(a.orcid ?? '');
+    // Zenodo clobbers `name` from the ORCID profile if it doesn't resolve; the template's
+    // placeholder ORCIDs (0000-0000-…) hit this, so drop invalid/placeholder ones.
+    if (orcid && ORCID_RE.test(orcid) && !orcid.startsWith('0000-0000-')) {
+      c.orcid = orcid;
+    } else if (orcid) {
+      process.stderr.write(`[warn] skipping invalid/placeholder ORCID for ${a.name}: ${orcid}\n`);
+    }
+    creators.push(c);
+  }
+
+  const keywords = (project.keywords ?? []).map((k: unknown) => String(k));
+  const licenseId = String(project.license ?? 'cc-by-4.0').toLowerCase();
+
+  const desc: string[] = [];
+  if (abstractParas) desc.push(...abstractParas.map((p) => `<p>${escapeHtml(p)}</p>`));
+  // The ISP "created as part of the Neuromatch Impact Scholars Program" blurb was hardcoded
+  // in the python; it is now an OPTIONAL per-tenant field ([R19]) — a fresh tenant has none.
+  if (zenodo.description_blurb) desc.push(`<p>${escapeHtml(zenodo.description_blurb)}</p>`);
+  if (extraDescParas) desc.push(...extraDescParas.map((p) => `<p>${escapeHtml(p)}</p>`));
+  const yt = youtubeUrl(project);
+  if (yt) desc.push(`<p>Seminar Recording: <a href="${escapeHtml(yt)}">Watch on YouTube</a></p>`);
+  if (siteUrl) desc.push(`<p>Project Website: <a href="${siteUrl}">${siteUrl}</a></p>`);
+  desc.push(`<p>Repository: <a href="${githubUrl}">${githubUrl}</a></p>`);
+  const venue = project.venue;
+  if (venue) {
+    const v = typeof venue === 'string' ? venue : (venue.title ?? String(venue));
+    desc.push(`<p>Venue: ${v}</p>`);
+  }
+  if (project.funding) desc.push(`<p>Funding: ${project.funding}</p>`);
+
+  const related: Array<Record<string, string>> = [
+    { identifier: githubUrl, relation: 'isVersionOf', scheme: 'url' },
+  ];
+  // id-first identity anchor ([R7]): survives a repo move that changes the github URL.
+  if (paperId) related.push({ identifier: paperUrn(paperId), relation: 'isVersionOf', scheme: 'urn' });
+  if (siteUrl) related.push({ identifier: siteUrl, relation: 'isIdenticalTo', scheme: 'url' });
+  if (yt) related.push({ identifier: yt, relation: 'isSupplementedBy', scheme: 'url' });
+
+  const md: Record<string, unknown> = {
+    upload_type: 'publication',
+    publication_type: 'article',
+    title: String(project.title),
+    creators,
+    description: desc.join(''),
+    license: licenseId,
+    related_identifiers: related,
+    access_right: 'open',
+  };
+  // Community is now optional per-tenant ([R19]) — the hardcoded `neuromatch` is gone.
+  if (zenodo.community) md.communities = [{ identifier: zenodo.community }];
+  if (keywords.length) md.keywords = keywords;
+  if (version !== undefined) md.version = version;
+  const pubdate = publicationDate ?? project.date;
+  if (pubdate) md.publication_date = String(pubdate);
+  return md;
+}
+
+/* --------------------------------------------------------------------------
+ * Bundle assembly — `deposit/` folder replaces the root glob ([R28])
+ * ------------------------------------------------------------------------ */
+
+export interface BundleProvenance {
+  repo: string;
+  commit_sha: string;
+  tag: string;
+  site_url: string | undefined;
+  concept_doi: string;
+  version_doi: string;
+  review_pr: string | null;
+  built_at: string;
+}
+
+/**
+ * Assemble the deposit bundle: the four fixed engine files plus every file in the paper's
+ * `deposit/` folder, uploaded verbatim ([R28]). A `deposit/` file whose name collides with
+ * one of the four fixed names is a hard error (surfaced as a validate-style error). Empty or
+ * absent `deposit/` → just the four. Returns the assembled file paths, sorted.
+ */
+export async function buildBundle(
+  out: string,
+  pdf: string,
+  repoRoot: string,
+  provenance: BundleProvenance,
+  git: GitContext,
+): Promise<string[]> {
+  const depositDir = join(repoRoot, 'deposit');
+  const extras = existsSync(depositDir)
+    ? readdirSync(depositDir).filter((n) => statSync(join(depositDir, n)).isFile())
+    : [];
+  const collisions = extras.filter((n) => RESERVED_BUNDLE_NAMES.includes(n));
+  if (collisions.length) {
+    throw new BundleCollisionError(
+      `deposit/ file(s) collide with engine-reserved names: ${collisions.join(', ')}. ` +
+        `Rename them — ${RESERVED_BUNDLE_NAMES.join(', ')} are added by the engine.`,
+    );
+  }
+
+  if (existsSync(out)) rmSync(out, { recursive: true, force: true });
+  mkdirSync(out, { recursive: true });
+
+  copyFileSync(pdf, join(out, 'paper.pdf'));
+  await git.gitArchive(repoRoot, resolve(join(out, 'source.zip')));
+  const mystSrc = join(repoRoot, 'myst.yml');
+  if (existsSync(mystSrc)) copyFileSync(mystSrc, join(out, 'myst.yml'));
+  writeFileSync(join(out, 'publication-provenance.json'), JSON.stringify(provenance, null, 2) + '\n');
+  for (const n of extras) copyFileSync(join(depositDir, n), join(out, n));
+
+  return readdirSync(out)
+    .filter((n) => statSync(join(out, n)).isFile())
+    .sort()
+    .map((n) => join(out, n));
+}
+
+export class BundleCollisionError extends Error {}
+
+/* --------------------------------------------------------------------------
+ * journal.yml → tenant Zenodo config ([R19])
+ * ------------------------------------------------------------------------ */
+
+/** Read the tenant's `zenodo:` block from `<instanceRoot>/journal.yml`. A fresh tenant (or
+ *  a build with no instance) has neither blurb nor community — return the empty defaults. */
+export function loadJournalZenodo(instanceRoot: string | null): ZenodoConfig {
+  if (!instanceRoot) return JournalConfig.parse({ name: 'x' }).zenodo;
+  const path = join(instanceRoot, 'journal.yml');
+  if (!existsSync(path)) return JournalConfig.parse({ name: 'x' }).zenodo;
+  const doc = readDoc(path);
+  const journal = JournalConfig.parse(doc.toJS() ?? {});
+  return journal.zenodo;
+}
+
+/* --------------------------------------------------------------------------
+ * Result envelope
+ * ------------------------------------------------------------------------ */
+
+export interface Outcome {
+  exitCode: number;
+  /** Always carries `status: 'ok' | 'error'` — the workflows' error-reporting contract. */
+  result: Record<string, unknown>;
+}
+
+const ok = (fields: Record<string, unknown>): Outcome => ({ exitCode: 0, result: { status: 'ok', ...fields } });
+const err = (exitCode: number, message: string, fields: Record<string, unknown> = {}): Outcome => ({
+  exitCode,
+  result: { status: 'error', message, ...fields },
+});
+
+function projectOf(doc: ReturnType<typeof readDoc>): any {
+  const p = doc.get('project');
+  return (p && typeof (p as any).toJSON === 'function' ? (p as any).toJSON() : p) ?? {};
+}
+
+/* --------------------------------------------------------------------------
+ * Commands
+ * ------------------------------------------------------------------------ */
+
+export interface PrepareInput {
+  mystPath: string;
+  repo: string; // owner/repo
+  siteUrl?: string;
+  sandbox: boolean;
+  api: ZenodoApi;
+  instanceRoot: string | null;
+}
+
+/**
+ * `oak deposit prepare` — reserve (or reuse) a draft and stamp `project.doi/github/date`
+ * into the working-tree myst.yml ([R22]: the diff is three fields, not one). The DOI PR
+ * itself is opened by the CLI over this working-tree write (§1d, [R3]).
+ *
+ * [R29] env transition: a same-env re-prepare still refuses; a **prod** prepare may replace a
+ * committed *sandbox* DOI (the scripted sandbox→prod handoff), but prod→sandbox is forbidden.
+ */
+export async function cmdPrepare(input: PrepareInput): Promise<Outcome> {
+  const { mystPath, repo, siteUrl, sandbox, api, instanceRoot } = input;
+  const doc = readDoc(mystPath);
+  const project = projectOf(doc);
+
+  const existingDoi: string | undefined = project.doi;
+  if (existingDoi) {
+    const existingSandbox = isSandboxDoi(existingDoi);
+    if (existingSandbox === sandbox) {
+      return err(2, `project.doi already set (${existingDoi}); prepare is for first deposit.`);
+    }
+    if (!existingSandbox && sandbox) {
+      return err(2, `refusing to downgrade a production DOI (${existingDoi}) to sandbox.`);
+    }
+    // else: existing sandbox DOI + prod prepare → allowed to replace ([R29]); fall through.
+  }
+
+  const doc2 = readDoc(mystPath); // fresh Document for the working-tree write (preserves comments)
+  if (!doc2.getIn(['project', 'date'])) {
+    doc2.setIn(['project', 'date'], new Date().toISOString().slice(0, 10));
+  }
+
+  const githubUrl = `https://github.com/${repo}`;
+  const repoRoot = resolve(mystPath, '..');
+  const md = buildMetadata({
+    project: projectOf(doc2),
+    paperId: project.id ? String(project.id) : undefined,
+    githubUrl,
+    siteUrl,
+    zenodo: loadJournalZenodo(instanceRoot),
+    abstractParas: abstractParagraphs(repoRoot),
+    extraDescParas: zenodoExtraParagraphs(repoRoot),
+  });
+  md.prereserve_doi = true;
+
+  const existing = await api.findDeposit({ paperId: project.id ? String(project.id) : undefined, githubUrl });
+  let dep: Deposition;
+  if (existing && existing.submitted === false) {
+    process.stderr.write(`[prepare] reusing draft ${existing.id}\n`);
+    dep = await api.updateMetadata(existing.id, md);
+  } else if (existing) {
+    return err(
+      3,
+      `Published deposit already exists (${existing.id}); refusing to create a parallel concept. ` +
+        `Add its DOI to myst.yml manually.`,
+    );
+  } else {
+    dep = await api.createDeposition(md);
+  }
+
+  const cdoi = conceptDoiFor(dep, sandbox);
+  const draftUrl = dep.links?.html;
+
+  doc2.setIn(['project', 'doi'], cdoi);
+  doc2.setIn(['project', 'github'], githubUrl);
+  writeDoc(mystPath, doc2);
+
+  return ok({ concept_doi: cdoi, draft_url: draftUrl, deposition_id: dep.id });
+}
+
+export interface PublishInput {
+  mystPath: string;
+  pdf: string;
+  tag: string;
+  siteUrl?: string;
+  sandbox: boolean;
+  bundleOut: string;
+  api: ZenodoApi;
+  git: GitContext;
+  instanceRoot: string | null;
+}
+
+/**
+ * `oak deposit publish` (also the core of `oak release`) — populate the reserved draft with
+ * the final metadata + files and leave it as an unsubmitted draft. Env is DERIVED from the
+ * committed DOI prefix (a tag can't hit the wrong env, [R4]); `--sandbox` must agree with it.
+ */
+export async function cmdPublish(input: PublishInput): Promise<Outcome> {
+  const { mystPath, pdf, tag, siteUrl, sandbox, bundleOut, api, git, instanceRoot } = input;
+  const doc = readDoc(mystPath);
+  const project = projectOf(doc);
+
+  const conceptDoi: string | undefined = project.doi;
+  if (!conceptDoi) return err(2, 'project.doi missing — run prepare and merge that PR before tagging.');
+  if (isSandboxDoi(conceptDoi) !== sandbox) {
+    return err(2, `DOI prefix says sandbox=${isSandboxDoi(conceptDoi)} but --sandbox=${sandbox}.`);
+  }
+  if (!/^v\d+\.\d+\.\d+$/.test(tag)) return err(2, `tag must match vMAJOR.MINOR.PATCH (got ${tag})`);
+  const version = tag.slice(1);
+
+  if (!existsSync(pdf)) return err(2, `--pdf not found: ${pdf}`);
+
+  const githubUrl: string | undefined = project.github;
+  if (!githubUrl) return err(2, 'project.github missing — should have been set by prepare.');
+
+  const latestId = await api.latestVersionDepId(conceptDoi);
+  if (latestId === null) {
+    return err(2, `No Zenodo record matches ${conceptDoi} (token mismatch? deleted draft?)`);
+  }
+  let dep = await api.getDeposition(latestId);
+
+  const expectedConcept = `${doiPrefix(sandbox)}${dep.conceptrecid}`;
+  if (conceptDoi !== expectedConcept) {
+    return err(
+      2,
+      `Concept DOI sanity check failed: myst.yml has ${conceptDoi}, Zenodo's conceptrecid implies ${expectedConcept}`,
+    );
+  }
+
+  if (dep.submitted) {
+    // `deposit:actions` (which newversion needs) is intentionally not granted to the CI
+    // token; an editor must click "New version" on Zenodo to spawn the empty draft.
+    const recordUrl = dep.links?.record_html ?? dep.links?.html;
+    process.stderr.write(
+      `::error title=Zenodo: editor must click 'New version'::No unsubmitted draft for this concept. ` +
+        `Record: ${recordUrl ?? '(unavailable)'}\n`,
+    );
+    return err(
+      5,
+      `No unsubmitted Zenodo draft exists for this concept DOI.\n\n` +
+        `An editor must open the record and click **New version** to spawn an empty draft, then re-run failed jobs.\n\n` +
+        `Record: ${recordUrl ?? '(URL unavailable)'}`,
+      { record_url: recordUrl },
+    );
+  }
+  process.stderr.write(`[publish] reusing existing draft ${dep.id}\n`);
+
+  const repoRoot = resolve(mystPath, '..');
+  const md = buildMetadata({
+    project,
+    paperId: project.id ? String(project.id) : undefined,
+    githubUrl,
+    siteUrl,
+    zenodo: loadJournalZenodo(instanceRoot),
+    version,
+    publicationDate: String(project.date ?? new Date().toISOString().slice(0, 10)),
+    abstractParas: abstractParagraphs(repoRoot),
+    extraDescParas: zenodoExtraParagraphs(repoRoot),
+  });
+  dep = await api.updateMetadata(dep.id, md);
+
+  const bucket = dep.links?.bucket;
+  if (!bucket) return err(4, 'No bucket URL in deposition (unexpected Zenodo API shape).');
+
+  // Predicted from the deposition id; matches what Zenodo assigns at publish.
+  const predictedVersionDoi = `${doiPrefix(sandbox)}${dep.id}`;
+  const sha = await git.headSha(repoRoot);
+  const provenance: BundleProvenance = {
+    repo: repoFromGithubUrl(githubUrl),
+    commit_sha: sha,
+    tag,
+    site_url: siteUrl,
+    concept_doi: conceptDoi,
+    version_doi: predictedVersionDoi,
+    review_pr: await git.reviewPr(repoRoot, sha),
+    built_at: new Date().toISOString(),
+  };
+  const files = await buildBundle(bundleOut, pdf, repoRoot, provenance, git);
+
+  for (const p of files) {
+    process.stderr.write(`[publish] upload ${basename(p)}\n`);
+    await api.uploadFile(bucket, basename(p), readFileSync(p));
+  }
+
+  dep = await api.getDeposition(dep.id);
+  const versionDoi = dep.metadata?.doi ?? dep.doi ?? predictedVersionDoi;
+  return ok({ version_doi: versionDoi, draft_url: dep.links?.html, deposition_id: dep.id, bundle_dir: bundleOut });
+}
+
+export interface StatusInput {
+  mystPath: string;
+  siteUrl?: string;
+  sandbox: boolean;
+  api: ZenodoApi;
+  instanceRoot: string | null;
+}
+
+export async function cmdStatus(input: StatusInput): Promise<Outcome> {
+  const { mystPath, siteUrl, sandbox, api, instanceRoot } = input;
+  const doc = readDoc(mystPath);
+  const project = projectOf(doc);
+  const conceptDoi: string | undefined = project.doi;
+
+  const out: Record<string, unknown> = {
+    myst_path: mystPath,
+    concept_doi: conceptDoi,
+    github: project.github,
+  };
+
+  if (!conceptDoi) {
+    out.state = 'no doi yet — prepare not run or PR not merged';
+    return { exitCode: 0, result: out };
+  }
+  if (isSandboxDoi(conceptDoi) !== sandbox) {
+    out.warning = `DOI prefix vs --sandbox mismatch (doi=${conceptDoi}, sandbox=${sandbox})`;
+  }
+
+  const latestId = await api.latestVersionDepId(conceptDoi);
+  if (latestId === null) {
+    out.state = 'no record matches';
+    return { exitCode: 0, result: out };
+  }
+  const dep = await api.getDeposition(latestId);
+  out.latest_deposition_id = dep.id;
+  out.submitted = dep.submitted ?? false;
+  out.draft_url = dep.links?.html;
+  out.latest_version = dep.metadata?.version;
+  out.latest_doi = dep.metadata?.doi ?? dep.doi;
+
+  const repoRoot = resolve(mystPath, '..');
+  const preview = buildMetadata({
+    project,
+    paperId: project.id ? String(project.id) : undefined,
+    githubUrl: project.github ?? '',
+    siteUrl: siteUrl ?? '',
+    zenodo: loadJournalZenodo(instanceRoot),
+    abstractParas: abstractParagraphs(repoRoot),
+    extraDescParas: zenodoExtraParagraphs(repoRoot),
+  });
+  out.metadata_preview_keys = Object.keys(preview).sort();
+  out.creator_count = (preview.creators as unknown[]).length;
+  out.description_preview = preview.description;
+  return { exitCode: 0, result: out };
+}
+
+export function repoFromGithubUrl(url: string): string {
+  return url.replace(/\/+$/, '').split('github.com/').pop() ?? url;
+}

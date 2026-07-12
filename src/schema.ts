@@ -80,6 +80,7 @@ export const ZenodoConfig = z
     description_blurb: z.string().optional(),
   })
   .loose();
+export type ZenodoConfig = z.infer<typeof ZenodoConfig>;
 
 export const JournalConfig = z
   .object({
