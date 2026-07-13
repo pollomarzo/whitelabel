@@ -84,11 +84,21 @@ Dev releases are cheap and disposable. **Accumulate them, then prune** — do **
 5. **Reproducibility rests on Zenodo, not the engine tag** — dev releases are throwaway; the
    committed bundle *replays* on the interim→canonical home move (git object, not a Release asset).
 
-## typst is separate
+## typst rides the tag too ([R34]/[R66])
 
-The pinned typst binary is **not** delivered by this mechanism — it is version-keyed
-(`actions/cache` / fetch), ref-agnostic, and we rely on upstream ([R34]). The only artifact the
-release carries is `dist/cli.cjs`.
+The pinned typst binary **is** delivered by this mechanism now. `cut-engine-release.sh` fetches
+the linux-x86_64 musl binary at the version in `typst.version`, renders the release-safety
+canary with it (test-what-you-ship), and force-adds `bin/typst` onto the same tag leaf as
+`dist/cli.cjs` (`bin/` is gitignored on `main`, like `dist/`). So a checked-out engine tag is
+immediately runnable *including the PDF export* — no typst on the runner, no fetch on the build
+hot path. `ci/run.sh` already puts `$engine/bin/typst` on PATH.
+
+Why committed-at-tag rather than cache/fetch: the reproducibility argument, not the network one.
+The Zenodo deposit carries an `engine.zip` (`git archive` of the engine checkout — which, at the
+tag leaf, includes `bin/typst` + `dist/cli.cjs` + `templates/typst/`), making the DOI'd artifact
+re-renderable on **linux-x86_64 + node + the deposit, nothing fetched**. Full rationale +
+rejected alternatives: `../implementation.md` [R66]. A typst bump = edit `typst.version` + cut a
+release; it rides the single `options.oaktree-sapling.version` coordinate like a myst-cli bump.
 
 ## Implementation
 

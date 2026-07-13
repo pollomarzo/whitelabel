@@ -45,7 +45,7 @@ const ORCID_RE = /^\d{4}-\d{4}-\d{4}-\d{3}[\dX]$/;
 const ZENODO_EXTRA_PART = 'zenodo_extra_description';
 
 /** The engine's four fixed deposit files; a `deposit/` file may not collide with them ([R28]). */
-const RESERVED_BUNDLE_NAMES = ['paper.pdf', 'source.zip', 'myst.yml', 'publication-provenance.json'];
+const RESERVED_BUNDLE_NAMES = ['paper.pdf', 'source.zip', 'myst.yml', 'publication-provenance.json', 'engine.zip'];
 
 export function apiBase(sandbox: boolean): string {
   return sandbox ? ZENODO_SANDBOX : ZENODO_PROD;
@@ -428,18 +428,28 @@ export interface BundleProvenance {
   version_doi: string;
   review_pr: string | null;
   built_at: string;
+  // Reproducibility target of the deposited artifact ([R34]/[R66]): the deposit
+  // carries engine.zip (toolchain minus node), so a reproducer needs this platform + node.
+  platform: string;
+  typst_version: string | null;
 }
 
 /**
- * Assemble the deposit bundle: the four fixed engine files plus every file in the paper's
+ * Assemble the deposit bundle: the five fixed engine files plus every file in the paper's
  * `deposit/` folder, uploaded verbatim ([R28]). A `deposit/` file whose name collides with
- * one of the four fixed names is a hard error (surfaced as a validate-style error). Empty or
- * absent `deposit/` → just the four. Returns the assembled file paths, sorted.
+ * one of the fixed names is a hard error (surfaced as a validate-style error). Empty or
+ * absent `deposit/` → just the five. Returns the assembled file paths, sorted.
+ *
+ * `engine.zip` is a `git archive` of the engine checkout at its pinned ref ([R34]/[R66]):
+ * because bin/typst + dist/cli.cjs + templates/typst/ are committed at the
+ * engine tag leaf, this one archive carries the whole toolchain-minus-node, making the deposit
+ * self-contained for re-rendering the PDF (linux-x86_64 + node + the deposit, nothing fetched).
  */
 export async function buildBundle(
   out: string,
   pdf: string,
   repoRoot: string,
+  engineRoot: string,
   provenance: BundleProvenance,
   git: GitContext,
 ): Promise<string[]> {
@@ -460,6 +470,7 @@ export async function buildBundle(
 
   copyFileSync(pdf, join(out, 'paper.pdf'));
   await git.gitArchive(repoRoot, resolve(join(out, 'source.zip')));
+  await git.gitArchive(engineRoot, resolve(join(out, 'engine.zip')));
   const mystSrc = join(repoRoot, 'myst.yml');
   if (existsSync(mystSrc)) copyFileSync(mystSrc, join(out, 'myst.yml'));
   writeFileSync(join(out, 'publication-provenance.json'), JSON.stringify(provenance, null, 2) + '\n');
@@ -600,6 +611,17 @@ export interface PublishInput {
   api: ZenodoApi;
   git: GitContext;
   instanceRoot: string | null;
+  /** The engine checkout (holds paper-base.yml); archived into the deposit's engine.zip. */
+  engineRoot: string;
+}
+
+/** The engine's pinned typst version, for deposit provenance. `null` if the pin file is
+ *  absent (best-effort — provenance records what it can, never blocks the deposit). */
+function readTypstVersion(engineRoot: string): string | null {
+  const path = join(engineRoot, 'typst.version');
+  if (!existsSync(path)) return null;
+  const v = readFileSync(path, 'utf8').trim();
+  return v || null;
 }
 
 /**
@@ -608,7 +630,7 @@ export interface PublishInput {
  * committed DOI prefix (a tag can't hit the wrong env, [R4]); `--sandbox` must agree with it.
  */
 export async function cmdPublish(input: PublishInput): Promise<Outcome> {
-  const { mystPath, pdf, tag, siteUrl, sandbox, bundleOut, api, git, instanceRoot } = input;
+  const { mystPath, pdf, tag, siteUrl, sandbox, bundleOut, api, git, instanceRoot, engineRoot } = input;
   const doc = readDoc(mystPath);
   const project = projectOf(doc);
 
@@ -686,8 +708,10 @@ export async function cmdPublish(input: PublishInput): Promise<Outcome> {
     version_doi: predictedVersionDoi,
     review_pr: await git.reviewPr(repoRoot, sha),
     built_at: new Date().toISOString(),
+    platform: 'linux-x86_64',
+    typst_version: readTypstVersion(engineRoot),
   };
-  const files = await buildBundle(bundleOut, pdf, repoRoot, provenance, git);
+  const files = await buildBundle(bundleOut, pdf, repoRoot, engineRoot, provenance, git);
 
   for (const p of files) {
     process.stderr.write(`[publish] upload ${basename(p)}\n`);

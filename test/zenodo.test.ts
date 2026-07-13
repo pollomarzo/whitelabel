@@ -208,14 +208,15 @@ describe('buildBundle', () => {
   const prov = {
     repo: 'o/r', commit_sha: 'x', tag: 'v1.0.0', site_url: undefined,
     concept_doi: 'd', version_doi: 'v', review_pr: '42', built_at: 'now',
+    platform: 'linux-x86_64', typst_version: '0.14.2',
   };
 
-  it('adds the four fixed files plus deposit/ files verbatim', async () => {
+  it('adds the five fixed files (incl. engine.zip) plus deposit/ files verbatim', async () => {
     const root = paperWithDeposit({ 'data.csv': '1,2,3', 'extra.txt': 'hi' });
     const out = join(root, '_bundle');
-    const files = (await buildBundle(out, join(root, 'paper.pdf'), root, prov, fakeGit)).map((p) => p.split('/').pop());
+    const files = (await buildBundle(out, join(root, 'paper.pdf'), root, root, prov, fakeGit)).map((p) => p.split('/').pop());
     expect(files).toEqual(
-      ['data.csv', 'extra.txt', 'myst.yml', 'paper.pdf', 'publication-provenance.json', 'source.zip'].sort(),
+      ['data.csv', 'engine.zip', 'extra.txt', 'myst.yml', 'paper.pdf', 'publication-provenance.json', 'source.zip'].sort(),
     );
     const written = JSON.parse(readFileSync(join(out, 'publication-provenance.json'), 'utf8'));
     expect(written.review_pr).toBe('42');
@@ -223,7 +224,7 @@ describe('buildBundle', () => {
 
   it('rejects a deposit/ file that collides with an engine-reserved name', async () => {
     const root = paperWithDeposit({ 'paper.pdf': 'oops' });
-    await expect(buildBundle(join(root, '_bundle'), join(root, 'paper.pdf'), root, prov, fakeGit)).rejects.toBeInstanceOf(
+    await expect(buildBundle(join(root, '_bundle'), join(root, 'paper.pdf'), root, root, prov, fakeGit)).rejects.toBeInstanceOf(
       BundleCollisionError,
     );
   });
@@ -323,10 +324,11 @@ describe('cmdPublish', () => {
       api,
       git: fakeGit,
       instanceRoot: null,
+      engineRoot: mystPath.replace('myst.yml', ''),
     });
     expect(out.exitCode).toBe(0);
     expect(out.result.version_doi).toBe('10.5072/zenodo.5');
-    expect(uploaded.sort()).toEqual(['myst.yml', 'paper.pdf', 'publication-provenance.json', 'source.zip']);
+    expect(uploaded.sort()).toEqual(['engine.zip', 'myst.yml', 'paper.pdf', 'publication-provenance.json', 'source.zip']);
   });
 
   it('errors when --sandbox disagrees with the committed DOI prefix', async () => {
@@ -336,6 +338,7 @@ describe('cmdPublish', () => {
     const out = await cmdPublish({
       mystPath, pdf: mystPath.replace('myst.yml', 'paper.pdf'), tag: 'v1.0.0',
       sandbox: false, bundleOut: '/tmp/x', api: noop, git: fakeGit, instanceRoot: null,
+      engineRoot: mystPath.replace('myst.yml', ''),
     });
     expect(out.exitCode).toBe(2);
   });

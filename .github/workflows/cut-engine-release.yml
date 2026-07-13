@@ -22,11 +22,6 @@ concurrency:
   group: cut-engine-release
   cancel-in-progress: false
 
-env:
-  # Pin to the engine's [R34] typst binary version once that is defined; used only to run the
-  # release-safety canary (the integration test renders the fixture PDF and needs typst on PATH).
-  TYPST_VERSION: "0.13.1"
-
 jobs:
   cut:
     runs-on: ubuntu-latest
@@ -41,13 +36,9 @@ jobs:
           node-version: 24        # matches the dev environment the bundle is validated on
           cache: npm
 
-      - name: Install typst (release-safety canary renders the fixture PDF)
-        run: |
-          curl -fsSL "https://github.com/typst/typst/releases/download/v${TYPST_VERSION}/typst-x86_64-unknown-linux-musl.tar.xz" \
-            | tar -xJ
-          sudo install -m 0755 typst-x86_64-unknown-linux-musl/typst /usr/local/bin/typst
-          typst --version
-
+      # typst is NOT installed here: cut-engine-release.sh fetches the engine-pinned version
+      # (typst.version) into bin/typst, renders the canary with it, and ships it at the tag
+      # leaf ([R34]/[R66]). One source of truth for the typst version, not two.
       - name: Cut the release
         env:
           GH_TOKEN: ${{ github.token }}

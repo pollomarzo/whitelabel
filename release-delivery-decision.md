@@ -38,4 +38,10 @@ pre-release** (accumulate + prune).
 - Exercising the CI plumbing costs a throwaway dev release (mitigated: `oak build` covers the logic inner loop).
 - Needs the small `cut-engine-release` helper (built; distinct from the Zenodo publish path).
 
-typst is out of scope — version-keyed cache/fetch, upstream's job ([R34]); this mechanism carries only `dist/cli.cjs`.
+typst was out of scope here originally; it is now **resolved** and rides the same tag-leaf
+mechanism ([R34]/[R66], `../implementation.md`): `cut-engine-release.sh` ships `bin/typst` next to
+`dist/cli.cjs`, and the Zenodo deposit carries an `engine.zip` so the DOI'd PDF is re-renderable
+on linux-x86_64 + node with nothing fetched. The decision doc also retires two framings this
+file leaned on — "replay-on-move" and "no network on the hot path" — as the *reasons* for
+commit-at-tag; the surviving reasons are install pathology (`dist/cli.cjs`) and
+reproducibility-of-the-DOI'd-artifact (`bin/typst`).

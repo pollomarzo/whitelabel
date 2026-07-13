@@ -68,6 +68,15 @@ object, unlike Release assets). A branch/unreleased pin fails loud in the shim (
 Testing the pipeline = cut a `vX.Y.Z-dev.N` pre-release (accumulate + prune). Rationale +
 rejected options: `release-delivery-decision.md`.
 
+The pinned **typst** binary rides the same tag leaf ([R34]; see `../implementation.md` [R66]):
+`cut-engine-release.sh` fetches the linux-x86_64 musl build at the version in `typst.version`,
+renders the canary with it, and commits `bin/typst` alongside `dist/cli.cjs` (`bin/` gitignored
+on `main`). `ci/run.sh` puts `$engine/bin/typst` on PATH, so a checked-out tag renders the PDF
+with no runner install or hot-path fetch. The Zenodo deposit also carries an `engine.zip`
+(`git archive` of the engine at the tag → typst + bundle + template), so the DOI'd PDF is
+re-renderable on linux-x86_64 + node with nothing fetched. Locally, keep `typst` on PATH
+(`oak build` and the integration test use it directly).
+
 ### Findings baked into these fixtures/code (not yet in design.md)
 
 1. **`id` ≠ `slug` ≠ `location`** — three distinct registry coordinates. Real ids are

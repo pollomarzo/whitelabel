@@ -185,7 +185,7 @@ async function cmdDeposit(argv: string[]): Promise<number> {
     const out = await z.cmdPublish({
       mystPath, pdf: resolve(pdf), tag, siteUrl, sandbox,
       bundleOut: resolve(flag(rest, 'bundle-out') ?? '_bundle'),
-      api, git: gh.realGitContext, instanceRoot,
+      api, git: gh.realGitContext, instanceRoot, engineRoot: engineRoot(),
     });
     emit(out.result);
     return out.exitCode;
@@ -247,6 +247,7 @@ async function cmdRelease(argv: string[]): Promise<number> {
     mystPath, pdf, tag,
     siteUrl: flag(argv, 'site-url') ?? process.env.SITE_URL,
     sandbox, bundleOut, api, git: gh.realGitContext, instanceRoot: instanceRootOf(argv),
+    engineRoot: engineRoot(),
   });
   emit(out.result);
 
