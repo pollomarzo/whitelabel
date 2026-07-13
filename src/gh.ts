@@ -64,7 +64,13 @@ export function openDoiPr(repoRoot: string, opts: { conceptDoi: string }): strin
   const branch = 'zenodo-doi';
   git(repoRoot, ['checkout', '-B', branch]);
   git(repoRoot, ['add', 'myst.yml']);
-  git(repoRoot, ['commit', '-m', `chore: reserve Zenodo DOI ${opts.conceptDoi}`]);
+  // A CI runner has no git identity, so an inline one is required or `commit` fails with
+  // "Author identity unknown" (the actions/checkout runner sets no user.name/email).
+  git(repoRoot, [
+    '-c', 'user.name=github-actions[bot]',
+    '-c', 'user.email=41898282+github-actions[bot]@users.noreply.github.com',
+    'commit', '-m', `chore: reserve Zenodo DOI ${opts.conceptDoi}`,
+  ]);
   git(repoRoot, ['push', '-u', 'origin', branch, '--force']);
   return gh([
     'pr', 'create',
