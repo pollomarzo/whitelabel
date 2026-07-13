@@ -9,6 +9,7 @@
  */
 import { join, resolve } from 'node:path';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { parseDocument } from 'yaml';
 
 // dist/cli.cjs is an esbuild CJS bundle ([R51]), so `__dirname` is the bundle's dir
@@ -220,7 +221,14 @@ async function cmdRelease(argv: string[]): Promise<number> {
   const z = await import('./zenodo.js');
   const gh = await import('./gh.js');
 
-  const { paperRoot } = await buildPaper(argv);
+  // Build in a CHILD process, not in-process: the myst HTML/site build calls process.exit(0)
+  // on success, which — run in-process — kills `release` before its deposit half ever runs
+  // (observed on CI: build succeeded, job exited 0, nothing deposited). The child isolates
+  // that exit; the parent then reads the same working tree's _build/exports (PDF) and
+  // _build/site/content (abstract) for the deposit. `oak build` ignores the extra release
+  // flags (--tag/--bundle-out/--site-url).
+  const paperRoot = resolve(flag(argv, 'paper') ?? '.');
+  execFileSync(process.execPath, [process.argv[1]!, 'build', ...argv], { stdio: 'inherit' });
   const mystPath = mystPathOf(argv);
 
   const doi = parseDocument(readFileSync(mystPath, 'utf8')).getIn(['project', 'doi']);
