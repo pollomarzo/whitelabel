@@ -28,19 +28,46 @@ import { isAbsolute, join } from 'node:path';
 import { readEngineOptions } from './schema.js';
 import { typstTemplateUrl, themeZipUrl } from './assets.js';
 
-/** Brand `site.options` fields that carry an asset PATH (myst template file-options:
- *  book-theme `logo`/`logo_dark`/`favicon`/`style`). These are the fields myst resolves
- *  against the PAPER root, not the declaring brand dir ([R62]) — so compose absolutizes
- *  them against `<instanceRoot>/brand`. Kept as one list so the edge reader (yaml-io)
- *  and compose agree on exactly which keys to lift out of brand.yml. */
-export const BRAND_ASSET_KEYS = ['logo', 'logo_dark', 'favicon', 'style'] as const;
+/** Brand asset fields that carry a PATH myst resolves against the PAPER root, not the
+ *  declaring brand dir ([R62]) — so compose absolutizes them against `<instanceRoot>/brand`.
+ *  Split by config namespace, because the two consumers read different places:
+ *   - `site.options.*` — the book-theme (HTML): logo/logo_dark/favicon/style.
+ *   - `project.options.logo` — the typst PDF watermark. The engine template ships NO
+ *     default watermark (design.md:160-161 keep the shared engine neutral); the tenant
+ *     supplies `logo-watermark.svg` and it flows into the typst `logo` template option.
+ *  Kept as one definition so the edge reader (yaml-io) and compose agree on the keys. */
+export const BRAND_ASSET_KEYS = {
+  site: ['logo', 'logo_dark', 'favicon', 'style'],
+  project: ['logo'],
+} as const;
 
 /** A value that myst can already resolve without help: an absolute local path, or a URL
  *  (the site build fetches+caches URLs via resolveToAbsolute). Only instance-RELATIVE
- *  paths (`./logo.svg`, `logo.svg`) need rewriting — those are what fail through extends. */
+ *  paths (`./logo.svg`, `logo.svg`) need rewriting — those are what fail through extends.
+ *  (A URL is fine for HTML but NOT typst, which can't fetch — so a brand watermark must be
+ *  a real file; validating that belongs in `oak validate`, not here.) */
 function needsAbsolutizing(value: string): boolean {
   if (isAbsolute(value)) return false;
   return !/^[a-zA-Z][\w+.-]*:\/\//.test(value); // not a scheme://… URL
+}
+
+/** Absolutize the instance-relative values among `raw` (the {@link BRAND_ASSET_KEYS}
+ *  subset for one namespace) against `<instanceRoot>/brand`. URLs / absolute pass through. */
+function absolutizeBrandAssets(
+  instanceRoot: string,
+  raw: Record<string, string> | undefined,
+  keys: readonly string[],
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (!raw) return out;
+  for (const key of keys) {
+    const value = raw[key];
+    if (typeof value !== 'string' || !value) continue;
+    out[key] = needsAbsolutizing(value)
+      ? join(instanceRoot, 'brand', value.replace(/^\.\//, ''))
+      : value;
+  }
+  return out;
 }
 
 /** The subset of a myst-resolved `project` (from loadConfig) that compose reads.
@@ -79,19 +106,22 @@ export interface ComposeInput {
     /** string → use it; null → omit site.template (myst default); undefined → release zip. */
     siteTemplate?: string | null;
   };
-  /** Raw brand `site.options` asset fields (the {@link BRAND_ASSET_KEYS} subset) as
+  /** Raw brand asset fields (the {@link BRAND_ASSET_KEYS} subset, per namespace) as
    *  DECLARED in the instance's `brand/brand.yml`, lifted verbatim by the edge (yaml-io).
    *  compose absolutizes any instance-relative value against `<instanceRoot>/brand` so it
-   *  resolves through the extends chain ([R62]: myst resolves logo/favicon against the
-   *  paper root, not the brand dir that declared them). URLs / already-absolute paths pass
-   *  through untouched. Read from brand.yml raw (not the merged config) on purpose: a
-   *  paper's OWN relative asset must NOT be reinterpreted as brand-relative. */
-  brandAssets?: Record<string, string>;
+   *  resolves through the extends chain ([R62]: myst resolves logo/favicon/watermark against
+   *  the paper root, not the brand dir that declared them). URLs / already-absolute paths
+   *  pass through untouched. Read from brand.yml raw (not the merged config) on purpose:
+   *  these are journal-controlled assets — a paper's OWN relative asset must NOT be
+   *  reinterpreted as brand-relative, and the brand's asset wins deterministically. */
+  brandAssets?: { site?: Record<string, string>; project?: Record<string, string> };
 }
 
 export interface OwnOverride {
-  /** Merged into the working-tree own `project` (deterministic base-wins by id). */
-  project?: { exports: Array<Record<string, unknown>> };
+  /** Merged into the working-tree own `project` (deterministic base-wins by id). `options`
+   *  carries the typst watermark (`logo`) — the ONE engine/brand-owned project option
+   *  compose sets; written per-key so author sibling options survive (finding 3). */
+  project?: { exports?: Array<Record<string, unknown>>; options?: Record<string, string> };
   /** Merged into the working-tree own `site`. `options` carries per-key asset overrides
    *  ([R62]); site.options merges field-wise base-wins (fillSiteFrontmatter), so setting
    *  individual keys leaves the brand's other options intact. */
@@ -196,19 +226,26 @@ export function compose(input: ComposeInput): ComposeResult {
     site.template = siteTemplate;
   }
 
-  // Brand assets ([R62]) — absolutize instance-relative logo/favicon/… against the brand
-  // dir so they resolve through extends (myst would otherwise resolve them against the
+  // Brand assets ([R62]) — absolutize instance-relative logo/favicon/watermark against the
+  // brand dir so they resolve through extends (myst would otherwise resolve them against the
   // paper root, where the instance's files don't exist). Only when an instance is present.
+  // HTML assets land in site.options; the typst watermark in project.options.logo.
   if (instanceRoot && input.brandAssets) {
-    const options: Record<string, string> = {};
-    for (const key of BRAND_ASSET_KEYS) {
-      const value = input.brandAssets[key];
-      if (typeof value !== 'string' || !value) continue;
-      options[key] = needsAbsolutizing(value)
-        ? join(instanceRoot, 'brand', value.replace(/^\.\//, ''))
-        : value;
+    const siteOptions = absolutizeBrandAssets(
+      instanceRoot,
+      input.brandAssets.site,
+      BRAND_ASSET_KEYS.site,
+    );
+    if (Object.keys(siteOptions).length) site.options = siteOptions;
+
+    const projectOptions = absolutizeBrandAssets(
+      instanceRoot,
+      input.brandAssets.project,
+      BRAND_ASSET_KEYS.project,
+    );
+    if (Object.keys(projectOptions).length) {
+      ownOverride.project = { ...ownOverride.project, options: projectOptions };
     }
-    if (Object.keys(options).length) site.options = options;
   }
 
   if (site.template !== undefined || site.options) ownOverride.site = site;

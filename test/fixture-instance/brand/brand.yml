@@ -9,6 +9,11 @@ version: 1
 # otherwise resolve them against the PAPER root, where the instance's files don't exist
 # ([R62]). A resolvable favicon is also what keeps the HTML prerender from fatally
 # 500-ing on /favicon.ico ([R61]).
+#
+# `site.options` assets feed the HTML book-theme. `project.options.logo` is the typst PDF
+# WATERMARK: the engine template ships no default (design.md:160-161 keep the shared engine
+# neutral), so each journal supplies its own logo-watermark.svg here. Unlike the site logo
+# it must be a real file — typst can't take a URL.
 site:
   options:
     logo_text: Fixture Journal
@@ -18,3 +23,6 @@ site:
   nav:
   - title: Gallery
     url: https://fixture.example.org
+project:
+  options:
+    logo: ./logo-watermark.svg

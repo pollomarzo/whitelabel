@@ -80,18 +80,32 @@ describe('compose — asset overrides on own config (finding 2 / [R5], [R52])', 
 
 describe('compose — brand asset absolutization ([R62])', () => {
   const brandAssets = {
-    logo: './logo.svg',
-    favicon: 'favicon.svg', // bare relative (no ./) also absolutized
-    logo_dark: 'https://cdn.example.org/logo-dark.svg', // URL untouched
-    style: '/already/absolute.css', // absolute untouched
+    site: {
+      logo: './logo.svg',
+      favicon: 'favicon.svg', // bare relative (no ./) also absolutized
+      logo_dark: 'https://cdn.example.org/logo-dark.svg', // URL untouched
+      style: '/already/absolute.css', // absolute untouched
+    },
+    project: {
+      logo: './logo-watermark.svg', // typst watermark → project.options.logo
+    },
   };
 
-  it('rewrites instance-relative paths to <instanceRoot>/brand/<x>', () => {
+  it('rewrites instance-relative site paths to <instanceRoot>/brand/<x>', () => {
     const r = compose(base({ brandAssets }));
     expect(r.ownOverride.site!.options).toMatchObject({
       logo: `${INSTANCE}/brand/logo.svg`,
       favicon: `${INSTANCE}/brand/favicon.svg`,
     });
+  });
+
+  it('routes the typst watermark into project.options.logo, absolutized', () => {
+    const r = compose(base({ brandAssets }));
+    expect(r.ownOverride.project!.options!.logo).toBe(
+      `${INSTANCE}/brand/logo-watermark.svg`,
+    );
+    // and it rides alongside the typst export entry, not replacing it
+    expect(r.ownOverride.project!.exports![0]!.id).toBe('typst-pdf');
   });
 
   it('passes URLs and already-absolute paths through untouched', () => {
@@ -113,14 +127,16 @@ describe('compose — brand asset absolutization ([R62])', () => {
     expect(r.ownOverride.site!.options!.logo).toBe(`${INSTANCE}/brand/logo.svg`);
   });
 
-  it('no brandAssets → no site.options (only the template)', () => {
+  it('no brandAssets → no asset options (only template + typst export)', () => {
     const r = compose(base());
     expect(r.ownOverride.site!.options).toBeUndefined();
+    expect(r.ownOverride.project!.options).toBeUndefined();
   });
 
   it('--no-instance emits no asset options', () => {
     const r = compose(base({ instanceRoot: null, brandAssets }));
     expect(r.ownOverride.site?.options).toBeUndefined();
+    expect(r.ownOverride.project?.options).toBeUndefined();
   });
 });
 

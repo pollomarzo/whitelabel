@@ -39,18 +39,28 @@ export function readEngineCoordinateRaw(
 /** Raw read of the instance brand's asset fields ({@link BRAND_ASSET_KEYS}) straight from
  *  `<instanceRoot>/brand/brand.yml` — the values compose() absolutizes ([R62]). Read from
  *  brand.yml directly (not the merged config) so only brand-DECLARED assets are treated as
- *  brand-relative; a paper's own relative asset is never reinterpreted. Absent file / keys
- *  → `{}` (compose emits nothing). */
-export function readBrandAssetOptions(instanceRoot: string): Record<string, string> {
+ *  brand-relative; a paper's own relative asset is never reinterpreted. Returns the fields
+ *  per namespace (`site.options.*` for HTML, `project.options.logo` for the typst
+ *  watermark). Absent file / keys → empty maps (compose emits nothing). */
+export function readBrandAssetOptions(
+  instanceRoot: string,
+): { site: Record<string, string>; project: Record<string, string> } {
   const brandPath = join(instanceRoot, 'brand', 'brand.yml');
-  if (!existsSync(brandPath)) return {};
+  const empty = { site: {}, project: {} };
+  if (!existsSync(brandPath)) return empty;
   const doc = parseDocument(readFileSync(brandPath, 'utf8'));
-  const out: Record<string, string> = {};
-  for (const key of BRAND_ASSET_KEYS) {
-    const value = doc.getIn(['site', 'options', key]);
-    if (typeof value === 'string' && value) out[key] = value;
-  }
-  return out;
+  const lift = (namespace: 'site' | 'project', keys: readonly string[]) => {
+    const out: Record<string, string> = {};
+    for (const key of keys) {
+      const value = doc.getIn([namespace, 'options', key]);
+      if (typeof value === 'string' && value) out[key] = value;
+    }
+    return out;
+  };
+  return {
+    site: lift('site', BRAND_ASSET_KEYS.site),
+    project: lift('project', BRAND_ASSET_KEYS.project),
+  };
 }
 
 /** Pass 1: set the `extends:` chain (replaces any existing — the new-model committed
@@ -61,12 +71,19 @@ export function setExtends(doc: Document, chain: string[]): void {
 }
 
 /** Pass 2: merge the engine `ownOverride` into the working-tree own config. Touches
- *  `project.exports`, `site.template`, and individual `site.options.<asset>` keys ([R62])
- *  — never `project.options` (finding 3: sibling option keys like `youtube` are left
- *  intact). Asset keys are set individually so the brand's other site.options survive. */
+ *  `project.exports`, `site.template`, and individual `site.options.<asset>` /
+ *  `project.options.<asset>` keys ([R62]). Asset keys are set individually (not by
+ *  replacing the whole `options` map) so author sibling options — `youtube`, the
+ *  `oaktree-sapling` coordinate — survive (finding 3). The only project option compose
+ *  ever sets is the brand's typst watermark `logo`, a journal-owned asset. */
 export function applyOwnOverride(doc: Document, override: OwnOverride): void {
   if (override.project?.exports) {
     doc.setIn(['project', 'exports'], override.project.exports);
+  }
+  if (override.project?.options) {
+    for (const [key, value] of Object.entries(override.project.options)) {
+      doc.setIn(['project', 'options', key], value);
+    }
   }
   if (override.site?.template) {
     doc.setIn(['site', 'template'], override.site.template);

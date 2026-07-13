@@ -62,9 +62,10 @@ describe('working-tree injection preserves author content ([R3])', () => {
     expect(doc.toString()).toContain('# Fixture paper');
   });
 
-  it('applies brand asset overrides as individual site.options keys, leaving siblings ([R62])', () => {
+  it('applies brand asset overrides as individual site+project option keys, leaving siblings ([R62])', () => {
     const doc = readDoc(fixturePaper);
     applyOwnOverride(doc, {
+      project: { options: { logo: '/abs/instance/brand/logo-watermark.svg' } },
       site: {
         template: 'https://example.org/book-theme.zip',
         options: { logo: '/abs/instance/brand/logo.svg', favicon: '/abs/instance/brand/f.svg' },
@@ -75,21 +76,26 @@ describe('working-tree injection preserves author content ([R3])', () => {
     expect(out.getIn(['site', 'template'])).toBe('https://example.org/book-theme.zip');
     expect(out.getIn(['site', 'options', 'logo'])).toBe('/abs/instance/brand/logo.svg');
     expect(out.getIn(['site', 'options', 'favicon'])).toBe('/abs/instance/brand/f.svg');
-    // the author's project options are never touched by the site override
+    // the typst watermark lands in project.options.logo
+    expect(out.getIn(['project', 'options', 'logo'])).toBe(
+      '/abs/instance/brand/logo-watermark.svg',
+    );
+    // the author's sibling project options are never clobbered (finding 3)
     expect(out.getIn(['project', 'options', 'youtube'])).toBe('https://youtu.be/dQw4w9WgXcQ');
+    expect(out.getIn(['project', 'options', 'oaktree-sapling', 'version'])).toBe('v0.3.0');
   });
 });
 
 describe('readBrandAssetOptions ([R62])', () => {
-  it('lifts the declared asset fields from the instance brand.yml', () => {
-    // the fixture brand declares relative logo + favicon (the values compose() absolutizes)
+  it('lifts the declared asset fields per namespace from the instance brand.yml', () => {
+    // the fixture brand declares relative site logo/favicon + a typst watermark
     expect(readBrandAssetOptions(fixtureInstance)).toEqual({
-      logo: './logo.svg',
-      favicon: './favicon.svg',
+      site: { logo: './logo.svg', favicon: './favicon.svg' },
+      project: { logo: './logo-watermark.svg' },
     });
   });
 
-  it('returns {} when the instance has no brand.yml', () => {
-    expect(readBrandAssetOptions('/no/such/instance')).toEqual({});
+  it('returns empty maps when the instance has no brand.yml', () => {
+    expect(readBrandAssetOptions('/no/such/instance')).toEqual({ site: {}, project: {} });
   });
 });
