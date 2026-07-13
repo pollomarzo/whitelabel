@@ -6,9 +6,10 @@
  * Document API, which preserves the author's content, key order, and comments — never a
  * textual patch. Nothing here is committed; CI/local operate on the working tree.
  */
-import { readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { parseDocument, type Document } from 'yaml';
-import type { OwnOverride } from './compose.js';
+import { BRAND_ASSET_KEYS, type OwnOverride } from './compose.js';
 
 export function readDoc(path: string): Document {
   return parseDocument(readFileSync(path, 'utf8'));
@@ -35,6 +36,23 @@ export function readEngineCoordinateRaw(
   return { version, edition };
 }
 
+/** Raw read of the instance brand's asset fields ({@link BRAND_ASSET_KEYS}) straight from
+ *  `<instanceRoot>/brand/brand.yml` — the values compose() absolutizes ([R62]). Read from
+ *  brand.yml directly (not the merged config) so only brand-DECLARED assets are treated as
+ *  brand-relative; a paper's own relative asset is never reinterpreted. Absent file / keys
+ *  → `{}` (compose emits nothing). */
+export function readBrandAssetOptions(instanceRoot: string): Record<string, string> {
+  const brandPath = join(instanceRoot, 'brand', 'brand.yml');
+  if (!existsSync(brandPath)) return {};
+  const doc = parseDocument(readFileSync(brandPath, 'utf8'));
+  const out: Record<string, string> = {};
+  for (const key of BRAND_ASSET_KEYS) {
+    const value = doc.getIn(['site', 'options', key]);
+    if (typeof value === 'string' && value) out[key] = value;
+  }
+  return out;
+}
+
 /** Pass 1: set the `extends:` chain (replaces any existing — the new-model committed
  *  paper carries none, but a migrating paper may still have URL pins we overwrite). */
 export function setExtends(doc: Document, chain: string[]): void {
@@ -42,14 +60,20 @@ export function setExtends(doc: Document, chain: string[]): void {
   else doc.set('extends', chain);
 }
 
-/** Pass 2: merge the engine `ownOverride` into the working-tree own config. Only
- *  `project.exports` and `site.template` are touched — never `project.options`
- *  (finding 3: sibling option keys like `youtube` are left intact). */
+/** Pass 2: merge the engine `ownOverride` into the working-tree own config. Touches
+ *  `project.exports`, `site.template`, and individual `site.options.<asset>` keys ([R62])
+ *  — never `project.options` (finding 3: sibling option keys like `youtube` are left
+ *  intact). Asset keys are set individually so the brand's other site.options survive. */
 export function applyOwnOverride(doc: Document, override: OwnOverride): void {
   if (override.project?.exports) {
     doc.setIn(['project', 'exports'], override.project.exports);
   }
   if (override.site?.template) {
     doc.setIn(['site', 'template'], override.site.template);
+  }
+  if (override.site?.options) {
+    for (const [key, value] of Object.entries(override.site.options)) {
+      doc.setIn(['site', 'options', key], value);
+    }
   }
 }

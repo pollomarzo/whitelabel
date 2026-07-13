@@ -24,8 +24,24 @@
  * exports (now carry the edition's `articles`); (2) compose(resolved) → ownOverride →
  * write into the working-tree own project/site → build. Neither write is committed.
  */
+import { isAbsolute, join } from 'node:path';
 import { readEngineOptions } from './schema.js';
 import { typstTemplateUrl, themeZipUrl } from './assets.js';
+
+/** Brand `site.options` fields that carry an asset PATH (myst template file-options:
+ *  book-theme `logo`/`logo_dark`/`favicon`/`style`). These are the fields myst resolves
+ *  against the PAPER root, not the declaring brand dir ([R62]) — so compose absolutizes
+ *  them against `<instanceRoot>/brand`. Kept as one list so the edge reader (yaml-io)
+ *  and compose agree on exactly which keys to lift out of brand.yml. */
+export const BRAND_ASSET_KEYS = ['logo', 'logo_dark', 'favicon', 'style'] as const;
+
+/** A value that myst can already resolve without help: an absolute local path, or a URL
+ *  (the site build fetches+caches URLs via resolveToAbsolute). Only instance-RELATIVE
+ *  paths (`./logo.svg`, `logo.svg`) need rewriting — those are what fail through extends. */
+function needsAbsolutizing(value: string): boolean {
+  if (isAbsolute(value)) return false;
+  return !/^[a-zA-Z][\w+.-]*:\/\//.test(value); // not a scheme://… URL
+}
 
 /** The subset of a myst-resolved `project` (from loadConfig) that compose reads.
  *  We depend only on myst's field NAMES, never a shape we define (design §12). */
@@ -63,13 +79,23 @@ export interface ComposeInput {
     /** string → use it; null → omit site.template (myst default); undefined → release zip. */
     siteTemplate?: string | null;
   };
+  /** Raw brand `site.options` asset fields (the {@link BRAND_ASSET_KEYS} subset) as
+   *  DECLARED in the instance's `brand/brand.yml`, lifted verbatim by the edge (yaml-io).
+   *  compose absolutizes any instance-relative value against `<instanceRoot>/brand` so it
+   *  resolves through the extends chain ([R62]: myst resolves logo/favicon against the
+   *  paper root, not the brand dir that declared them). URLs / already-absolute paths pass
+   *  through untouched. Read from brand.yml raw (not the merged config) on purpose: a
+   *  paper's OWN relative asset must NOT be reinterpreted as brand-relative. */
+  brandAssets?: Record<string, string>;
 }
 
 export interface OwnOverride {
   /** Merged into the working-tree own `project` (deterministic base-wins by id). */
   project?: { exports: Array<Record<string, unknown>> };
-  /** Merged into the working-tree own `site`. */
-  site?: { template: string };
+  /** Merged into the working-tree own `site`. `options` carries per-key asset overrides
+   *  ([R62]); site.options merges field-wise base-wins (fillSiteFrontmatter), so setting
+   *  individual keys leaves the brand's other options intact. */
+  site?: { template?: string; options?: Record<string, string> };
 }
 
 export interface ComposeResult {
@@ -163,11 +189,29 @@ export function compose(input: ComposeInput): ComposeResult {
 
   // Theme — the pinned book-theme fork zip (design §7), version-matched to the engine.
   // `siteTemplate: null` omits the override so myst falls back to its default theme.
+  const site: NonNullable<OwnOverride['site']> = {};
   const siteTemplate =
     assetOverrides.siteTemplate === undefined ? themeZipUrl() : assetOverrides.siteTemplate;
   if (siteTemplate !== null) {
-    ownOverride.site = { template: siteTemplate };
+    site.template = siteTemplate;
   }
+
+  // Brand assets ([R62]) — absolutize instance-relative logo/favicon/… against the brand
+  // dir so they resolve through extends (myst would otherwise resolve them against the
+  // paper root, where the instance's files don't exist). Only when an instance is present.
+  if (instanceRoot && input.brandAssets) {
+    const options: Record<string, string> = {};
+    for (const key of BRAND_ASSET_KEYS) {
+      const value = input.brandAssets[key];
+      if (typeof value !== 'string' || !value) continue;
+      options[key] = needsAbsolutizing(value)
+        ? join(instanceRoot, 'brand', value.replace(/^\.\//, ''))
+        : value;
+    }
+    if (Object.keys(options).length) site.options = options;
+  }
+
+  if (site.template !== undefined || site.options) ownOverride.site = site;
 
   return {
     extendsChain,

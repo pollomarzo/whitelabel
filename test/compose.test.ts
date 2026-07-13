@@ -78,6 +78,52 @@ describe('compose — asset overrides on own config (finding 2 / [R5], [R52])', 
   });
 });
 
+describe('compose — brand asset absolutization ([R62])', () => {
+  const brandAssets = {
+    logo: './logo.svg',
+    favicon: 'favicon.svg', // bare relative (no ./) also absolutized
+    logo_dark: 'https://cdn.example.org/logo-dark.svg', // URL untouched
+    style: '/already/absolute.css', // absolute untouched
+  };
+
+  it('rewrites instance-relative paths to <instanceRoot>/brand/<x>', () => {
+    const r = compose(base({ brandAssets }));
+    expect(r.ownOverride.site!.options).toMatchObject({
+      logo: `${INSTANCE}/brand/logo.svg`,
+      favicon: `${INSTANCE}/brand/favicon.svg`,
+    });
+  });
+
+  it('passes URLs and already-absolute paths through untouched', () => {
+    const r = compose(base({ brandAssets }));
+    expect(r.ownOverride.site!.options!.logo_dark).toBe(
+      'https://cdn.example.org/logo-dark.svg',
+    );
+    expect(r.ownOverride.site!.options!.style).toBe('/already/absolute.css');
+  });
+
+  it('still carries the theme site.template alongside the asset options', () => {
+    const r = compose(base({ brandAssets }));
+    expect(r.ownOverride.site!.template).toBe(themeZipUrl());
+  });
+
+  it('emits asset options even when the theme override is omitted (siteTemplate: null)', () => {
+    const r = compose(base({ brandAssets, assetOverrides: { siteTemplate: null } }));
+    expect(r.ownOverride.site!.template).toBeUndefined();
+    expect(r.ownOverride.site!.options!.logo).toBe(`${INSTANCE}/brand/logo.svg`);
+  });
+
+  it('no brandAssets → no site.options (only the template)', () => {
+    const r = compose(base());
+    expect(r.ownOverride.site!.options).toBeUndefined();
+  });
+
+  it('--no-instance emits no asset options', () => {
+    const r = compose(base({ instanceRoot: null, brandAssets }));
+    expect(r.ownOverride.site?.options).toBeUndefined();
+  });
+});
+
 describe('compose — finding 3: never clobber sibling options', () => {
   it('ownOverride touches only exports + site.template, never project.options', () => {
     const r = compose(base());

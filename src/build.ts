@@ -11,7 +11,14 @@
  */
 import { join } from 'node:path';
 import { compose, extendsChainFor, type ResolvedProject, type ComposeInput } from './compose.js';
-import { readDoc, writeDoc, setExtends, applyOwnOverride, readEngineCoordinateRaw } from './yaml-io.js';
+import {
+  readDoc,
+  writeDoc,
+  setExtends,
+  applyOwnOverride,
+  readEngineCoordinateRaw,
+  readBrandAssetOptions,
+} from './yaml-io.js';
 
 export interface BuildOpts {
   all?: boolean;
@@ -75,6 +82,10 @@ export async function runBuild(input: RunBuildInput): Promise<RunBuildResult> {
 
   const resolvedProject = await edge.loadProject(paperRoot);
 
+  // Raw brand asset fields ([R62]) — read from brand.yml directly (not the merged config)
+  // so compose absolutizes only brand-declared assets against `<instanceRoot>/brand`.
+  const brandAssets = instanceRoot ? readBrandAssetOptions(instanceRoot) : undefined;
+
   // --- compose over the resolved config (runs the R36 cross-check) -------------------
   const result = compose({
     paperRoot,
@@ -87,6 +98,7 @@ export async function runBuild(input: RunBuildInput): Promise<RunBuildResult> {
     baseUrl,
     buildKind,
     assetOverrides,
+    brandAssets,
   });
 
   // --- Pass 2: apply the engine override to the OWN config, then build --------------

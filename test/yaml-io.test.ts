@@ -7,9 +7,11 @@ import {
   setExtends,
   applyOwnOverride,
   readEngineCoordinateRaw,
+  readBrandAssetOptions,
 } from '../src/yaml-io.js';
 
 const fixturePaper = fileURLToPath(new URL('./fixture-paper/myst.yml', import.meta.url));
+const fixtureInstance = fileURLToPath(new URL('./fixture-instance', import.meta.url));
 
 describe('readEngineCoordinateRaw (local yq equivalent, §6a)', () => {
   it('reads version + edition from the raw doc, pre-extends', () => {
@@ -58,5 +60,36 @@ describe('working-tree injection preserves author content ([R3])', () => {
     });
     // a comment from the original file survived the round-trip
     expect(doc.toString()).toContain('# Fixture paper');
+  });
+
+  it('applies brand asset overrides as individual site.options keys, leaving siblings ([R62])', () => {
+    const doc = readDoc(fixturePaper);
+    applyOwnOverride(doc, {
+      site: {
+        template: 'https://example.org/book-theme.zip',
+        options: { logo: '/abs/instance/brand/logo.svg', favicon: '/abs/instance/brand/f.svg' },
+      },
+    });
+
+    const out = parseDocument(doc.toString());
+    expect(out.getIn(['site', 'template'])).toBe('https://example.org/book-theme.zip');
+    expect(out.getIn(['site', 'options', 'logo'])).toBe('/abs/instance/brand/logo.svg');
+    expect(out.getIn(['site', 'options', 'favicon'])).toBe('/abs/instance/brand/f.svg');
+    // the author's project options are never touched by the site override
+    expect(out.getIn(['project', 'options', 'youtube'])).toBe('https://youtu.be/dQw4w9WgXcQ');
+  });
+});
+
+describe('readBrandAssetOptions ([R62])', () => {
+  it('lifts the declared asset fields from the instance brand.yml', () => {
+    // the fixture brand declares relative logo + favicon (the values compose() absolutizes)
+    expect(readBrandAssetOptions(fixtureInstance)).toEqual({
+      logo: './logo.svg',
+      favicon: './favicon.svg',
+    });
+  });
+
+  it('returns {} when the instance has no brand.yml', () => {
+    expect(readBrandAssetOptions('/no/such/instance')).toEqual({});
   });
 });
