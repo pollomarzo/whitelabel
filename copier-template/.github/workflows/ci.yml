@@ -34,6 +34,7 @@ jobs:
           name: paper-build
           path: _build/html
           if-no-files-found: error
+          include-hidden-files: true
 
   deploy-pages:
     if: ${{ github.event_name != 'pull_request' }}
