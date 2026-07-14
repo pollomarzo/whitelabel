@@ -11,6 +11,7 @@
  */
 import { execFileSync } from 'node:child_process';
 import type { GitContext } from './zenodo.js';
+import type { GhPr, PagesDeployer } from './preview.js';
 
 function git(repoRoot: string, args: string[]): string {
   return execFileSync('git', ['-C', repoRoot, ...args], { encoding: 'utf8' }).trim();
@@ -106,3 +107,82 @@ export function openFailureIssue(repoRoot: string, title: string, body: string):
   const base = ['issue', 'create', ...(repo ? ['--repo', repo] : [])];
   gh([...base, '--title', title, '--body', body, '--label', 'zenodo-publish-failed']);
 }
+
+/* --------------------------------------------------------------------------
+ * preview.ts seams — the deploy-preview / notify GitHub effects ([R69])
+ * ------------------------------------------------------------------------ */
+
+/** The real git/gh PR context injected into `cmdDeployPreview` / the new-version reminder.
+ *  Sticky comments are keyed on a hidden HTML marker so re-runs edit in place, not pile up. */
+export const realGhPr: GhPr = {
+  sticky(repoRoot, prNumber, header, body) {
+    const repo = originRepo(repoRoot);
+    if (!repo) return;
+    const marker = `<!-- oak-sticky: ${header} -->`;
+    // Find an existing sticky (its body opens with the marker) and edit it; else create.
+    let existingId = '';
+    try {
+      existingId = gh([
+        'api', `repos/${repo}/issues/${prNumber}/comments`, '--paginate',
+        '--jq', `[.[] | select(.body | startswith("${marker}"))] | last | .id // empty`,
+      ]);
+    } catch {
+      /* no comments / no read access — fall through to create */
+    }
+    if (existingId) {
+      gh(['api', '--method', 'PATCH', `repos/${repo}/issues/comments/${existingId}`, '-F', 'body=@-'], { input: body });
+    } else {
+      gh(['api', '--method', 'POST', `repos/${repo}/issues/${prNumber}/comments`, '-F', 'body=@-'], { input: body });
+    }
+  },
+
+  addLabel(repoRoot, prNumber, label, opts = {}) {
+    const repo = originRepo(repoRoot);
+    const scope = repo ? ['--repo', repo] : [];
+    try {
+      const create = ['label', 'create', label, ...scope];
+      if (opts.color) create.push('--color', opts.color);
+      if (opts.description) create.push('--description', opts.description);
+      gh(create);
+    } catch {
+      /* label already exists — fine */
+    }
+    gh(['pr', 'edit', prNumber, ...scope, '--add-label', label]);
+  },
+
+  versionTags(_repoRoot, repo) {
+    // The Stage-2 checkout is shallow, so `git tag --merged origin/main` sees no history —
+    // read tags from the API instead ([R23]). `v*` filtered client-side.
+    if (!repo) return [];
+    try {
+      const out = gh(['api', `repos/${repo}/tags`, '--paginate', '--jq', '.[].name']);
+      return out.split('\n').map((t) => t.trim()).filter((t) => t.startsWith('v'));
+    } catch {
+      return [];
+    }
+  },
+};
+
+/** The real Cloudflare Pages deployer injected into `cmdDeployPreview`. Drives the CF Pages
+ *  direct-upload protocol via wrangler (the same tool today's `wrangler-action` wraps) and
+ *  parses the deployment URL from its output. Any failure throws — the caller degrades to an
+ *  artifact-link comment rather than failing the run ([R16]). */
+export const realPagesDeployer: PagesDeployer = {
+  async deploy(opts) {
+    const out = execFileSync(
+      'npx',
+      [
+        '--yes', 'wrangler', 'pages', 'deploy', opts.dir,
+        `--project-name=${opts.projectName}`,
+        `--branch=${opts.branch}`,
+      ],
+      {
+        encoding: 'utf8',
+        env: { ...process.env, CLOUDFLARE_API_TOKEN: opts.apiToken, CLOUDFLARE_ACCOUNT_ID: opts.accountId },
+      },
+    );
+    const m = /https?:\/\/[^\s]*\.pages\.dev[^\s]*/.exec(out);
+    if (!m) throw new Error('wrangler did not report a *.pages.dev deployment URL');
+    return m[0];
+  },
+};

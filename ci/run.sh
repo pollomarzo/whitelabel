@@ -24,7 +24,8 @@ if [ -x "$engine/bin/typst" ]; then export PATH="$engine/bin:$PATH"; fi
 
 extra=()
 
-# build + release run a real myst build → materialize instance-config + pick BASE_URL.
+# build + release run a real myst build → pick BASE_URL. deploy-preview only reads the
+# journal.yml preview: fields ([R27]), so it needs the instance but never a base_url.
 if [ "$verb" = "build" ] || [ "$verb" = "release" ]; then
   # BASE_URL: '' for PR previews (served at the Cloudflare root), '/<repo>' for Pages/prod.
   if [ "${GITHUB_EVENT_NAME:-}" = "pull_request" ]; then
@@ -33,9 +34,12 @@ if [ "$verb" = "build" ] || [ "$verb" = "release" ]; then
     base_url="/${GITHUB_REPOSITORY##*/}"
   fi
   extra+=(--base-url "$base_url")
+fi
 
-  # instance-config: public, depth-1, default branch (dec. 16/19). '.' = co-located
-  # (repo=journal, deferred) — leave to the CLI's root resolution.
+# instance-config: public, depth-1, default branch (dec. 16/19). '.' = co-located
+# (repo=journal, deferred) — leave to the CLI's root resolution. build/release need it for
+# the extends chain; deploy-preview needs it for the preview: knobs ([R27]/[R69]).
+if [ "$verb" = "build" ] || [ "$verb" = "release" ] || [ "$verb" = "deploy-preview" ]; then
   if [ -n "${INSTANCE_REPO:-}" ] && [ "${INSTANCE_REPO}" != "." ]; then
     inst_dir="$(mktemp -d)"
     git clone --depth 1 "https://github.com/${INSTANCE_REPO}.git" "$inst_dir"

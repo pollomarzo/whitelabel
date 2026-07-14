@@ -69,6 +69,7 @@ export const PreviewConfig = z
     branch_pattern: z.string().default('paper-{repo}-{pr}'),
   })
   .loose();
+export type PreviewConfig = z.infer<typeof PreviewConfig>;
 
 export const ZenodoConfig = z
   .object({

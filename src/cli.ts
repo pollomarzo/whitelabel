@@ -30,8 +30,6 @@ type Verb =
 
 const STUB_SLICE: Partial<Record<Verb, string>> = {
   validate: 'slice 4',
-  'deploy-preview': 'slice 2 (shim)',
-  notify: 'slice 2 (shim)',
   bootstrap: 'slice 5',
   upgrade: 'slice 5',
 };
@@ -278,11 +276,72 @@ async function cmdRelease(argv: string[]): Promise<number> {
   return out.exitCode;
 }
 
+/** `oak deploy-preview <site>` — deploy the inert Stage-1 artifact to Cloudflare Pages (or
+ *  degrade to an artifact-link comment [R16]), post the sticky preview comment, then run the
+ *  new-version reminder. Slice 2-shim; the git/gh + CF effects are the real gh.ts seams. */
+async function cmdDeployPreview(argv: string[]): Promise<number> {
+  const preview = await import('./preview.js');
+  const gh = await import('./gh.js');
+  const siteDir = resolve(argv.find((a) => !a.startsWith('--')) ?? 'site');
+  const out = await preview.cmdDeployPreview(
+    {
+      siteDir,
+      repoRoot: resolve(flag(argv, 'paper') ?? '.'),
+      instanceRoot: instanceRootOf(argv),
+      repo: flag(argv, 'repo') ?? process.env.GITHUB_REPOSITORY ?? null,
+      serverUrl: process.env.GITHUB_SERVER_URL ?? 'https://github.com',
+      cf: { apiToken: process.env.CLOUDFLARE_API_TOKEN, accountId: process.env.CLOUDFLARE_ACCOUNT_ID },
+      mystPath: mystPathOf(argv),
+    },
+    { deployer: gh.realPagesDeployer, gh: gh.realGhPr },
+  );
+  emit(out.result);
+  return out.exitCode;
+}
+
+/** `oak notify new-version [--pr N | --site <dir>]` — the standalone new-version reminder.
+ *  deploy-preview runs the same logic internally ([R16]); this is the manual/testable entry.
+ *  The PR number comes from `--pr` or a `.pr-number` in `--site` (read-only — deploy-preview
+ *  owns the [R26] delete). */
+async function cmdNotify(argv: string[]): Promise<number> {
+  if (argv[0] !== 'new-version') {
+    process.stderr.write('oak notify: usage: oak notify new-version [--pr N | --site <dir>]\n');
+    return 2;
+  }
+  const rest = argv.slice(1);
+  const preview = await import('./preview.js');
+  const gh = await import('./gh.js');
+
+  let pr = flag(rest, 'pr');
+  if (!pr) {
+    const f = join(resolve(flag(rest, 'site') ?? 'site'), '.pr-number');
+    if (existsSync(f)) pr = readFileSync(f, 'utf8').trim();
+  }
+  if (!pr) {
+    process.stderr.write('oak notify new-version: pass --pr N (or --site <dir> holding a .pr-number)\n');
+    return 2;
+  }
+
+  const out = preview.runNewVersionReminder(
+    {
+      repoRoot: resolve(flag(rest, 'paper') ?? '.'),
+      mystPath: mystPathOf(rest),
+      repo: flag(rest, 'repo') ?? process.env.GITHUB_REPOSITORY ?? null,
+      pr,
+    },
+    gh.realGhPr,
+  );
+  emit(out.result);
+  return out.exitCode;
+}
+
 async function main(argv: string[]): Promise<number> {
   const verb = argv[0] as Verb | undefined;
   if (verb === 'build') return cmdBuild(argv.slice(1));
   if (verb === 'deposit') return cmdDeposit(argv.slice(1));
   if (verb === 'release') return cmdRelease(argv.slice(1));
+  if (verb === 'deploy-preview') return cmdDeployPreview(argv.slice(1));
+  if (verb === 'notify') return cmdNotify(argv.slice(1));
   if (verb && verb in STUB_SLICE) {
     process.stderr.write(`oak ${verb}: not implemented yet (${STUB_SLICE[verb]}).\n`);
     return 1;
@@ -293,7 +352,9 @@ async function main(argv: string[]): Promise<number> {
       `  oak deposit prepare --repo <owner/repo> [--site-url <url>] [--sandbox] [--instance <dir>]\n` +
       `  oak deposit publish --pdf <path> --tag <vX.Y.Z> [--site-url <url>] [--sandbox] [--instance <dir>]\n` +
       `  oak deposit status  [--sandbox] [--instance <dir>]\n` +
-      `  oak release --tag <vX.Y.Z> [--paper <dir>] [--instance <dir>] [--site-url <url>]\n`,
+      `  oak release --tag <vX.Y.Z> [--paper <dir>] [--instance <dir>] [--site-url <url>]\n` +
+      `  oak deploy-preview <site> [--instance <dir>] [--repo <owner/repo>]\n` +
+      `  oak notify new-version [--pr <n> | --site <dir>] [--repo <owner/repo>]\n`,
   );
   return 2;
 }
