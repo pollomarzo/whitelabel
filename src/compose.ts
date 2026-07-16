@@ -46,9 +46,22 @@ export const BRAND_ASSET_KEYS = {
  *  paths (`./logo.svg`, `logo.svg`) need rewriting — those are what fail through extends.
  *  (A URL is fine for HTML but NOT typst, which can't fetch — so a brand watermark must be
  *  a real file; validating that belongs in `oak validate`, not here.) */
+export function isBrandAssetUrl(value: string): boolean {
+  return /^[a-zA-Z][\w+.-]*:\/\//.test(value); // a scheme://… URL (fine for HTML, NOT typst)
+}
+
 function needsAbsolutizing(value: string): boolean {
   if (isAbsolute(value)) return false;
-  return !/^[a-zA-Z][\w+.-]*:\/\//.test(value); // not a scheme://… URL
+  return !isBrandAssetUrl(value);
+}
+
+/** Resolve one brand asset value the way compose does: instance-relative ->
+ *  `<instanceRoot>/brand/<x>`; URLs / absolute paths pass through. Exported so `oak validate`
+ *  checks the SAME resolved path compose will emit ([R62]). */
+export function resolveBrandAssetPath(instanceRoot: string, value: string): string {
+  return needsAbsolutizing(value)
+    ? join(instanceRoot, 'brand', value.replace(/^\.\//, ''))
+    : value;
 }
 
 /** Absolutize the instance-relative values among `raw` (the {@link BRAND_ASSET_KEYS}
@@ -63,9 +76,7 @@ function absolutizeBrandAssets(
   for (const key of keys) {
     const value = raw[key];
     if (typeof value !== 'string' || !value) continue;
-    out[key] = needsAbsolutizing(value)
-      ? join(instanceRoot, 'brand', value.replace(/^\.\//, ''))
-      : value;
+    out[key] = resolveBrandAssetPath(instanceRoot, value);
   }
   return out;
 }
