@@ -19,3 +19,12 @@ zenodo:
   community: fixture-community
   description_blurb: >-
     This paper was created as part of the Fixture Journal.
+
+# Journal-controlled editorial checks (slice 4 Layer B). The author cannot weaken this set —
+# it lives here in instance-config; `oak validate` runs it and the PR check job gates on it.
+checks:
+  - id: authors-exist
+  - id: authors-have-orcid
+  - id: authors-have-credit-roles
+  - id: abstract-exists
+  - id: keywords-defined

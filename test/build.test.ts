@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { mkdtempSync, copyFileSync, readFileSync, mkdirSync } from 'node:fs';
+import { mkdtempSync, copyFileSync, readFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -14,6 +14,7 @@ const fixturePaper = fileURLToPath(new URL('./fixture-paper/myst.yml', import.me
 function tmpPaper(): string {
   const dir = mkdtempSync(join(tmpdir(), 'oak-build-'));
   copyFileSync(fixturePaper, join(dir, 'myst.yml'));
+  writeFileSync(join(dir, 'index.md'), '# Fixture\n');
   return dir;
 }
 
