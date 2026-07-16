@@ -11,6 +11,8 @@
  */
 import { join } from 'node:path';
 import { compose, extendsChainFor, type ResolvedProject, type ComposeInput } from './compose.js';
+import { runLayerA } from './validate.js';
+import { originRepo } from './gh.js';
 import {
   readDoc,
   writeDoc,
@@ -82,6 +84,26 @@ export async function runBuild(input: RunBuildInput): Promise<RunBuildResult> {
 
   const resolvedProject = await edge.loadProject(paperRoot);
 
+  // --- Pre-flight validate (Layer A): the engine's own invariants gate the build ([R21]).
+  // A sentinel/malformed id, broken layout, or (soft) brand issue is caught before the
+  // expensive myst build. Editorial (Layer B) checks are the PR check job's concern, not here.
+  const layerA = runLayerA({
+    paperRoot,
+    instanceRoot,
+    project: resolvedProject,
+    repo: process.env.GITHUB_REPOSITORY ?? originRepo(paperRoot),
+  });
+  const blocking = layerA.filter((f) => f.severity === 'error');
+  if (blocking.length) {
+    throw new Error(
+      'oak build: pre-flight validation failed:\n' +
+        blocking.map((f) => `  - [${f.check}] ${f.message}`).join('\n'),
+    );
+  }
+  const layerAWarnings = layerA
+    .filter((f) => f.severity === 'warn')
+    .map((f) => `[${f.check}] ${f.message}`);
+
   // Raw brand asset fields ([R62]) — read from brand.yml directly (not the merged config)
   // so compose absolutizes only brand-declared assets against `<instanceRoot>/brand`.
   const brandAssets = instanceRoot ? readBrandAssetOptions(instanceRoot) : undefined;
@@ -108,5 +130,5 @@ export async function runBuild(input: RunBuildInput): Promise<RunBuildResult> {
   if (baseUrl) process.env.BASE_URL = baseUrl;
   await edge.build(paperRoot, buildOpts);
 
-  return { resolvedProject, extendsChain, warnings: result.warnings };
+  return { resolvedProject, extendsChain, warnings: [...result.warnings, ...layerAWarnings] };
 }

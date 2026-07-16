@@ -29,7 +29,6 @@ type Verb =
   | 'upgrade';
 
 const STUB_SLICE: Partial<Record<Verb, string>> = {
-  validate: 'slice 4',
   bootstrap: 'slice 5',
   upgrade: 'slice 5',
 };
@@ -335,9 +334,50 @@ async function cmdNotify(argv: string[]): Promise<number> {
   return out.exitCode;
 }
 
+/** `oak validate` — run the journal-controlled checks (slice 4). Layer A (engine invariants,
+ *  also the `oak build` pre-flight phase) + Layer B (journal-selected editorial checks). Posts
+ *  a GitHub Check Run in CI (best-effort: needs GH_TOKEN + GITHUB_SHA + the repo). */
+async function cmdValidate(argv: string[]): Promise<number> {
+  const paperRoot = resolve(flag(argv, 'paper') ?? '.');
+  const noInstance = has(argv, 'no-instance');
+  const instanceFlag = flag(argv, 'instance');
+  if (!noInstance && !instanceFlag) {
+    process.stderr.write('oak validate: pass --instance <path> (or --no-instance for a bare check).\n');
+    return 2;
+  }
+  const instanceRoot = noInstance ? null : resolve(instanceFlag!);
+  const strict = has(argv, 'strict');
+
+  const gh = await import('./gh.js');
+  const repo = flag(argv, 'repo') ?? process.env.GITHUB_REPOSITORY ?? gh.originRepo(paperRoot);
+
+  const { runValidate } = await import('./validate.js');
+  const { createMystEdge } = await import('./myst.js');
+  const out = await runValidate({ paperRoot, instanceRoot, edge: createMystEdge() }, { strict, repo });
+
+  emit({
+    status: out.status,
+    errors: out.errors,
+    warnings: out.warnings,
+    checks: out.checks,
+    ...(has(argv, 'json') ? { checkRun: out.checkRun } : {}),
+  });
+
+  // Post the first-class Check Run in CI (needs checks:write + the head SHA).
+  if (process.env.GH_TOKEN && process.env.GITHUB_SHA && repo) {
+    try {
+      gh.realCheckRun.create(repo, process.env.GITHUB_SHA, 'Journal checks', out.checkRun);
+    } catch (e) {
+      process.stderr.write(`::warning::oak validate: check-run not posted (${(e as Error).message})\n`);
+    }
+  }
+  return out.exitCode;
+}
+
 async function main(argv: string[]): Promise<number> {
   const verb = argv[0] as Verb | undefined;
   if (verb === 'build') return cmdBuild(argv.slice(1));
+  if (verb === 'validate') return cmdValidate(argv.slice(1));
   if (verb === 'deposit') return cmdDeposit(argv.slice(1));
   if (verb === 'release') return cmdRelease(argv.slice(1));
   if (verb === 'deploy-preview') return cmdDeployPreview(argv.slice(1));
@@ -349,6 +389,7 @@ async function main(argv: string[]): Promise<number> {
   process.stderr.write(
     `oak: usage:\n` +
       `  oak build   [--paper <dir>] [--instance <dir> | --no-instance] [--base-url <url>] [--no-site-template]\n` +
+      `  oak validate [--paper <dir>] [--instance <dir> | --no-instance] [--strict] [--json]\n` +
       `  oak deposit prepare --repo <owner/repo> [--site-url <url>] [--sandbox] [--instance <dir>]\n` +
       `  oak deposit publish --pdf <path> --tag <vX.Y.Z> [--site-url <url>] [--sandbox] [--instance <dir>]\n` +
       `  oak deposit status  [--sandbox] [--instance <dir>]\n` +
