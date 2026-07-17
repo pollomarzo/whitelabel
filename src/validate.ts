@@ -27,10 +27,10 @@ import { readBrandAssetOptions } from './yaml-io.js';
 import {
   runChecks,
   toCheckRun,
-  type CheckResult,
+  CheckStatus,
+  type EngineCheckResult,
   type CheckRun,
   type JournalCheck,
-  type ProjectFrontmatter,
 } from './checks.js';
 import type { MystEdge } from './build.js';
 
@@ -205,7 +205,7 @@ export interface ValidateResult {
   status: 'ok' | 'error';
   errors: NamedFinding[];
   warnings: NamedFinding[];
-  checks: CheckResult[];
+  checks: EngineCheckResult[];
   checkRun: CheckRun;
   exitCode: number;
 }
@@ -215,7 +215,7 @@ export async function runValidate(
   opts: { strict?: boolean; repo?: string | null } = {},
   probes: FsProbes = realFs,
 ): Promise<ValidateResult> {
-  const project = (await input.edge.loadProject(input.paperRoot)) as ProjectFrontmatter & { id?: string };
+  const project = (await input.edge.loadProject(input.paperRoot)) as { id?: string };
   const repo = opts.repo ?? null;
 
   // Layer A — engine invariants
@@ -224,24 +224,28 @@ export async function runValidate(
     probes,
   );
 
-  // Layer B — journal-configured editorial checks
+  // Layer B — journal-configured editorial checks, provided by @curvenote/check-implementations.
+  // They read the myst store, so we run them inside a loaded+processed project session (the edge
+  // keeps myst-cli confined to myst.ts). The paper's own frontmatter is enough — no two-pass.
   const journal = loadJournal(input.instanceRoot, probes);
-  const checks = runChecks(project, (journal.checks ?? []) as JournalCheck[]);
+  const checks = await input.edge.withProjectSession(input.paperRoot, (session) =>
+    runChecks(session, (journal.checks ?? []) as JournalCheck[]),
+  );
 
   const errors = layerA.filter((f) => f.severity === 'error');
   const warnings = layerA.filter((f) => f.severity === 'warn');
 
   // Combined results for the Check Run: Layer-A findings as synthetic results (errors gate,
   // warns are optional) + the Layer-B editorial results.
-  const layerAResults: CheckResult[] = layerA.map((f) => ({
+  const layerAResults: EngineCheckResult[] = layerA.map((f) => ({
     id: f.check,
-    status: 'fail',
+    status: CheckStatus.fail,
     message: f.message,
     optional: f.severity === 'warn',
   }));
   const checkRun = toCheckRun([...layerAResults, ...checks]);
 
-  const blockingCheckFail = checks.some((c) => (c.status === 'fail' || c.status === 'error') && !c.optional);
+  const blockingCheckFail = checks.some((c) => (c.status === CheckStatus.fail || c.status === CheckStatus.error) && !c.optional);
   const hasError = errors.length > 0 || blockingCheckFail;
   const exitCode = hasError ? 1 : opts.strict && warnings.length ? 1 : 0;
 

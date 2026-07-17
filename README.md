@@ -119,6 +119,21 @@ re-renderable on linux-x86_64 + node with nothing fetched. Locally, keep `typst`
 - **Deferred here:** `--no-site-template` uses myst's default theme (network); a pinned
   local/cached theme + the cover-page/summary typst feature port are follow-ups.
 
+## Editorial checks (Layer B)
+
+`oak validate` has two layers. **Layer A** (`src/validate.ts`) is the engine's own invariants
+(id sentinel/shape/uniqueness, the n=1 paper layout, brand favicon/watermark resolvability).
+**Layer B** (`src/checks.ts`) is the journal-selected editorial checks (`journal.yml` `checks:`):
+authors exist / have ORCIDs / have valid CRediT roles, abstract exists, keywords defined, and
+more.
+
+The Layer-B checks are provided by the MIT-licensed
+[`@curvenote/check-implementations`](https://www.npmjs.com/package/@curvenote/check-implementations)
+and [`@curvenote/check-definitions`](https://www.npmjs.com/package/@curvenote/check-definitions)
+(see `package.json`). The engine supplies the *runner* (`runChecks` — which of the catalog checks
+a journal selects, and how an optional check is treated) and the GitHub Check-Run *reporter*
+(`toCheckRun`).
+
 ## Dev
 
 ```

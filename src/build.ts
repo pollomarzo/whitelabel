@@ -10,6 +10,7 @@
  * unit-testable with a fake — the real edge (myst.ts) pulls in the bundled myst-cli.
  */
 import { join } from 'node:path';
+import type { ISession } from 'myst-cli';
 import { compose, extendsChainFor, type ResolvedProject, type ComposeInput } from './compose.js';
 import { runLayerA } from './validate.js';
 import { originRepo } from './gh.js';
@@ -36,6 +37,13 @@ export interface MystEdge {
   loadProject(dir: string): Promise<ResolvedProject>;
   /** build(session, [], opts) from within `dir`. */
   build(dir: string, opts: BuildOpts): Promise<void>;
+  /**
+   * Load AND process the project at `dir` (config + current-project pointer + mdast), then run
+   * `fn` against the myst Session with the current project set — so the curvenote Layer-B checks
+   * can read the store (`selectCurrentProjectConfig` needs the pointer, [R59]; `abstract-exists`
+   * reads processed mdast). Frontmatter/abstract checks need this, NOT a full build/export.
+   */
+  withProjectSession<T>(dir: string, fn: (session: ISession) => Promise<T>): Promise<T>;
 }
 
 export interface RunBuildInput {

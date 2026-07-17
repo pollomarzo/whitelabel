@@ -13,12 +13,17 @@ const instanceRoot = fileURLToPath(new URL('./fixture-instance', import.meta.url
 const allTrue: FsProbes = { existsProbe: () => true, listTree: () => [] };
 const allFalse: FsProbes = { existsProbe: () => false, listTree: () => [] };
 
-function edgeReturning(project: unknown): MystEdge {
+function edgeReturning(project: unknown, checkResults: unknown[] = []): MystEdge {
   return {
     async loadProject() {
       return project as never;
     },
     async build() {},
+    // The real edge loads+processes a myst session and runs the curvenote checks; the fake just
+    // returns canned Layer-B results so the exit-code/combination logic stays unit-testable.
+    async withProjectSession() {
+      return checkResults as never;
+    },
   };
 }
 
@@ -93,6 +98,37 @@ describe('runValidate — exit codes over the fixture instance', () => {
     expect(out.exitCode).toBe(1);
     expect(out.errors.some((e) => e.check === 'id-shape')).toBe(true);
     expect(out.checkRun.conclusion).toBe('failure');
+  });
+
+  it('a blocking Layer-B editorial fail gates the run (exit 1, failure)', async () => {
+    const out = await runValidate(
+      {
+        paperRoot: '/paper',
+        instanceRoot,
+        edge: edgeReturning(goodProject, [{ id: 'authors-have-orcid', status: 'fail', message: 'no ORCID' }]),
+      },
+      { repo: 'open-scholar-nexus/fixture-sample-paper' },
+      allTrue,
+    );
+    expect(out.exitCode).toBe(1);
+    expect(out.checkRun.conclusion).toBe('failure');
+    expect(out.checks.some((c) => c.id === 'authors-have-orcid' && c.status === 'fail')).toBe(true);
+  });
+
+  it('an OPTIONAL Layer-B fail annotates but does not gate (exit 0)', async () => {
+    const out = await runValidate(
+      {
+        paperRoot: '/paper',
+        instanceRoot,
+        edge: edgeReturning(goodProject, [
+          { id: 'authors-have-orcid', status: 'fail', message: 'no ORCID', optional: true },
+        ]),
+      },
+      { repo: 'open-scholar-nexus/fixture-sample-paper' },
+      allTrue,
+    );
+    expect(out.exitCode).toBe(0);
+    expect(out.checkRun.conclusion).toBe('success');
   });
 
   it('bare --no-instance warns but does not fail; --strict flips it', async () => {
