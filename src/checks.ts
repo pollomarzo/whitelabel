@@ -10,6 +10,7 @@
  * weaken the set) and the GitHub Check-Run REPORTER (`toCheckRun`, pure). MyST `error_rules`
  * is NOT used for the gate: it is author-overridable, so it can't be the journal's contract.
  */
+import { isAbsolute, relative } from 'node:path';
 import type { ISession } from 'myst-cli';
 import {
   checks as CURVENOTE_DEFINITIONS,
@@ -104,11 +105,15 @@ const GITHUB_MAX_ANNOTATIONS = 50;
 /**
  * Map check results → a GitHub Check-Run payload. A non-optional fail/error → `failure`
  * conclusion (gates merge); optional findings annotate as warnings and never gate. Results
- * carrying `file`+`position` become inline annotations (capped at 50). Note: curvenote emits
- * ABSOLUTE `file` paths — GitHub wants repo-relative, but the reporter stays pure (no repo
- * root here); the caller relativizes upstream when it matters.
+ * carrying `file`+`position` become inline annotations (capped at 50).
+ *
+ * GitHub's Checks API keys annotations off REPO-RELATIVE paths; a path it can't resolve is
+ * dropped (a batch of them 422s the whole POST). curvenote is inconsistent — some checks emit
+ * an absolute `file` (`selectCurrentProjectFile`), others a relative one (`loadProjectFromDisk`
+ * → `index.md`). So `pathBase` (the repo checkout root — `GITHUB_WORKSPACE`, else the paper
+ * root) relativizes ONLY the absolute paths; already-relative ones pass through untouched.
  */
-export function toCheckRun(results: EngineCheckResult[]): CheckRun {
+export function toCheckRun(results: EngineCheckResult[], pathBase?: string): CheckRun {
   const failed = results.filter((r) => r.status === CheckStatus.fail || r.status === CheckStatus.error);
   const blocking = failed.filter((r) => !r.optional);
   const passed = results.filter((r) => r.status === CheckStatus.pass);
@@ -128,7 +133,7 @@ export function toCheckRun(results: EngineCheckResult[]): CheckRun {
     .filter((r) => r.file && r.position)
     .slice(0, GITHUB_MAX_ANNOTATIONS)
     .map((r) => ({
-      path: r.file!,
+      path: pathBase && isAbsolute(r.file!) ? relative(pathBase, r.file!) : r.file!,
       start_line: r.position!.start.line,
       end_line: (r.position!.end ?? r.position!.start).line,
       annotation_level: (r.optional ? 'warning' : 'failure') as 'warning' | 'failure',

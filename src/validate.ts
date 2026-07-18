@@ -212,7 +212,7 @@ export interface ValidateResult {
 
 export async function runValidate(
   input: { paperRoot: string; instanceRoot: string | null; edge: MystEdge },
-  opts: { strict?: boolean; repo?: string | null } = {},
+  opts: { strict?: boolean; repo?: string | null; pathBase?: string } = {},
   probes: FsProbes = realFs,
 ): Promise<ValidateResult> {
   const project = (await input.edge.loadProject(input.paperRoot)) as { id?: string };
@@ -223,17 +223,35 @@ export async function runValidate(
     { paperRoot: input.paperRoot, instanceRoot: input.instanceRoot, project, repo },
     probes,
   );
+  const errors = layerA.filter((f) => f.severity === 'error');
+  const warnings = layerA.filter((f) => f.severity === 'warn');
 
   // Layer B — journal-configured editorial checks, provided by @curvenote/check-implementations.
   // They read the myst store, so we run them inside a loaded+processed project session (the edge
   // keeps myst-cli confined to myst.ts). The paper's own frontmatter is enough — no two-pass.
+  //
+  // A blocking Layer-A finding (missing index.md, a stray secondary myst.yml, a bad id) means the
+  // project can't be processed — `withProjectSession` would THROW and take the whole report down,
+  // hiding the very Layer-A finding that explains the failure. So we short-circuit: skip Layer B
+  // when Layer A already blocks. And even when Layer A is clean we GUARD the Layer-B call, so an
+  // unexpected myst/curvenote throw degrades to a reported check error, never a crashed gate.
   const journal = loadJournal(input.instanceRoot, probes);
-  const checks = await input.edge.withProjectSession(input.paperRoot, (session) =>
-    runChecks(session, (journal.checks ?? []) as JournalCheck[]),
-  );
-
-  const errors = layerA.filter((f) => f.severity === 'error');
-  const warnings = layerA.filter((f) => f.severity === 'warn');
+  let checks: EngineCheckResult[] = [];
+  if (errors.length === 0) {
+    try {
+      checks = await input.edge.withProjectSession(input.paperRoot, (session) =>
+        runChecks(session, (journal.checks ?? []) as JournalCheck[]),
+      );
+    } catch (e) {
+      checks = [
+        {
+          id: 'editorial-checks',
+          status: CheckStatus.error,
+          message: `could not load the paper project for editorial checks: ${(e as Error).message}`,
+        },
+      ];
+    }
+  }
 
   // Combined results for the Check Run: Layer-A findings as synthetic results (errors gate,
   // warns are optional) + the Layer-B editorial results.
@@ -243,7 +261,9 @@ export async function runValidate(
     message: f.message,
     optional: f.severity === 'warn',
   }));
-  const checkRun = toCheckRun([...layerAResults, ...checks]);
+  // Relativize curvenote's (sometimes absolute) annotation paths against the repo checkout root
+  // so GitHub can resolve them; default to the paper root (== repo root in the n=1 model).
+  const checkRun = toCheckRun([...layerAResults, ...checks], opts.pathBase ?? input.paperRoot);
 
   const blockingCheckFail = checks.some((c) => (c.status === CheckStatus.fail || c.status === CheckStatus.error) && !c.optional);
   const hasError = errors.length > 0 || blockingCheckFail;

@@ -353,7 +353,22 @@ async function cmdValidate(argv: string[]): Promise<number> {
 
   const { runValidate } = await import('./validate.js');
   const { createMystEdge } = await import('./myst.js');
-  const out = await runValidate({ paperRoot, instanceRoot, edge: createMystEdge() }, { strict, repo });
+
+  // myst-cli writes progress to STDOUT — the `📖/📚 Built…` logger lines AND a raw `console.debug`
+  // from `new Session()` that bypasses its own logger — which would corrupt the JSON `emit()` puts
+  // there. Forward every stdout write to stderr for the duration of the run (preserving myst's own
+  // formatting), so stdout carries ONLY our machine-readable payload; restore before we emit.
+  const realStdoutWrite = process.stdout.write.bind(process.stdout);
+  process.stdout.write = process.stderr.write.bind(process.stderr) as typeof process.stdout.write;
+  let out;
+  try {
+    out = await runValidate(
+      { paperRoot, instanceRoot, edge: createMystEdge() },
+      { strict, repo, pathBase: process.env.GITHUB_WORKSPACE ?? paperRoot },
+    );
+  } finally {
+    process.stdout.write = realStdoutWrite;
+  }
 
   emit({
     status: out.status,

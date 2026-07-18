@@ -131,6 +131,47 @@ describe('runValidate — exit codes over the fixture instance', () => {
     expect(out.checkRun.conclusion).toBe('success');
   });
 
+  // The edge throws when Layer B runs — stands in for `processProject` failing on an unbuildable
+  // project (e.g. a missing index.md). Regression guard for the crash where such a throw took the
+  // whole validator down with no report.
+  const edgeThrowingInLayerB = (project: unknown): MystEdge => ({
+    async loadProject() {
+      return project as never;
+    },
+    async build() {},
+    async withProjectSession() {
+      throw new Error('processProject boom: no valid files');
+    },
+  });
+
+  it('a blocking Layer-A error short-circuits Layer B instead of crashing (exit 1)', async () => {
+    // index.md missing -> layout error -> Layer B is SKIPPED (its edge would throw). The run must
+    // still resolve with the layout finding reported, not reject.
+    const probes: FsProbes = { existsProbe: (p) => p.endsWith('myst.yml'), listTree: () => ['myst.yml'] };
+    const out = await runValidate(
+      { paperRoot: '/paper', instanceRoot, edge: edgeThrowingInLayerB(goodProject) },
+      { repo: 'open-scholar-nexus/fixture-sample-paper' },
+      probes,
+    );
+    expect(out.exitCode).toBe(1);
+    expect(out.errors.some((e) => e.check === 'layout')).toBe(true);
+    expect(out.checks).toHaveLength(0);
+    expect(out.checkRun.conclusion).toBe('failure');
+  });
+
+  it('guards an unexpected Layer-B throw into a reported error (exit 1, not a crash)', async () => {
+    // Layer A clean, but the myst session load throws -> degrade to a reported editorial-checks
+    // error result; the gate must not crash.
+    const out = await runValidate(
+      { paperRoot: '/paper', instanceRoot, edge: edgeThrowingInLayerB(goodProject) },
+      { repo: 'open-scholar-nexus/fixture-sample-paper' },
+      allTrue,
+    );
+    expect(out.exitCode).toBe(1);
+    expect(out.checks.some((c) => c.id === 'editorial-checks' && c.status === 'error')).toBe(true);
+    expect(out.checkRun.conclusion).toBe('failure');
+  });
+
   it('bare --no-instance warns but does not fail; --strict flips it', async () => {
     const base = { paperRoot: '/paper', instanceRoot: null, edge: edgeReturning(goodProject) };
     const lax = await runValidate(base, { repo: null }, allTrue);

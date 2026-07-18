@@ -8,7 +8,7 @@
  * [R51]). So this exercises the exact artifact CI runs. Skipped unless the bundle is present.
  */
 import { describe, it, expect } from 'vitest';
-import { execFileSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { mkdtempSync, copyFileSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -20,21 +20,21 @@ const fixturePaper = join(engineDir, 'test', 'fixture-paper');
 const fixtureInstance = join(engineDir, 'test', 'fixture-instance');
 const repo = 'open-scholar-nexus/fixture-sample-paper';
 
-/** Run `oak validate --json`, tolerating myst's progress logs on stdout: slice from the JSON. */
+/** Spawn `oak validate --json`, capturing stdout + stderr separately. */
+function spawnValidate(paper: string): { exitCode: number; stdout: string; stderr: string } {
+  const r = spawnSync(
+    'node',
+    [bundle, 'validate', '--paper', paper, '--instance', fixtureInstance, '--repo', repo, '--json'],
+    { encoding: 'utf8' },
+  );
+  return { exitCode: r.status ?? 1, stdout: r.stdout ?? '', stderr: r.stderr ?? '' };
+}
+
+/** Run and parse the JSON payload. stdout must be PURE JSON — myst's progress logs are routed to
+ *  stderr (cmdValidate), so we parse it directly with no slicing; a stray stdout write would throw. */
 function runValidate(paper: string): { exitCode: number; out: any } {
-  let raw = '';
-  let exitCode = 0;
-  try {
-    raw = execFileSync(
-      'node',
-      [bundle, 'validate', '--paper', paper, '--instance', fixtureInstance, '--repo', repo, '--json'],
-      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] },
-    );
-  } catch (e: any) {
-    raw = e.stdout?.toString() ?? '';
-    exitCode = e.status ?? 1;
-  }
-  return { exitCode, out: JSON.parse(raw.slice(raw.indexOf('{'))) };
+  const { exitCode, stdout } = spawnValidate(paper);
+  return { exitCode, out: JSON.parse(stdout) };
 }
 
 describe.skipIf(!existsSync(bundle))('oak validate — curvenote Layer-B checks (bundled)', () => {
@@ -48,6 +48,17 @@ describe.skipIf(!existsSync(bundle))('oak validate — curvenote Layer-B checks 
       expect(ids.has(id)).toBe(true);
     }
     expect(out.checks.every((c: any) => c.status === 'pass')).toBe(true);
+  }, 60_000);
+
+  it('--json stdout is pure parseable JSON; myst progress logs go to stderr', () => {
+    const { stdout, stderr } = spawnValidate(fixturePaper);
+    // The whole point of the contract: stdout parses as-is, with nothing before the JSON.
+    expect(stdout.trimStart().startsWith('{')).toBe(true);
+    expect(() => JSON.parse(stdout)).not.toThrow();
+    // myst's chatter (the raw `new Session()` console.debug + the `📖/📚 Built` logger lines)
+    // must be diverted off stdout — it belongs on stderr.
+    expect(stdout).not.toMatch(/building myst-cli session|📖 Built|📚 Built/);
+    expect(stderr).toMatch(/building myst-cli session with API URL/);
   }, 60_000);
 
   it('fails a bogus CRediT role + missing abstract: exit 1, failure (taxonomy depth from curvenote)', () => {

@@ -37,6 +37,45 @@ describe('toCheckRun (reporting — GitHub Check Run, ours)', () => {
     expect(r.annotations[0]).toMatchObject({ path: 'index.md', start_line: 1, annotation_level: 'failure' });
   });
 
+  it('relativizes an absolute annotation path against pathBase, leaves a relative one alone', () => {
+    // curvenote emits absolute (selectCurrentProjectFile) OR relative (loadProjectFromDisk) paths;
+    // GitHub only resolves repo-relative ones. pathBase = the checkout root.
+    const r = toCheckRun(
+      [
+        {
+          id: 'abs',
+          status: CheckStatus.fail,
+          message: 'm',
+          file: '/home/runner/work/repo/repo/papers/foo/myst.yml',
+          position: { start: { line: 3, column: 1 }, end: { line: 3, column: 1 } },
+        },
+        {
+          id: 'rel',
+          status: CheckStatus.fail,
+          message: 'm',
+          file: 'index.md',
+          position: { start: { line: 1, column: 1 }, end: { line: 1, column: 1 } },
+        },
+      ],
+      '/home/runner/work/repo/repo',
+    );
+    expect(r.annotations[0]?.path).toBe('papers/foo/myst.yml');
+    expect(r.annotations[1]?.path).toBe('index.md');
+  });
+
+  it('without a pathBase, paths pass through unchanged (pure default)', () => {
+    const r = toCheckRun([
+      {
+        id: 'abs',
+        status: CheckStatus.fail,
+        message: 'm',
+        file: '/abs/myst.yml',
+        position: { start: { line: 1, column: 1 }, end: { line: 1, column: 1 } },
+      },
+    ]);
+    expect(r.annotations[0]?.path).toBe('/abs/myst.yml');
+  });
+
   it('an optional finding annotates as a warning, not a failure', () => {
     const r = toCheckRun([
       {
