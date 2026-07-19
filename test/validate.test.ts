@@ -40,6 +40,20 @@ describe('checkLayout', () => {
     const probes: FsProbes = { existsProbe: () => true, listTree: () => ['myst.yml', 'index.md'] };
     expect(checkLayout('/paper', probes)).toHaveLength(0);
   });
+  it('ignores infra dirs the CI shim drops in (.engine, .git, node_modules)', () => {
+    const probes: FsProbes = {
+      existsProbe: () => true,
+      listTree: () => [
+        'myst.yml',
+        'index.md',
+        '.engine/test/fixture-paper/myst.yml', // engine checkout under the paper root
+        '.engine/copier-template/myst.yml',
+        '.git/whatever',
+        'node_modules/pkg/myst.yml',
+      ],
+    };
+    expect(checkLayout('/paper', probes)).toHaveLength(0);
+  });
 });
 
 describe('checkBrandFavicon ([R61])', () => {

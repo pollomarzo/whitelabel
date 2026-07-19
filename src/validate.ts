@@ -67,13 +67,16 @@ export function checkLayout(
   const stray = probes
     .listTree(paperRoot)
     .map((f) => f.replace(/\\/g, '/'))
-    .filter(
-      (f) =>
-        f !== 'myst.yml' &&
-        /(^|\/)myst\.yml$/.test(f) &&
-        !f.startsWith('_build/') &&
-        !f.startsWith('node_modules/'),
-    );
+    .filter((f) => {
+      if (f === 'myst.yml' || !/(^|\/)myst\.yml$/.test(f)) return false;
+      // Ignore infra dirs that tooling drops INTO the paper root — they aren't the author's
+      // layout. Critically `.engine/`: the CI composite action checks the engine out there
+      // (`path: .engine`), under the paper root, so its own fixture/template myst.yml files
+      // would otherwise read as strays. Same for any dotdir (`.git`, `.github`), `_build/`,
+      // and a nested `node_modules/`.
+      const dirs = f.split('/').slice(0, -1);
+      return !dirs.some((d) => d.startsWith('.') || d === '_build' || d === 'node_modules');
+    });
   for (const s of stray) {
     out.push({
       severity: 'error',
