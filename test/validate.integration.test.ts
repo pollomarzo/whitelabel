@@ -80,4 +80,21 @@ describe.skipIf(!existsSync(bundle))('oak validate — curvenote Layer-B checks 
     const abstract = out.checks.find((c: any) => c.id === 'abstract-exists');
     expect(abstract.status).toBe('fail');
   }, 60_000);
+
+  it('--report writes the full JSON envelope (with checkRun) for Stage-2 check-post', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'oak-report-'));
+    const reportPath = join(tmp, 'report.json');
+    const r = spawnSync(
+      'node',
+      [bundle, 'validate', '--paper', fixturePaper, '--instance', fixtureInstance, '--repo', repo, '--report', reportPath],
+      { encoding: 'utf8' },
+    );
+    expect(r.status).toBe(0);
+    expect(existsSync(reportPath)).toBe(true);
+    const written = JSON.parse(readFileSync(reportPath, 'utf8'));
+    // The report always carries the full envelope — checkRun included, regardless of --json.
+    expect(written.checkRun.conclusion).toBe('success');
+    expect(Array.isArray(written.checks)).toBe(true);
+    expect(written.status).toBe('ok');
+  }, 60_000);
 });

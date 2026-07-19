@@ -1,20 +1,16 @@
 name: Journal checks
 
-# The journal-controlled PR gate (slice 4). Runs `oak validate` — Layer A engine invariants
-# + Layer B journal-selected editorial checks — and posts a first-class GitHub Check Run
-# (summary table + inline annotations) via the engine's own `gh` seam. Separate from Paper CI
-# (ci.yml) on purpose: editorial feedback must survive a broken build and read as its own
-# "Journal checks" status.
+# Stage 1 of the two-stage journal-checks flow (slice 4b). COMPUTE only, untrusted: runs on
+# the `pull_request` event with a read-only, secret-less token — safe for fork content, which
+# `oak validate` only READS. It writes the check report to an artifact and NEVER posts to the
+# PR. All PR write-back (the Check Run + the sticky comment) happens in Stage 2
+# (check-post.yml, a `workflow_run` job in base context), exactly like the preview split
+# (ci.yml → preview-deploy.yml): fork + same-repo PRs take the identical path, and the step
+# that runs untrusted paper content never holds a writable token.
 #
-# TRUST (design §6a): this runs on the untrusted `pull_request` event with a read-only,
-# secret-less token — safe for fork content, which `oak validate` only READS (loadConfig +
-# processProject, no writes). The Check Run POST needs `checks: write`, which GitHub grants on
-# same-repo PRs + pushes but FORCES read-only on FORK PRs. So on a fork the post is skipped
-# (the engine's `realCheckRun` is best-effort — a 403 degrades to a `::warning::`, never a
-# crash) and the merge gate falls back to THIS job's exit code (`oak validate` exits 1 on a
-# blocking failure). Giving fork PRs the rich Check Run too needs the Stage-2 `workflow_run`
-# companion that re-posts Stage-1's precomputed payload from base context (like
-# preview-deploy.yml does for previews) — deferred; the exit-code gate covers forks until then.
+# This job SUCCEEDS whenever a valid report was produced — even when checks FAIL — so Stage 2
+# always fires and posts the (failing) Check Run that gates the merge. Only a genuine engine
+# crash (no report / invalid JSON) fails this job.
 
 on:
   pull_request:
@@ -23,8 +19,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read # checkout; the untrusted job holds nothing else
-  checks: write # post the "Journal checks" Check Run (auto-downgraded to read on fork PRs)
+  contents: read # checkout only; the untrusted compute job holds nothing else
 
 concurrency:
   group: ${{ github.event_name == 'pull_request' && format('check-{0}', github.head_ref) || 'check-main' }}
@@ -35,13 +30,39 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: ./.github/actions/engine
+
+      # `oak validate` exits 1 on a blocking failure (its contract, used by the merge gate +
+      # local runs). Here that must NOT fail Stage 1 — we only need the report file. So the
+      # step tolerates a nonzero exit; the guard below re-imposes "fail on a genuine crash".
+      - id: validate
+        continue-on-error: true
+        uses: ./.github/actions/engine
         with:
-          args: validate
-        env:
-          # `gh` (the engine's Check-Run poster) reads GH_TOKEN; on a fork PR this token is
-          # read-only, so the post no-ops and only the exit code gates. The engine resolves the
-          # PR HEAD sha from the event payload itself (GITHUB_SHA is the merge commit on a PR,
-          # and the runner re-injects it into composite-action steps, so an env override here
-          # wouldn't stick).
-          GH_TOKEN: ${{ github.token }}
+          args: validate --report report.json
+
+      - name: Ensure a valid report was produced
+        run: |
+          if ! jq -e '.checkRun.conclusion' report.json >/dev/null 2>&1; then
+            echo "::error::oak validate produced no valid report (engine crash) — failing Stage 1"
+            exit 1
+          fi
+          echo "report ok — conclusion: $(jq -r '.checkRun.conclusion' report.json)"
+
+      # Stash the PR HEAD sha (GITHUB_SHA is the ephemeral merge commit on a PR — a Check Run
+      # there never surfaces on the PR) and the PR number (workflow_run.pull_requests is EMPTY
+      # for forks). Stage 2 reads both from the artifact.
+      - name: Record head sha + PR number
+        run: |
+          echo "${{ github.event.pull_request.head.sha || github.sha }}" > head-sha
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "${{ github.event.pull_request.number }}" > pr-number
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: journal-checks
+          path: |
+            report.json
+            head-sha
+            pr-number
+          if-no-files-found: error

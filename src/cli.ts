@@ -8,7 +8,7 @@
  * dep only loads when actually building.
  */
 import { join, resolve } from 'node:path';
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { parseDocument } from 'yaml';
 
@@ -21,6 +21,7 @@ declare const __dirname: string;
 type Verb =
   | 'build'
   | 'validate'
+  | 'check-post'
   | 'deploy-preview'
   | 'deposit'
   | 'release'
@@ -334,25 +335,11 @@ async function cmdNotify(argv: string[]): Promise<number> {
   return out.exitCode;
 }
 
-/** The SHA a CI Check Run should attach to. On `pull_request` GITHUB_SHA is the synthetic
- *  merge commit (a check run there is invisible on the PR), so read the PR HEAD sha from the
- *  event payload; otherwise (push/dispatch) GITHUB_SHA is correct. */
-function ciHeadSha(): string | undefined {
-  if (process.env.GITHUB_EVENT_NAME === 'pull_request' && process.env.GITHUB_EVENT_PATH) {
-    try {
-      const ev = JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH, 'utf8'));
-      const head = ev?.pull_request?.head?.sha;
-      if (typeof head === 'string' && head) return head;
-    } catch {
-      /* fall through to GITHUB_SHA */
-    }
-  }
-  return process.env.GITHUB_SHA;
-}
-
 /** `oak validate` — run the journal-controlled checks (slice 4). Layer A (engine invariants,
- *  also the `oak build` pre-flight phase) + Layer B (journal-selected editorial checks). Posts
- *  a GitHub Check Run in CI (best-effort: needs GH_TOKEN + GITHUB_SHA + the repo). */
+ *  also the `oak build` pre-flight phase) + Layer B (journal-selected editorial checks). Emits
+ *  the report to stdout and, with `--report <path>`, writes the full JSON envelope for the
+ *  Stage-2 `oak check-post` job to post. Does NOT post to GitHub itself — all PR write-back is
+ *  now uniform Stage-2 (the untrusted validate job holds no write token). */
 async function cmdValidate(argv: string[]): Promise<number> {
   const paperRoot = resolve(flag(argv, 'paper') ?? '.');
   const noInstance = has(argv, 'no-instance');
@@ -394,26 +381,58 @@ async function cmdValidate(argv: string[]): Promise<number> {
     ...(has(argv, 'json') ? { checkRun: out.checkRun } : {}),
   });
 
-  // Post the first-class Check Run in CI (needs checks:write + the head SHA). On a
-  // `pull_request` the default GITHUB_SHA is the ephemeral MERGE commit; a check run there
-  // does NOT surface on the PR — so we resolve the PR HEAD sha from the event payload
-  // ourselves (the runner keeps re-injecting the merge SHA, so a workflow `env:` override
-  // can't be relied on). Falls back to GITHUB_SHA off a PR (push/dispatch).
-  const headSha = ciHeadSha();
-  if (process.env.GH_TOKEN && headSha && repo) {
-    try {
-      gh.realCheckRun.create(repo, headSha, 'Journal checks', out.checkRun);
-    } catch (e) {
-      process.stderr.write(`::warning::oak validate: check-run not posted (${(e as Error).message})\n`);
-    }
+  // `--report <path>`: write the FULL envelope (checkRun always included) for the Stage-2
+  // `oak check-post` job, which reads it in trusted base context and posts the Check Run +
+  // sticky comment. Stage 1 never posts (it holds no write token over fork content).
+  const reportPath = flag(argv, 'report');
+  if (reportPath) {
+    writeFileSync(
+      resolve(reportPath),
+      JSON.stringify(
+        { status: out.status, errors: out.errors, warnings: out.warnings, checks: out.checks, checkRun: out.checkRun },
+        null,
+        2,
+      ),
+    );
   }
   return out.exitCode;
+}
+
+/** `oak check-post --report <path> --repo <o/r> --sha <headsha> [--pr <n>]` — Stage-2 write-back
+ *  (slice 4b). Reads the precomputed `oak validate` report and posts a first-class Check Run on
+ *  the PR HEAD sha plus, when a PR, an always-on sticky comment. Runs in trusted base context
+ *  (checks:write + pull-requests:write); never re-runs validate or touches myst. Best-effort:
+ *  a failing post degrades to a `::warning::`, never fails the job (needs GH_TOKEN). */
+async function cmdCheckPost(argv: string[]): Promise<number> {
+  const reportPath = flag(argv, 'report');
+  const repo = flag(argv, 'repo') ?? process.env.GITHUB_REPOSITORY;
+  const sha = flag(argv, 'sha');
+  const pr = flag(argv, 'pr');
+  if (!reportPath || !repo || !sha) {
+    process.stderr.write('oak check-post: --report <path>, --repo <owner/repo> and --sha <headsha> are required\n');
+    return 2;
+  }
+  if (!existsSync(reportPath)) {
+    process.stderr.write(`oak check-post: report file not found: ${reportPath}\n`);
+    return 2;
+  }
+  const report = JSON.parse(readFileSync(reportPath, 'utf8'));
+
+  const gh = await import('./gh.js');
+  const { cmdCheckPost: run } = await import('./checks.js');
+  const out = run(
+    { report, repo, sha, pr },
+    { checkRun: gh.realCheckRun, sticky: (root, prNum, header, body) => gh.realGhPr.sticky(root, prNum, header, body) },
+  );
+  emit({ ...out });
+  return 0;
 }
 
 async function main(argv: string[]): Promise<number> {
   const verb = argv[0] as Verb | undefined;
   if (verb === 'build') return cmdBuild(argv.slice(1));
   if (verb === 'validate') return cmdValidate(argv.slice(1));
+  if (verb === 'check-post') return cmdCheckPost(argv.slice(1));
   if (verb === 'deposit') return cmdDeposit(argv.slice(1));
   if (verb === 'release') return cmdRelease(argv.slice(1));
   if (verb === 'deploy-preview') return cmdDeployPreview(argv.slice(1));
@@ -425,7 +444,8 @@ async function main(argv: string[]): Promise<number> {
   process.stderr.write(
     `oak: usage:\n` +
       `  oak build   [--paper <dir>] [--instance <dir> | --no-instance] [--base-url <url>] [--no-site-template]\n` +
-      `  oak validate [--paper <dir>] [--instance <dir> | --no-instance] [--strict] [--json]\n` +
+      `  oak validate [--paper <dir>] [--instance <dir> | --no-instance] [--strict] [--json] [--report <path>]\n` +
+      `  oak check-post --report <path> --repo <owner/repo> --sha <headsha> [--pr <n>]\n` +
       `  oak deposit prepare --repo <owner/repo> [--site-url <url>] [--sandbox] [--instance <dir>]\n` +
       `  oak deposit publish --pdf <path> --tag <vX.Y.Z> [--site-url <url>] [--sandbox] [--instance <dir>]\n` +
       `  oak deposit status  [--sandbox] [--instance <dir>]\n` +

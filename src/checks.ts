@@ -142,3 +142,97 @@ export function toCheckRun(results: EngineCheckResult[], pathBase?: string): Che
 
   return { conclusion, title, summary, annotations };
 }
+
+/* --------------------------------------------------------------------------
+ * Stage-2 PR write-back — the sticky comment + Check Run poster (slice 4b).
+ *
+ * All PR write-back moves to the trusted Stage-2 `workflow_run` job (base context): the
+ * untrusted `pull_request` job that runs `oak validate` over fork content holds no write
+ * token. Stage 1 writes the report file; Stage 2 runs `oak check-post`, which reads that
+ * precomputed report and posts BOTH a first-class Check Run (gates + annotates) AND an
+ * always-on sticky PR comment (visibility — authors rarely click the Check Run "Details").
+ * Never re-runs validate / rebuilds paper content.
+ * ------------------------------------------------------------------------ */
+
+/** Sticky-comment header for the journal-checks PR comment (stable identifier — do not rename;
+ *  the upsert key `<!-- oak-sticky: oak-journal-checks -->` is baked into posted comments). */
+export const STICKY_CHECKS = 'oak-journal-checks';
+
+/** The `oak validate --report` payload check-post reads. Only `checkRun` is load-bearing here
+ *  (the rest of the validate envelope is carried for completeness / debugging). */
+export interface ChecksReport {
+  status?: 'ok' | 'error';
+  checkRun: CheckRun;
+  [k: string]: unknown;
+}
+
+/**
+ * Render the always-on sticky PR comment from a checks report (pure). Opens with the sticky
+ * marker so `sticky()` upserts it in place; a headline from the Check-Run conclusion + title
+ * ("N passed, M failed"), then the same markdown table the Check Run carries, then a footer.
+ */
+export function checksComment(report: ChecksReport): string {
+  const { conclusion, title, summary } = report.checkRun;
+  const icon = conclusion === 'success' ? '✅' : '❌';
+  const headline = conclusion === 'success' ? 'Journal checks passed' : 'Journal checks failed';
+  return [
+    `<!-- oak-sticky: ${STICKY_CHECKS} -->`,
+    `### ${icon} ${headline} — ${title}`,
+    '',
+    summary,
+    '',
+    '_Engine-invariant + journal editorial checks. Updated on every push to this PR._',
+  ].join('\n');
+}
+
+/** Seams for `cmdCheckPost` — structurally satisfied by `gh.realCheckRun` and
+ *  `gh.realGhPr.sticky`, injected as fakes in unit tests. */
+export interface CheckPostDeps {
+  checkRun: { create(repo: string, headSha: string, name: string, run: CheckRun): void };
+  sticky(repoRoot: string, prNumber: string, header: string, body: string): void;
+}
+
+export interface CheckPostOutcome {
+  status: 'ok';
+  checkRunPosted: boolean;
+  commentPosted: boolean;
+  warnings: string[];
+}
+
+/**
+ * `oak check-post` orchestration: post the precomputed report's Check Run on the PR HEAD sha
+ * and, when a PR number is given, upsert the always-on sticky comment. Best-effort — each post
+ * is guarded so a failing seam (e.g. a read-only token) degrades to a `::warning::` and never
+ * crashes the Stage-2 job. Posting needs `GH_TOKEN` in the real `gh` seams.
+ */
+export function cmdCheckPost(
+  input: { report: ChecksReport; repo: string; sha: string; pr?: string },
+  deps: CheckPostDeps,
+): CheckPostOutcome {
+  const { report, repo, sha, pr } = input;
+  const warnings: string[] = [];
+  let checkRunPosted = false;
+  let commentPosted = false;
+
+  try {
+    deps.checkRun.create(repo, sha, 'Journal checks', report.checkRun);
+    checkRunPosted = true;
+  } catch (e) {
+    const msg = `check-post: Check Run not posted (${(e as Error).message})`;
+    warnings.push(msg);
+    process.stderr.write(`::warning::${msg}\n`);
+  }
+
+  if (pr) {
+    try {
+      deps.sticky('.', pr, STICKY_CHECKS, checksComment(report));
+      commentPosted = true;
+    } catch (e) {
+      const msg = `check-post: comment not posted (${(e as Error).message})`;
+      warnings.push(msg);
+      process.stderr.write(`::warning::${msg}\n`);
+    }
+  }
+
+  return { status: 'ok', checkRunPosted, commentPosted, warnings };
+}

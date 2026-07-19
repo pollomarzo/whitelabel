@@ -1,0 +1,62 @@
+name: Journal checks post
+
+# Stage 2 of the two-stage journal-checks flow (slice 4b). POST only, trusted: runs in
+# BASE-repo context after "Journal checks" (check.yml) completes, so it holds the write token
+# that fork PRs never get — the same split preview-deploy.yml uses. It ONLY downloads Stage
+# 1's precomputed report artifact and posts it; it NEVER re-runs validate or rebuilds paper
+# content (that would reopen the injection hole through the shim's back door). The engine ref
+# + action code come from the BASE default branch (guaranteed by workflow_run).
+#
+# Posts BOTH a first-class "Journal checks" Check Run on the PR HEAD (gates merge + annotates)
+# and an always-on sticky PR comment (visibility — authors rarely click the Check Run
+# "Details"). On a `push` to main it posts the success Check Run with no comment (no PR).
+
+on:
+  workflow_run:
+    workflows: ["Journal checks"]
+    types: [completed]
+
+permissions:
+  contents: read # checkout the base default branch (engine ref + action code)
+  actions: read # download the cross-run artifact
+  checks: write # post the "Journal checks" Check Run
+  pull-requests: write # upsert the sticky checks comment
+
+concurrency:
+  # Key on head repo + branch so two forks PRing from `main` don't cancel each other ([R15]).
+  group: check-post-${{ github.event.workflow_run.head_repository.full_name }}-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: true
+
+jobs:
+  post:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4 # BASE default branch ⇒ engine ref AND action code from base
+      - uses: actions/download-artifact@v4
+        with:
+          name: journal-checks
+          path: journal-checks
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+
+      - id: meta
+        run: |
+          echo "sha=$(cat journal-checks/head-sha)" >> "$GITHUB_OUTPUT"
+          if [ -f journal-checks/pr-number ]; then
+            echo "pr=$(cat journal-checks/pr-number)" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Posts the precomputed report — the Check Run on the PR HEAD sha and, when a PR, the
+      # sticky comment. Best-effort inside the engine: a post failure degrades to a
+      # `::warning::`, never fails this job.
+      - uses: ./.github/actions/engine
+        with:
+          args: >-
+            check-post
+            --report journal-checks/report.json
+            --repo ${{ github.repository }}
+            --sha ${{ steps.meta.outputs.sha }}
+            ${{ steps.meta.outputs.pr && format('--pr {0}', steps.meta.outputs.pr) || '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
