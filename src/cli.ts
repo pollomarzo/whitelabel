@@ -8,7 +8,7 @@
  * dep only loads when actually building.
  */
 import { join, resolve } from 'node:path';
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { parseDocument } from 'yaml';
 
@@ -21,6 +21,7 @@ declare const __dirname: string;
 type Verb =
   | 'build'
   | 'validate'
+  | 'check-post'
   | 'deploy-preview'
   | 'deposit'
   | 'release'
@@ -29,7 +30,6 @@ type Verb =
   | 'upgrade';
 
 const STUB_SLICE: Partial<Record<Verb, string>> = {
-  validate: 'slice 4',
   bootstrap: 'slice 5',
   upgrade: 'slice 5',
 };
@@ -335,9 +335,104 @@ async function cmdNotify(argv: string[]): Promise<number> {
   return out.exitCode;
 }
 
+/** `oak validate` — run the journal-controlled checks (slice 4). Layer A (engine invariants,
+ *  also the `oak build` pre-flight phase) + Layer B (journal-selected editorial checks). Emits
+ *  the report to stdout and, with `--report <path>`, writes the full JSON envelope for the
+ *  Stage-2 `oak check-post` job to post. Does NOT post to GitHub itself — all PR write-back is
+ *  now uniform Stage-2 (the untrusted validate job holds no write token). */
+async function cmdValidate(argv: string[]): Promise<number> {
+  const paperRoot = resolve(flag(argv, 'paper') ?? '.');
+  const noInstance = has(argv, 'no-instance');
+  const instanceFlag = flag(argv, 'instance');
+  if (!noInstance && !instanceFlag) {
+    process.stderr.write('oak validate: pass --instance <path> (or --no-instance for a bare check).\n');
+    return 2;
+  }
+  const instanceRoot = noInstance ? null : resolve(instanceFlag!);
+  const strict = has(argv, 'strict');
+
+  const gh = await import('./gh.js');
+  const repo = flag(argv, 'repo') ?? process.env.GITHUB_REPOSITORY ?? gh.originRepo(paperRoot);
+
+  const { runValidate } = await import('./validate.js');
+  const { createMystEdge } = await import('./myst.js');
+
+  // myst-cli writes progress to STDOUT — the `📖/📚 Built…` logger lines AND a raw `console.debug`
+  // from `new Session()` that bypasses its own logger — which would corrupt the JSON `emit()` puts
+  // there. Forward every stdout write to stderr for the duration of the run (preserving myst's own
+  // formatting), so stdout carries ONLY our machine-readable payload; restore before we emit.
+  const realStdoutWrite = process.stdout.write.bind(process.stdout);
+  process.stdout.write = process.stderr.write.bind(process.stderr) as typeof process.stdout.write;
+  let out;
+  try {
+    out = await runValidate(
+      { paperRoot, instanceRoot, edge: createMystEdge() },
+      { strict, repo, pathBase: process.env.GITHUB_WORKSPACE ?? paperRoot },
+    );
+  } finally {
+    process.stdout.write = realStdoutWrite;
+  }
+
+  emit({
+    status: out.status,
+    errors: out.errors,
+    warnings: out.warnings,
+    checks: out.checks,
+    ...(has(argv, 'json') ? { checkRun: out.checkRun } : {}),
+  });
+
+  // `--report <path>`: write the FULL envelope (checkRun always included) for the Stage-2
+  // `oak check-post` job, which reads it in trusted base context and posts the Check Run +
+  // sticky comment. Stage 1 never posts (it holds no write token over fork content).
+  const reportPath = flag(argv, 'report');
+  if (reportPath) {
+    writeFileSync(
+      resolve(reportPath),
+      JSON.stringify(
+        { status: out.status, errors: out.errors, warnings: out.warnings, checks: out.checks, checkRun: out.checkRun },
+        null,
+        2,
+      ),
+    );
+  }
+  return out.exitCode;
+}
+
+/** `oak check-post --report <path> --repo <o/r> --sha <headsha> [--pr <n>]` — Stage-2 write-back
+ *  (slice 4b). Reads the precomputed `oak validate` report and posts a first-class Check Run on
+ *  the PR HEAD sha plus, when a PR, an always-on sticky comment. Runs in trusted base context
+ *  (checks:write + pull-requests:write); never re-runs validate or touches myst. Best-effort:
+ *  a failing post degrades to a `::warning::`, never fails the job (needs GH_TOKEN). */
+async function cmdCheckPost(argv: string[]): Promise<number> {
+  const reportPath = flag(argv, 'report');
+  const repo = flag(argv, 'repo') ?? process.env.GITHUB_REPOSITORY;
+  const sha = flag(argv, 'sha');
+  const pr = flag(argv, 'pr');
+  if (!reportPath || !repo || !sha) {
+    process.stderr.write('oak check-post: --report <path>, --repo <owner/repo> and --sha <headsha> are required\n');
+    return 2;
+  }
+  if (!existsSync(reportPath)) {
+    process.stderr.write(`oak check-post: report file not found: ${reportPath}\n`);
+    return 2;
+  }
+  const report = JSON.parse(readFileSync(reportPath, 'utf8'));
+
+  const gh = await import('./gh.js');
+  const { cmdCheckPost: run } = await import('./checks.js');
+  const out = run(
+    { report, repo, sha, pr },
+    { checkRun: gh.realCheckRun, sticky: (root, prNum, header, body) => gh.realGhPr.sticky(root, prNum, header, body) },
+  );
+  emit({ ...out });
+  return 0;
+}
+
 async function main(argv: string[]): Promise<number> {
   const verb = argv[0] as Verb | undefined;
   if (verb === 'build') return cmdBuild(argv.slice(1));
+  if (verb === 'validate') return cmdValidate(argv.slice(1));
+  if (verb === 'check-post') return cmdCheckPost(argv.slice(1));
   if (verb === 'deposit') return cmdDeposit(argv.slice(1));
   if (verb === 'release') return cmdRelease(argv.slice(1));
   if (verb === 'deploy-preview') return cmdDeployPreview(argv.slice(1));
@@ -349,6 +444,8 @@ async function main(argv: string[]): Promise<number> {
   process.stderr.write(
     `oak: usage:\n` +
       `  oak build   [--paper <dir>] [--instance <dir> | --no-instance] [--base-url <url>] [--no-site-template]\n` +
+      `  oak validate [--paper <dir>] [--instance <dir> | --no-instance] [--strict] [--json] [--report <path>]\n` +
+      `  oak check-post --report <path> --repo <owner/repo> --sha <headsha> [--pr <n>]\n` +
       `  oak deposit prepare --repo <owner/repo> [--site-url <url>] [--sandbox] [--instance <dir>]\n` +
       `  oak deposit publish --pdf <path> --tag <vX.Y.Z> [--site-url <url>] [--sandbox] [--instance <dir>]\n` +
       `  oak deposit status  [--sandbox] [--instance <dir>]\n` +

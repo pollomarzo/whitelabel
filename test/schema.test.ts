@@ -128,6 +128,16 @@ describe('checkIdUniqueness (check B — needs the registry)', () => {
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.severity).toBe('warn');
   });
+
+  it('downgrades a clash to a warning when self is not identifiable (no repo context)', () => {
+    // Offline/local build: no GITHUB_REPOSITORY, temp checkout — the paper's own entry
+    // cannot be distinguished from a real duplicate, so it must not hard-gate.
+    const r = checkIdUniqueness('fixture-2026-sample-paper', registry, undefined, {
+      selfIdentifiable: false,
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.severity).toBe('warn');
+  });
 });
 
 describe('Pins', () => {

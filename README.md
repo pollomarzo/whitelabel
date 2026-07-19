@@ -35,7 +35,7 @@ test renders a real PDF through the bundled CLI):
 | `src/yaml-io.ts` | working-tree myst.yml round-trips (Document API, never sed — [R3]). |
 | `src/build.ts` | **`oak build`**: the two-pass orchestrator ([R52]); myst edge injected for testing. |
 | `src/myst.ts` | the mystmd edge (the one module importing bundled myst-cli — [R51]); sets the current project+site pointers via `findCurrent*AndLoad` so `build` renders HTML ([R59]). |
-| `src/cli.ts` | `oak` entry point; `build` + `deposit`/`release` implemented; `deploy-preview`/`notify`/`validate`/`bootstrap`/`upgrade` stubbed by slice. |
+| `src/cli.ts` | `oak` entry point; `build` + `deposit`/`release` + `validate` implemented; `deploy-preview`/`notify`/`bootstrap`/`upgrade` stubbed by slice. |
 | `src/zenodo.ts` | **`oak deposit`**: the zenodo-deposit.py port (prepare/publish/status); paginated + id-first lookups, `deposit/` bundle, tenant bytes from journal.yml. HTTP + git/gh injected as seams; no myst-cli import. |
 | `src/gh.ts` | git/gh side effects (`GitContext` + DOI PR / release asset / comment / issue), kept out of `zenodo.ts` so the deposit logic stays network-free under test. |
 | `templates/typst/` | the engine's generic typst template (seeded from lapreprint-typst; used by path for offline PDF — design dec. 2). |
@@ -92,7 +92,7 @@ re-renderable on linux-x86_64 + node with nothing fetched. Locally, keep `typst`
    only the engine subkey; the override pass touches only exports + site.template, never
    options. Guarded end-to-end (the fixture's real youtube survives the whole pipeline).
 4. **Dual layouts** (e.g. `tahiri/Paper/`) — layout enforcement must reject a *stray
-   secondary* `myst.yml`, not just a missing top-level one. (Deferred to `oak validate`.)
+   secondary* `myst.yml`, not just a missing top-level one. (Done: `checkLayout` in `oak validate`.)
 5. **HTML needs the current-site pointer** ([R59], live run) — `loadConfig` fills the store's
    `sites` map but not `currentSitePath`, so `build` skipped HTML. `myst.ts` calls
    `findCurrentProjectAndLoad`/`findCurrentSiteAndLoad` before `build`. Offline canaries use
@@ -112,12 +112,28 @@ re-renderable on linux-x86_64 + node with nothing fetched. Locally, keep `typst`
   version-agnostic prepare (the tag carries the version, at publish). `oak deposit`/`release`
   unstubbed. **Verified live against the Zenodo sandbox:** prepare→draft, publish→PDF + all bundle
   files + metadata parity, and id-first reuse across a simulated repo move (the [R7] guarantee).
-- **Frontier now:** `deploy-preview`/`notify` (slice 2-shim) + `validate` (slice 4) still stubbed.
+- **Frontier now:** `deploy-preview`/`notify` (slice 2-shim) still stubbed; `validate` (slice 4)
+  implemented, its CI workflow wiring deferred.
   Slice-3 loose ends: geetha's sentinel `id` still unfixed ([R12], blocks id-first in prod); the
   gh side effects (DOI PR / release asset / issue) are wired but only exercised in CI; pagination
   is unit-tested only (the sandbox account has <100 depositions).
 - **Deferred here:** `--no-site-template` uses myst's default theme (network); a pinned
   local/cached theme + the cover-page/summary typst feature port are follow-ups.
+
+## Editorial checks (Layer B)
+
+`oak validate` has two layers. **Layer A** (`src/validate.ts`) is the engine's own invariants
+(id sentinel/shape/uniqueness, the n=1 paper layout, brand favicon/watermark resolvability).
+**Layer B** (`src/checks.ts`) is the journal-selected editorial checks (`journal.yml` `checks:`):
+authors exist / have ORCIDs / have valid CRediT roles, abstract exists, keywords defined, and
+more.
+
+The Layer-B checks are provided by the MIT-licensed
+[`@curvenote/check-implementations`](https://www.npmjs.com/package/@curvenote/check-implementations)
+and [`@curvenote/check-definitions`](https://www.npmjs.com/package/@curvenote/check-definitions)
+(see `package.json`). The engine supplies the *runner* (`runChecks` — which of the catalog checks
+a journal selects, and how an optional check is treated) and the GitHub Check-Run *reporter*
+(`toCheckRun`).
 
 ## Dev
 

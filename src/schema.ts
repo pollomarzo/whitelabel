@@ -83,6 +83,20 @@ export const ZenodoConfig = z
   .loose();
 export type ZenodoConfig = z.infer<typeof ZenodoConfig>;
 
+/**
+ * A journal-selected check (slice 4 "Layer B"). The JOURNAL picks which editorial checks run
+ * (by id) + per-check options; the paper author cannot weaken the set (it lives in
+ * instance-config, a repo the author doesn't control). `optional: true` -> advisory: annotates
+ * but never gates merge. `.loose()` carries per-check option keys.
+ */
+export const Check = z
+  .object({
+    id: z.string().min(1),
+    optional: z.boolean().optional(),
+  })
+  .loose();
+export type Check = z.infer<typeof Check>;
+
 export const JournalConfig = z
   .object({
     name: z.string().min(1),
@@ -98,6 +112,8 @@ export const JournalConfig = z
     id_pattern: z.string().optional(),
     preview: PreviewConfig.prefault({}),
     zenodo: ZenodoConfig.prefault({}),
+    /** Journal-selected editorial checks run by `oak validate` (slice 4 Layer B). */
+    checks: z.array(Check).default([]),
   })
   .loose();
 export type JournalConfig = z.infer<typeof JournalConfig>;
@@ -200,6 +216,7 @@ export function checkIdUniqueness(
   id: string,
   registry: Registry | null,
   self?: { slug?: string },
+  opts: { selfIdentifiable?: boolean } = {},
 ): IdCheckResult {
   if (registry === null) {
     return {
@@ -210,6 +227,17 @@ export function checkIdUniqueness(
   }
   const clash = registry.find((e) => e.id === id && e.slug !== self?.slug);
   if (clash) {
+    // Self-exclusion keys off the paper's repo (findSelf). Without a repo context — an
+    // offline/local build with no GITHUB_REPOSITORY and a temp or non-origin checkout — we
+    // cannot tell our OWN registry entry from a real duplicate, so we must not hard-gate:
+    // downgrade to a warning. CI always sets GITHUB_REPOSITORY, so the gate stays hard there.
+    if (opts.selfIdentifiable === false) {
+      return {
+        ok: false,
+        severity: 'warn',
+        message: `paper id "${id}" is registered to ${clash.location.repo} (slug ${clash.slug}); cannot confirm it is not this paper's own entry without a repo context`,
+      };
+    }
     return {
       ok: false,
       severity: 'error',

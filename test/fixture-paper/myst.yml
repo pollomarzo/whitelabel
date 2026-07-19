@@ -8,6 +8,7 @@ version: 1
 project:
   id: fixture-2026-sample-paper
   title: A Fixture Paper for Engine Release Safety
+  abstract: A short plain-language abstract for the engine release-safety fixture paper.
   date: 2026-07-09
   authors:
   - name: Ada Fixture

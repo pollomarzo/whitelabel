@@ -20,9 +20,11 @@ import {
   Session,
   loadConfig,
   build,
+  processProject,
   findCurrentProjectAndLoad,
   findCurrentSiteAndLoad,
 } from 'myst-cli';
+import type { ISession } from 'myst-cli';
 import type { MystEdge, BuildOpts } from './build.js';
 import type { ResolvedProject } from './compose.js';
 
@@ -47,6 +49,22 @@ export function createMystEdge(): MystEdge {
           await findCurrentSiteAndLoad(session, dir);
           await build(session, [], { all: opts.all, html: opts.html });
         }
+      } finally {
+        process.chdir(prev);
+      }
+    },
+    async withProjectSession<T>(dir: string, fn: (session: ISession) => Promise<T>): Promise<T> {
+      const prev = process.cwd();
+      process.chdir(dir);
+      try {
+        // Set the current-project pointer ([R59] — bare loadConfig leaves it unset) AND process
+        // the project into mdast, both from the paper root (cwd). The curvenote checks read from
+        // cwd/'.': `loadProjectFromDisk` defaults to cwd and `selectLocalProjectConfig(state,'.')`
+        // is keyed off it, so they must run with cwd === the paper root. No file writes, no HTML
+        // theme, no exports — far lighter than a build; enough for the frontmatter/abstract checks.
+        await findCurrentProjectAndLoad(session, '.');
+        await processProject(session, { path: '.' }, { writeFiles: false, writeTOC: false });
+        return await fn(session);
       } finally {
         process.chdir(prev);
       }

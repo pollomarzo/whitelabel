@@ -12,6 +12,7 @@
 import { execFileSync } from 'node:child_process';
 import type { GitContext } from './zenodo.js';
 import type { GhPr, PagesDeployer } from './preview.js';
+import type { CheckRun } from './checks.js';
 
 function git(repoRoot: string, args: string[]): string {
   return execFileSync('git', ['-C', repoRoot, ...args], { encoding: 'utf8' }).trim();
@@ -184,5 +185,28 @@ export const realPagesDeployer: PagesDeployer = {
     const m = /https?:\/\/[^\s]*\.pages\.dev[^\s]*/.exec(out);
     if (!m) throw new Error('wrangler did not report a *.pages.dev deployment URL');
     return m[0];
+  },
+};
+
+/* --------------------------------------------------------------------------
+ * checks.ts seam — the GitHub Check-Run reporter (slice 4). Posts the journal-check results
+ * as a first-class Check Run: summary table + inline diff annotations (reporting option 2).
+ * Needs `checks: write` (a trusted/base CI context, like the sticky comment).
+ * ------------------------------------------------------------------------ */
+
+export interface CheckRunPoster {
+  create(repo: string, headSha: string, name: string, run: CheckRun): void;
+}
+
+export const realCheckRun: CheckRunPoster = {
+  create(repo, headSha, name, run) {
+    const body = JSON.stringify({
+      name,
+      head_sha: headSha,
+      status: 'completed',
+      conclusion: run.conclusion,
+      output: { title: run.title, summary: run.summary, annotations: run.annotations },
+    });
+    gh(['api', '--method', 'POST', `repos/${repo}/check-runs`, '--input', '-'], { input: body });
   },
 };
