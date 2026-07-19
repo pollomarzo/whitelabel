@@ -10,7 +10,7 @@
  * working-tree myst.yml write, which is enough for the slice-3 acceptance (a sandbox record).
  */
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync } from 'node:fs';
+import { cpSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { GitContext } from './zenodo.js';
@@ -47,7 +47,6 @@ const BOT_ID = [
   '-c', 'user.name=github-actions[bot]',
   '-c', 'user.email=41898282+github-actions[bot]@users.noreply.github.com',
 ];
-const httpsUrl = (repo: string): string => `https://github.com/${repo}.git`;
 
 /** The real git/gh context injected into `cmdPublish`. */
 export const realGitContext: GitContext = {
@@ -258,17 +257,19 @@ export const realProvisioner: Provisioner = {
     return ghOk(['api', `repos/${repo}/branches/${branch}`]);
   },
   seedBranch(repo, branch, sourceDir, message) {
-    // Fresh git repo over the rendered tree → orphan commit → push (like the script's
-    // orphan `new-main:main`, but the tree is already rendered locally).
-    gitRaw(['init', '-b', branch], sourceDir);
-    gitRaw(['add', '-A'], sourceDir);
-    gitRaw([...BOT_ID, 'commit', '-m', message], sourceDir);
-    gitRaw(['remote', 'add', 'origin', httpsUrl(repo)], sourceDir);
-    gitRaw(['push', 'origin', `${branch}:${branch}`], sourceDir);
+    // Clone the (empty) repo via gh so origin + auth come from the user's gh config (no
+    // hardcoded transport), then bring the locally-rendered tree in, commit, and push.
+    const tmp = mkdtempSync(join(tmpdir(), 'oak-seed-'));
+    gh(['repo', 'clone', repo, tmp]);
+    cpSync(sourceDir, tmp, { recursive: true });
+    gitRaw(['checkout', '-B', branch], tmp);
+    gitRaw(['add', '-A'], tmp);
+    gitRaw([...BOT_ID, 'commit', '-m', message], tmp);
+    gitRaw(['push', 'origin', `${branch}:${branch}`], tmp);
   },
   ingestReviewBranch(repo, opts) {
     const tmp = mkdtempSync(join(tmpdir(), 'oak-ingest-'));
-    gitRaw(['clone', httpsUrl(repo), tmp]);
+    gh(['repo', 'clone', repo, tmp]);
     gitRaw(['fetch', 'origin', 'main'], tmp);
     gitRaw(['fetch', opts.sourceUrl, opts.sourceRef], tmp);
     gitRaw(['checkout', '-B', 'review', 'origin/main'], tmp);
@@ -388,7 +389,7 @@ export function authedUser(): string {
 /** Full clone of `repo` into a temp dir (origin set) for an in-repo upgrade. */
 export function tempClone(repo: string): string {
   const tmp = mkdtempSync(join(tmpdir(), 'oak-upgrade-'));
-  gitRaw(['clone', httpsUrl(repo), tmp]);
+  gh(['repo', 'clone', repo, tmp]);
   return tmp;
 }
 
@@ -402,7 +403,7 @@ export function latestEngineRelease(engineRepo: string): string {
 /** Shallow-clone `engineRepo` at `tag` and return its `copier-template/` path. */
 export function materializeTemplate(engineRepo: string, tag: string): string {
   const tmp = mkdtempSync(join(tmpdir(), 'oak-tmpl-'));
-  gitRaw(['clone', '--depth', '1', '--branch', tag, httpsUrl(engineRepo), tmp]);
+  gh(['repo', 'clone', engineRepo, tmp, '--', '--depth', '1', '--branch', tag]);
   return join(tmp, 'copier-template');
 }
 
