@@ -181,7 +181,7 @@ export function checksComment(report: ChecksReport): string {
     '',
     summary,
     '',
-    '_Engine-invariant + journal editorial checks. Updated on every push to this PR._',
+    '_Updated on every push to this PR._',
   ].join('\n');
 }
 
