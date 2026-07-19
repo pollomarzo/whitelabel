@@ -28,8 +28,8 @@ function gitRaw(args: string[], cwd?: string): string {
   return execFileSync('git', args, { encoding: 'utf8', cwd }).trim();
 }
 
-function gh(args: string[], opts: { input?: string } = {}): string {
-  return execFileSync('gh', args, { encoding: 'utf8', input: opts.input }).trim();
+function gh(args: string[], opts: { input?: string; cwd?: string } = {}): string {
+  return execFileSync('gh', args, { encoding: 'utf8', input: opts.input, cwd: opts.cwd }).trim();
 }
 
 /** true when `gh api <path>` returns 2xx (idempotency GET probe). */
@@ -414,6 +414,8 @@ export const realUpgradePr: UpgradePr = {
     git(repoRoot, ['add', ...opts.paths]);
     git(repoRoot, [...BOT_ID, 'commit', '-m', opts.title]);
     git(repoRoot, ['push', '-u', 'origin', opts.branch, '--force']);
-    return gh(['pr', 'create', '--title', opts.title, '--body', opts.body, '--head', opts.branch]);
+    // Run `gh` inside the clone so it infers the target repo from origin (in CI the CWD is
+    // already the repo; locally `oak upgrade` clones to a tmp dir, so pass cwd explicitly).
+    return gh(['pr', 'create', '--title', opts.title, '--body', opts.body, '--head', opts.branch], { cwd: repoRoot });
   },
 };
