@@ -334,6 +334,22 @@ async function cmdNotify(argv: string[]): Promise<number> {
   return out.exitCode;
 }
 
+/** The SHA a CI Check Run should attach to. On `pull_request` GITHUB_SHA is the synthetic
+ *  merge commit (a check run there is invisible on the PR), so read the PR HEAD sha from the
+ *  event payload; otherwise (push/dispatch) GITHUB_SHA is correct. */
+function ciHeadSha(): string | undefined {
+  if (process.env.GITHUB_EVENT_NAME === 'pull_request' && process.env.GITHUB_EVENT_PATH) {
+    try {
+      const ev = JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH, 'utf8'));
+      const head = ev?.pull_request?.head?.sha;
+      if (typeof head === 'string' && head) return head;
+    } catch {
+      /* fall through to GITHUB_SHA */
+    }
+  }
+  return process.env.GITHUB_SHA;
+}
+
 /** `oak validate` — run the journal-controlled checks (slice 4). Layer A (engine invariants,
  *  also the `oak build` pre-flight phase) + Layer B (journal-selected editorial checks). Posts
  *  a GitHub Check Run in CI (best-effort: needs GH_TOKEN + GITHUB_SHA + the repo). */
@@ -378,10 +394,15 @@ async function cmdValidate(argv: string[]): Promise<number> {
     ...(has(argv, 'json') ? { checkRun: out.checkRun } : {}),
   });
 
-  // Post the first-class Check Run in CI (needs checks:write + the head SHA).
-  if (process.env.GH_TOKEN && process.env.GITHUB_SHA && repo) {
+  // Post the first-class Check Run in CI (needs checks:write + the head SHA). On a
+  // `pull_request` the default GITHUB_SHA is the ephemeral MERGE commit; a check run there
+  // does NOT surface on the PR — so we resolve the PR HEAD sha from the event payload
+  // ourselves (the runner keeps re-injecting the merge SHA, so a workflow `env:` override
+  // can't be relied on). Falls back to GITHUB_SHA off a PR (push/dispatch).
+  const headSha = ciHeadSha();
+  if (process.env.GH_TOKEN && headSha && repo) {
     try {
-      gh.realCheckRun.create(repo, process.env.GITHUB_SHA, 'Journal checks', out.checkRun);
+      gh.realCheckRun.create(repo, headSha, 'Journal checks', out.checkRun);
     } catch (e) {
       process.stderr.write(`::warning::oak validate: check-run not posted (${(e as Error).message})\n`);
     }

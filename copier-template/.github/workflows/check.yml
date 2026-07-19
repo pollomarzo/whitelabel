@@ -40,8 +40,8 @@ jobs:
           args: validate
         env:
           # `gh` (the engine's Check-Run poster) reads GH_TOKEN; on a fork PR this token is
-          # read-only, so the post no-ops and only the exit code gates.
+          # read-only, so the post no-ops and only the exit code gates. The engine resolves the
+          # PR HEAD sha from the event payload itself (GITHUB_SHA is the merge commit on a PR,
+          # and the runner re-injects it into composite-action steps, so an env override here
+          # wouldn't stick).
           GH_TOKEN: ${{ github.token }}
-          # Post the Check Run on the PR HEAD, not the synthetic merge commit: GITHUB_SHA is
-          # the merge ref on `pull_request`, and a check run there wouldn't show on the PR.
-          GITHUB_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
