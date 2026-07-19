@@ -1,0 +1,32 @@
+version: 1
+
+# Starter paper — stamped by `oak bootstrap` (design §1, template changes). This is a
+# NEW-MODEL committed paper: NO `extends:` (compose injects the engine/edition/brand chain
+# at build time), and the single engine coordinate rides myst's untyped `options`
+# passthrough. `oak bootstrap` fills `version`/`edition` below; replace the other
+# placeholders with your paper's real metadata.
+project:
+  # A FRESH, UNIQUE id. `oak validate` rejects the journal's `id_sentinel`, so this MUST be
+  # changed to something that matches the journal's `id_pattern`.
+  id: CHANGE-ME-paper-id
+  title: A Starter Paper
+  # date: 2026-01-01
+  authors:
+    - name: Author Name
+      # orcid: 0000-0000-0000-0000
+      affiliations:
+        - Your Institution
+      corresponding: true
+      email: you@example.org
+      roles:
+        - writing - original draft
+  keywords:
+    - keyword
+  bibliography:
+    - bib.bib
+  options:
+    # The ONE engine knob (design §6). `oak bootstrap` / `oak upgrade` write these; only the
+    # `version` ref floats (a released engine tag). Never a branch tip — CI runs releases.
+    oaktree-sapling:
+      version: CHANGE-ME-engine-version
+      edition: CHANGE-ME-edition
