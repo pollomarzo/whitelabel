@@ -38,8 +38,9 @@ fi
 
 # instance-config: public, depth-1, default branch (dec. 16/19). '.' = co-located
 # (repo=journal, deferred) — leave to the CLI's root resolution. build/release need it for
-# the extends chain; deploy-preview needs it for the preview: knobs ([R27]/[R69]).
-if [ "$verb" = "build" ] || [ "$verb" = "release" ] || [ "$verb" = "deploy-preview" ]; then
+# the extends chain; deploy-preview needs it for the preview: knobs ([R27]/[R69]); validate
+# needs it for journal.yml `checks:` + the registry (id-uniqueness).
+if [ "$verb" = "build" ] || [ "$verb" = "release" ] || [ "$verb" = "deploy-preview" ] || [ "$verb" = "validate" ]; then
   if [ -n "${INSTANCE_REPO:-}" ] && [ "${INSTANCE_REPO}" != "." ]; then
     inst_dir="$(mktemp -d)"
     git clone --depth 1 "https://github.com/${INSTANCE_REPO}.git" "$inst_dir"

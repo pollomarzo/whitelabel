@@ -1,0 +1,47 @@
+name: Journal checks
+
+# The journal-controlled PR gate (slice 4). Runs `oak validate` — Layer A engine invariants
+# + Layer B journal-selected editorial checks — and posts a first-class GitHub Check Run
+# (summary table + inline annotations) via the engine's own `gh` seam. Separate from Paper CI
+# (ci.yml) on purpose: editorial feedback must survive a broken build and read as its own
+# "Journal checks" status.
+#
+# TRUST (design §6a): this runs on the untrusted `pull_request` event with a read-only,
+# secret-less token — safe for fork content, which `oak validate` only READS (loadConfig +
+# processProject, no writes). The Check Run POST needs `checks: write`, which GitHub grants on
+# same-repo PRs + pushes but FORCES read-only on FORK PRs. So on a fork the post is skipped
+# (the engine's `realCheckRun` is best-effort — a 403 degrades to a `::warning::`, never a
+# crash) and the merge gate falls back to THIS job's exit code (`oak validate` exits 1 on a
+# blocking failure). Giving fork PRs the rich Check Run too needs the Stage-2 `workflow_run`
+# companion that re-posts Stage-1's precomputed payload from base context (like
+# preview-deploy.yml does for previews) — deferred; the exit-code gate covers forks until then.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read # checkout; the untrusted job holds nothing else
+  checks: write # post the "Journal checks" Check Run (auto-downgraded to read on fork PRs)
+
+concurrency:
+  group: ${{ github.event_name == 'pull_request' && format('check-{0}', github.head_ref) || 'check-main' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/engine
+        with:
+          args: validate
+        env:
+          # `gh` (the engine's Check-Run poster) reads GH_TOKEN; on a fork PR this token is
+          # read-only, so the post no-ops and only the exit code gates.
+          GH_TOKEN: ${{ github.token }}
+          # Post the Check Run on the PR HEAD, not the synthetic merge commit: GITHUB_SHA is
+          # the merge ref on `pull_request`, and a check run there wouldn't show on the PR.
+          GITHUB_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
