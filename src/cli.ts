@@ -289,6 +289,7 @@ async function cmdDeployPreview(argv: string[]): Promise<number> {
       instanceRoot: instanceRootOf(argv),
       repo: flag(argv, 'repo') ?? process.env.GITHUB_REPOSITORY ?? null,
       serverUrl: process.env.GITHUB_SERVER_URL ?? 'https://github.com',
+      artifactRunId: process.env.PAPER_BUILD_RUN_ID,
       cf: { apiToken: process.env.CLOUDFLARE_API_TOKEN, accountId: process.env.CLOUDFLARE_ACCOUNT_ID },
       mystPath: mystPathOf(argv),
     },

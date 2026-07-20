@@ -237,6 +237,14 @@ describe('cmdDeployPreview', () => {
     expect(stickies.some((s) => s.header === STICKY_PREVIEW)).toBe(true);
   });
 
+  it('deep-links the degrade comment to the specific Paper CI run (artifactRunId)', async () => {
+    const dir = siteWithPr('7');
+    const { gh, stickies } = fakeGh();
+    await cmdDeployPreview(baseInput(dir, { cf: {}, artifactRunId: '12345' }), { deployer: okDeployer(), gh });
+    const c = stickies.find((s) => s.header === STICKY_PREVIEW)!;
+    expect(c.body).toContain('/actions/runs/12345');
+  });
+
   it('no-ops when there is no .pr-number', async () => {
     const dir = siteWithPr(null);
     const { gh, stickies } = fakeGh();
