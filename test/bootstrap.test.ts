@@ -170,6 +170,7 @@ const paperInput = (over: Record<string, unknown> = {}) => ({
   engineRepo: 'me/engine',
   authedUser: 'alice',
   private: false,
+  requireChecks: true,
   secrets: {},
   ...over,
 });
@@ -189,6 +190,22 @@ describe('cmdBootstrapPaper', () => {
     expect(calls.openPr).toHaveLength(0);
     expect(calls.createRuleset).toHaveLength(2); // protect-main + v-tags
     expect(calls.enablePages).toHaveLength(1);
+  });
+
+  it('protect-main requires "Journal checks" by default; --no-require-checks omits it', async () => {
+    const bodyOf = (calls: Record<string, unknown[]>) =>
+      (calls.createRuleset as Array<{ b: { name: string; rules: Array<{ type: string; parameters?: { required_status_checks?: Array<{ context: string }> } }> } }>)
+        .find((c) => c.b.name === 'protect-main')!.b;
+    const hasJournalCheck = (body: ReturnType<typeof bodyOf>) =>
+      body.rules.some((r) => r.type === 'required_status_checks' && (r.parameters?.required_status_checks ?? []).some((c) => c.context === 'Journal checks'));
+
+    const on = fakeProv();
+    await cmdBootstrapPaper(paperInput(), deps(on.prov));
+    expect(hasJournalCheck(bodyOf(on.calls))).toBe(true);
+
+    const off = fakeProv();
+    await cmdBootstrapPaper(paperInput({ requireChecks: false }), deps(off.prov));
+    expect(hasJournalCheck(bodyOf(off.calls))).toBe(false);
   });
 
   it('--from ingest: seeds main, builds review, opens PR', async () => {
@@ -283,7 +300,7 @@ describe('cmdBootstrapJournal', () => {
       return dir;
     };
     await cmdBootstrapJournal(
-      { repo: 'me/journal', tier: 'co-located', name: 'J', edition: 'ed-2026', engineVersion: 'v9', engineRepo: 'me/engine', authedUser: 'alice', secrets: {} },
+      { repo: 'me/journal', tier: 'co-located', name: 'J', edition: 'ed-2026', engineVersion: 'v9', engineRepo: 'me/engine', authedUser: 'alice', requireChecks: true, secrets: {} },
       d,
     );
     expect(calls.createRuleset).toHaveLength(2); // it IS a build unit

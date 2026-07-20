@@ -240,24 +240,38 @@ export interface Provisioner {
 export const RULESET_PROTECT_MAIN = 'protect-main';
 export const RULESET_V_TAGS = 'editors-only-v-tags';
 
-function protectMainBody(): unknown {
+function protectMainBody(requireChecks: boolean): unknown {
+  const rules: unknown[] = [
+    {
+      type: 'pull_request',
+      parameters: {
+        required_approving_review_count: 0,
+        require_code_owner_review: true,
+        dismiss_stale_reviews_on_push: true,
+        require_last_push_approval: false,
+        required_review_thread_resolution: false,
+      },
+    },
+  ];
+  // Require the Journal-checks Check Run to pass before merge. This is the gate the id relies
+  // on now that id-shape no longer blocks the build (id-gate-relocation) — without it, an
+  // invalid id could merge to main. Default-on; `--no-require-checks` opts out. NB a solo repo
+  // admin can still bypass required checks on a personal account (PROVISIONING §3.3).
+  if (requireChecks) {
+    rules.push({
+      type: 'required_status_checks',
+      parameters: {
+        required_status_checks: [{ context: 'Journal checks' }],
+        strict_required_status_checks_policy: false,
+      },
+    });
+  }
   return {
     name: RULESET_PROTECT_MAIN,
     target: 'branch',
     enforcement: 'active',
     conditions: { ref_name: { include: ['refs/heads/main'], exclude: [] } },
-    rules: [
-      {
-        type: 'pull_request',
-        parameters: {
-          required_approving_review_count: 0,
-          require_code_owner_review: true,
-          dismiss_stale_reviews_on_push: true,
-          require_last_push_approval: false,
-          required_review_thread_resolution: false,
-        },
-      },
-    ],
+    rules,
   };
 }
 
@@ -325,6 +339,7 @@ export interface BootstrapPaperInput {
   owner?: string; // @user | @org/team
   authedUser: string; // gh api user login (personal-account default owner)
   private: boolean;
+  requireChecks: boolean; // add "Journal checks" to protect-main required checks (default true)
   secrets: SecretInputs;
 }
 
@@ -351,6 +366,7 @@ function applyProvisioning(
   owner: { team: string | null; ownerType: 'Organization' | 'User' },
   deps: BootstrapDeps,
   actions: Record<string, string>,
+  requireChecks: boolean,
 ): void {
   const { prov, log } = deps;
 
@@ -365,7 +381,7 @@ function applyProvisioning(
     actions.protect_main = 'already exists';
     log(`  ✓ ruleset '${RULESET_PROTECT_MAIN}' already exists`);
   } else {
-    prov.createRuleset(repo, protectMainBody());
+    prov.createRuleset(repo, protectMainBody(requireChecks));
     actions.protect_main = 'created';
     log(`  ✓ created ruleset '${RULESET_PROTECT_MAIN}'`);
   }
@@ -515,7 +531,7 @@ export async function cmdBootstrapPaper(input: BootstrapPaperInput, deps: Bootst
     } else actions.pr = 'exists';
   }
 
-  applyProvisioning(repo, owner, deps, actions);
+  applyProvisioning(repo, owner, deps, actions, input.requireChecks);
   const { set, runbook } = applySecrets(repo, input.secrets, deps);
   for (const line of runbook) log(`  → ${line}`);
 
@@ -534,6 +550,7 @@ export interface BootstrapJournalInput {
   engineRepo: string;
   owner?: string;
   authedUser: string;
+  requireChecks: boolean; // add "Journal checks" to protect-main required checks (default true)
   secrets: SecretInputs;
 }
 
@@ -596,7 +613,7 @@ export async function cmdBootstrapJournal(input: BootstrapJournalInput, deps: Bo
   } else actions.main = 'exists';
 
   if (!external) {
-    applyProvisioning(repo, owner, deps, actions);
+    applyProvisioning(repo, owner, deps, actions, input.requireChecks);
     const { set, runbook } = applySecrets(repo, input.secrets, deps);
     for (const line of runbook) log(`  → ${line}`);
     return { exitCode: 0, result: { status: 'ok', repo, tier: input.tier, actions, secrets_set: set, runbook } };

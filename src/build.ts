@@ -101,7 +101,11 @@ export async function runBuild(input: RunBuildInput): Promise<RunBuildResult> {
     project: resolvedProject,
     repo: process.env.GITHUB_REPOSITORY ?? originRepo(paperRoot),
   });
-  const blocking = layerA.filter((f) => f.severity === 'error');
+  // Only STRUCTURAL invariants (missing index.md / stray myst.yml) gate the build. Identity
+  // errors (a placeholder/invalid/duplicate id) do NOT stop the build — the id is enforced at
+  // merge via the Journal-checks Check Run, so a fresh repo still renders a preview to look at
+  // (id-gate-relocation). They surface as warnings alongside the brand warns.
+  const blocking = layerA.filter((f) => f.severity === 'error' && f.klass === 'structural');
   if (blocking.length) {
     throw new Error(
       'oak build: pre-flight validation failed:\n' +
@@ -109,7 +113,7 @@ export async function runBuild(input: RunBuildInput): Promise<RunBuildResult> {
     );
   }
   const layerAWarnings = layerA
-    .filter((f) => f.severity === 'warn')
+    .filter((f) => f.severity === 'warn' || (f.severity === 'error' && f.klass !== 'structural'))
     .map((f) => `[${f.check}] ${f.message}`);
 
   // Raw brand asset fields ([R62]) — read from brand.yml directly (not the merged config)

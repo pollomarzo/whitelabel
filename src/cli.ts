@@ -498,6 +498,7 @@ async function cmdBootstrap(argv: string[]): Promise<number> {
         owner: flag(rest, 'owner'),
         authedUser: gh.authedUser(),
         private: has(rest, 'private'),
+        requireChecks: !has(rest, 'no-require-checks'),
         secrets: secretsFrom(rest),
       },
       deps,
@@ -523,6 +524,7 @@ async function cmdBootstrap(argv: string[]): Promise<number> {
         engineRepo,
         owner: flag(rest, 'owner'),
         authedUser: gh.authedUser(),
+        requireChecks: !has(rest, 'no-require-checks'),
         secrets: secretsFrom(rest),
       },
       deps,
@@ -594,9 +596,9 @@ async function main(argv: string[]): Promise<number> {
       `  oak deploy-preview <site> [--instance <dir>] [--repo <owner/repo>]\n` +
       `  oak notify new-version [--pr <n> | --site <dir>] [--repo <owner/repo>]\n` +
       `  oak bootstrap paper   --repo <owner/name> [--from <author-url> [--source-ref <ref>]] [--instance <owner/config>]\n` +
-      `                        [--edition <id>] [--engine-version <tag>] [--owner <@user|@org/team>] [--private] [--yes]\n` +
+      `                        [--edition <id>] [--engine-version <tag>] [--owner <@user|@org/team>] [--private] [--no-require-checks] [--yes]\n` +
       `  oak bootstrap journal --repo <owner/name> (--external | --co-located) [--name <name>] [--edition <id>]\n` +
-      `                        [--engine-version <tag>] [--owner <@user|@org/team>] [--yes]\n` +
+      `                        [--engine-version <tag>] [--owner <@user|@org/team>] [--no-require-checks] [--yes]\n` +
       `  oak upgrade (--repo <owner/name> | --paper <dir>) [--to <tag>] [--version-only|--files-only|--both] [--yes]\n`,
   );
   return 2;

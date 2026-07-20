@@ -44,10 +44,16 @@ const realFs: FsProbes = {
   listTree: (dir) => (existsSync(dir) ? readdirSync(dir, { recursive: true }).map(String) : []),
 };
 
+/** Gate routing (id-gate-relocation): `structural` (missing index.md / stray myst.yml) blocks
+ *  the build; `identity` (id present/shape/uniqueness) and `brand` do NOT — identity is enforced
+ *  at merge via the Journal-checks Check Run, so a fresh/placeholder-id paper still renders. */
+export type FindingKlass = 'structural' | 'identity' | 'brand';
+
 export interface NamedFinding {
   check: string;
   severity: 'error' | 'warn';
   message: string;
+  klass: FindingKlass;
 }
 
 /* ---- pure Layer-A checks ------------------------------------------------- */
@@ -174,30 +180,31 @@ export function runLayerA(
 ): NamedFinding[] {
   const { paperRoot, instanceRoot, project, repo } = input;
   const findings: NamedFinding[] = [];
-  const add = (check: string, r: IdCheckResult) => {
-    if (!r.ok) findings.push({ check, severity: r.severity, message: r.message });
+  const add = (check: string, klass: FindingKlass, r: IdCheckResult) => {
+    if (!r.ok) findings.push({ check, severity: r.severity, message: r.message, klass });
   };
 
   const journal = loadJournal(instanceRoot, probes);
   const registry = loadRegistry(instanceRoot, probes);
 
   if (!project.id) {
-    findings.push({ check: 'id-present', severity: 'error', message: 'project.id is missing' });
+    findings.push({ check: 'id-present', severity: 'error', message: 'project.id is missing', klass: 'identity' });
   } else {
-    add('id-shape', checkIdShape(project.id, { id_sentinel: journal.id_sentinel, id_pattern: journal.id_pattern }));
+    add('id-shape', 'identity', checkIdShape(project.id, { id_sentinel: journal.id_sentinel, id_pattern: journal.id_pattern }));
     add(
       'id-uniqueness',
+      'identity',
       checkIdUniqueness(project.id, registry, findSelf(registry, repo), { selfIdentifiable: repo != null }),
     );
   }
 
   for (const r of checkLayout(paperRoot, probes)) {
-    findings.push({ check: 'layout', severity: r.severity, message: r.message });
+    findings.push({ check: 'layout', severity: r.severity, message: r.message, klass: 'structural' });
   }
 
   const brand = instanceRoot ? readBrandAssetOptions(instanceRoot) : { site: {}, project: {} };
-  add('brand-favicon', checkBrandFavicon({ instanceRoot, favicon: brand.site.favicon }, probes));
-  add('brand-watermark', checkBrandWatermark({ instanceRoot, logo: brand.project.logo }, probes));
+  add('brand-favicon', 'brand', checkBrandFavicon({ instanceRoot, favicon: brand.site.favicon }, probes));
+  add('brand-watermark', 'brand', checkBrandWatermark({ instanceRoot, logo: brand.project.logo }, probes));
 
   return findings;
 }
@@ -240,7 +247,11 @@ export async function runValidate(
   // unexpected myst/curvenote throw degrades to a reported check error, never a crashed gate.
   const journal = loadJournal(input.instanceRoot, probes);
   let checks: EngineCheckResult[] = [];
-  if (errors.length === 0) {
+  // Only STRUCTURAL Layer-A errors (missing index.md / stray myst.yml) stop myst from
+  // processing → skip Layer B. A bad id (identity) does NOT stop processing, so editorial
+  // checks still run and the author sees the full fix-list at once (id-gate-relocation).
+  const structuralErrors = errors.filter((f) => f.klass === 'structural');
+  if (structuralErrors.length === 0) {
     try {
       checks = await input.edge.withProjectSession(input.paperRoot, (session) =>
         runChecks(session, (journal.checks ?? []) as JournalCheck[]),
