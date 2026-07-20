@@ -1,32 +1,24 @@
 version: 1
 
-# Starter paper — stamped by `oak bootstrap` (design §1, template changes). This is a
-# NEW-MODEL committed paper: NO `extends:` (compose injects the engine/edition/brand chain
-# at build time), and the single engine coordinate rides myst's untyped `options`
-# passthrough. `oak bootstrap` fills `version`/`edition` below; replace the other
-# placeholders with your paper's real metadata.
+# Starter paper — stamped by `oak bootstrap`. NEW-MODEL committed paper: NO `extends:`
+# (compose injects the engine/edition/brand chain at build time), and the single engine
+# coordinate rides myst's untyped `options` passthrough. `oak bootstrap` / `oak upgrade`
+# fill `version`/`edition` below.
+#
+# This starter is deliberately MINIMAL: no placeholder `authors:`/`keywords:` blocks, so your
+# first PR ADDS your real metadata as a clean diff instead of editing over boilerplate. The
+# journal's editorial checks (authors + ORCID + CRediT roles, an abstract, keywords) will flag
+# what's still missing — add those (see your journal's author guide).
 project:
-  # A FRESH, UNIQUE id. `oak validate` rejects the journal's `id_sentinel`, so this MUST be
-  # changed to something that matches the journal's `id_pattern`.
-  id: CHANGE-ME-paper-id
-  title: A Starter Paper
-  # date: 2026-01-01
-  authors:
-    - name: Author Name
-      # orcid: 0000-0000-0000-0000
-      affiliations:
-        - Your Institution
-      corresponding: true
-      email: you@example.org
-      roles:
-        - writing - original draft
-  keywords:
-    - keyword
+  # Set a FRESH, UNIQUE id that matches the journal's `id_pattern`. Until you do, the build's
+  # pre-flight rejects this placeholder — that safeguard (not a bug) is why a fresh repo is red.
+  id: CHANGE-ME-template-placeholder
+  title: CHANGE-ME — your paper title
   bibliography:
     - bib.bib
   options:
     # The ONE engine knob (design §6). `oak bootstrap` / `oak upgrade` write these; only the
-    # `version` ref floats (a released engine tag). Never a branch tip — CI runs releases.
+    # `version` ref floats (a released engine tag — never a branch tip; CI runs releases).
     oaktree-sapling:
       version: CHANGE-ME-engine-version
       edition: CHANGE-ME-edition
