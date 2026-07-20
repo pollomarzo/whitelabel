@@ -175,8 +175,8 @@ export function artifactComment(runUrl: string, reason: string): string {
     STICKY_MARK(STICKY_PREVIEW),
     '**Preview build ready** 📦',
     '',
-    'No Cloudflare preview is configured, so the built site is attached to the Paper CI run as',
-    `the **paper-build** artifact. Download it there: ${runUrl}`,
+    'No Cloudflare preview is configured, so the built site is attached to its Paper CI run as',
+    `the **paper-build** artifact — open the run and scroll to **Artifacts**: ${runUrl}`,
     '',
     `_(${reason}.)_`,
   ].join('\n');
@@ -229,6 +229,9 @@ export interface DeployPreviewInput {
   /** GITHUB_REPOSITORY (owner/repo), GITHUB_SERVER_URL — used for the degrade link + labels. */
   repo: string | null;
   serverUrl: string;
+  /** The Paper CI run id (workflow_run.id) holding the paper-build artifact — deep-links the
+   *  degrade comment straight to that run, not the whole Actions tab. */
+  artifactRunId?: string;
   cf: { apiToken?: string; accountId?: string };
   /** myst.yml path in base context (for the notify DOI read). */
   mystPath: string;
@@ -254,7 +257,11 @@ export async function cmdDeployPreview(input: DeployPreviewInput, deps: PreviewD
   }
 
   const preview = loadJournalPreview(instanceRoot);
-  const runUrl = `${serverUrl}/${repo ?? ''}/actions`;
+  // Deep-link the specific Paper CI run that holds the paper-build artifact (Stage 2 knows it as
+  // workflow_run.id); fall back to the Actions tab when it wasn't passed (e.g. a local run).
+  const runUrl = input.artifactRunId
+    ? `${serverUrl}/${repo ?? ''}/actions/runs/${input.artifactRunId}`
+    : `${serverUrl}/${repo ?? ''}/actions`;
   const plan = planPreview({ preview, cf, repo: repo ?? 'paper', pr });
 
   let outcome: Record<string, unknown>;

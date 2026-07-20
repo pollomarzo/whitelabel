@@ -114,6 +114,23 @@ describe('runValidate — exit codes over the fixture instance', () => {
     expect(out.checkRun.conclusion).toBe('failure');
   });
 
+  it('a bad id (identity) does NOT short-circuit Layer B — editorial checks still run, id still gates (exit 1)', async () => {
+    // id-gate-relocation: an id error is `identity`, not `structural`, so myst can still process
+    // and the author gets the full fix-list. Old behavior skipped Layer B on any Layer-A error.
+    const bad = { id: 'fixture-template-placeholder', authors: [], abstract: '', keywords: [] };
+    const out = await runValidate(
+      { paperRoot: '/paper', instanceRoot, edge: edgeReturning(bad, [{ id: 'abstract-exists', status: 'fail', message: 'no abstract' }]) },
+      { repo: 'open-scholar-nexus/fixture-sample-paper' },
+      allTrue,
+    );
+    expect(out.exitCode).toBe(1);
+    // Layer B RAN despite the bad id (the whole point of the relocation):
+    expect(out.checks.some((c) => c.id === 'abstract-exists')).toBe(true);
+    // and the id finding is an `identity`-class error that still gates the Check Run:
+    expect(out.errors.find((e) => e.check === 'id-shape')?.klass).toBe('identity');
+    expect(out.checkRun.conclusion).toBe('failure');
+  });
+
   it('a blocking Layer-B editorial fail gates the run (exit 1, failure)', async () => {
     const out = await runValidate(
       {

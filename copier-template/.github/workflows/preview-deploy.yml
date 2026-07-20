@@ -47,3 +47,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          # The Paper CI run that holds the paper-build artifact — lets the CLI deep-link the
+          # artifact-degrade comment straight to that run (not the whole Actions tab).
+          PAPER_BUILD_RUN_ID: ${{ github.event.workflow_run.id }}

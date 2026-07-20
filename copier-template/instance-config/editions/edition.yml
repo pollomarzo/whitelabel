@@ -1,0 +1,14 @@
+version: 1
+
+# Edition data (design §5) — venue/license/funding. Declares NO `exports:` ([R52]): the
+# complete typst export lives in the engine's paper-base.yml (myst merges exports by id
+# whole-entry, so splitting fields here would race). Do NOT add `extends:` — compose()
+# assembles the engine‹edition‹brand chain. `oak bootstrap` renames this file to
+# `editions/<edition>.yml`.
+project:
+  subject: Article
+  venue: CHANGE-ME Journal
+  license: CC-BY-4.0
+  open_access: true
+  # funding: |
+  #   Your funder

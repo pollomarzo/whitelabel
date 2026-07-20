@@ -8,9 +8,11 @@
  * dep only loads when actually building.
  */
 import { join, resolve } from 'node:path';
-import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, writeFileSync, mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { parseDocument } from 'yaml';
+import type { UpgradeMode } from './upgrade.js';
 
 // dist/cli.cjs is an esbuild CJS bundle ([R51]), so `__dirname` is the bundle's dir
 // (engine/dist). `oak` is only ever run bundled — CI (ci/run.sh) and local both invoke
@@ -29,10 +31,7 @@ type Verb =
   | 'bootstrap'
   | 'upgrade';
 
-const STUB_SLICE: Partial<Record<Verb, string>> = {
-  bootstrap: 'slice 5',
-  upgrade: 'slice 5',
-};
+const STUB_SLICE: Partial<Record<Verb, string>> = {};
 
 /** engineRoot = the dir holding paper-base.yml. When run as dist/cli.cjs it is one level
  *  up from the bundle; in dev (tsx/src) it is two up from src/. Detect by probing. */
@@ -290,6 +289,7 @@ async function cmdDeployPreview(argv: string[]): Promise<number> {
       instanceRoot: instanceRootOf(argv),
       repo: flag(argv, 'repo') ?? process.env.GITHUB_REPOSITORY ?? null,
       serverUrl: process.env.GITHUB_SERVER_URL ?? 'https://github.com',
+      artifactRunId: process.env.PAPER_BUILD_RUN_ID,
       cf: { apiToken: process.env.CLOUDFLARE_API_TOKEN, accountId: process.env.CLOUDFLARE_ACCOUNT_ID },
       mystPath: mystPathOf(argv),
     },
@@ -428,6 +428,148 @@ async function cmdCheckPost(argv: string[]): Promise<number> {
   return 0;
 }
 
+/** Default engine home pin, matching readEngineRepo's fallback ([R56]). */
+const ENGINE_REPO_DEFAULT = 'pollomarzo/whitelabel';
+
+/** Confirm gate: print the plan to stderr, then honour --yes (required non-TTY) or prompt. */
+function makeConfirm(argv: string[]): (plan: string[]) => Promise<boolean> {
+  return async (plan) => {
+    for (const line of plan) process.stderr.write(line + '\n');
+    if (has(argv, 'yes')) return true;
+    if (!process.stdin.isTTY) {
+      process.stderr.write('not a TTY and --yes not set — aborting. Re-run with --yes.\n');
+      return false;
+    }
+    const { createInterface } = await import('node:readline/promises');
+    const rl = createInterface({ input: process.stdin, output: process.stderr });
+    const ans = (await rl.question('Proceed? [y/N] ')).trim();
+    rl.close();
+    return /^y/i.test(ans);
+  };
+}
+
+function workdir(prefix: string): () => string {
+  return () => mkdtempSync(join(tmpdir(), prefix));
+}
+
+function secretsFrom(argv: string[]) {
+  return {
+    zenodoToken: flag(argv, 'zenodo-token') ?? process.env.ZENODO_TOKEN,
+    zenodoTokenSandbox: flag(argv, 'zenodo-token-sandbox') ?? process.env.ZENODO_TOKEN_SANDBOX,
+    cfToken: flag(argv, 'cf-token') ?? process.env.CLOUDFLARE_API_TOKEN,
+    cfAccount: flag(argv, 'cf-account') ?? process.env.CLOUDFLARE_ACCOUNT_ID,
+  };
+}
+
+/** `oak bootstrap <paper|journal>` — onboarding (slice 5). */
+async function cmdBootstrap(argv: string[]): Promise<number> {
+  const sub = argv[0];
+  const rest = argv.slice(1);
+  const gh = await import('./gh.js');
+  const bootstrap = await import('./bootstrap.js');
+  const templateRoot = join(engineRoot(), 'copier-template');
+
+  const repo = flag(rest, 'repo');
+  if (!repo) {
+    process.stderr.write('oak bootstrap: --repo <owner/name> is required\n');
+    return 2;
+  }
+  const engineRepo = flag(rest, 'engine-repo') ?? ENGINE_REPO_DEFAULT;
+  let engineVersion = flag(rest, 'engine-version');
+  if (!engineVersion) {
+    try {
+      engineVersion = gh.latestEngineRelease(engineRepo);
+    } catch {
+      process.stderr.write('oak bootstrap: pass --engine-version <tag> (no release resolvable on the engine repo)\n');
+      return 2;
+    }
+  }
+  const deps = { prov: gh.realProvisioner, templateRoot, log: (m: string) => process.stderr.write(m + '\n'), confirm: makeConfirm(rest), workdir: workdir('oak-bootstrap-') };
+
+  if (sub === 'paper') {
+    const out = await bootstrap.cmdBootstrapPaper(
+      {
+        repo,
+        from: flag(rest, 'from'),
+        sourceRef: flag(rest, 'source-ref'),
+        instance: flag(rest, 'instance'),
+        edition: flag(rest, 'edition') ?? 'edition',
+        engineVersion,
+        engineRepo,
+        owner: flag(rest, 'owner'),
+        authedUser: gh.authedUser(),
+        private: has(rest, 'private'),
+        requireChecks: !has(rest, 'no-require-checks'),
+        secrets: secretsFrom(rest),
+      },
+      deps,
+    );
+    emit(out.result);
+    return out.exitCode;
+  }
+
+  if (sub === 'journal') {
+    const external = has(rest, 'external');
+    const coLocated = has(rest, 'co-located');
+    if (external === coLocated) {
+      process.stderr.write('oak bootstrap journal: pass exactly one of --external | --co-located\n');
+      return 2;
+    }
+    const out = await bootstrap.cmdBootstrapJournal(
+      {
+        repo,
+        tier: external ? 'external' : 'co-located',
+        name: flag(rest, 'name'),
+        edition: flag(rest, 'edition') ?? 'edition',
+        engineVersion,
+        engineRepo,
+        owner: flag(rest, 'owner'),
+        authedUser: gh.authedUser(),
+        requireChecks: !has(rest, 'no-require-checks'),
+        secrets: secretsFrom(rest),
+      },
+      deps,
+    );
+    emit(out.result);
+    return out.exitCode;
+  }
+
+  process.stderr.write('oak bootstrap: usage: oak bootstrap <paper|journal> --repo <owner/name> [...]\n');
+  return 2;
+}
+
+/** `oak upgrade` — render-and-compare lifecycle (slice 5). */
+async function cmdUpgrade(argv: string[]): Promise<number> {
+  const gh = await import('./gh.js');
+  const upgrade = await import('./upgrade.js');
+
+  const paper = flag(argv, 'paper');
+  const repo = flag(argv, 'repo');
+  if (!paper && !repo) {
+    process.stderr.write('oak upgrade: pass --paper <dir> or --repo <owner/name>\n');
+    return 2;
+  }
+  const mode: UpgradeMode = has(argv, 'version-only')
+    ? 'version-only'
+    : has(argv, 'files-only')
+      ? 'files-only'
+      : 'both';
+  const repoRoot = paper ? resolve(paper) : gh.tempClone(repo!);
+
+  const out = await upgrade.cmdUpgrade(
+    { repoRoot, to: flag(argv, 'to'), mode },
+    {
+      resolveTarget: gh.latestEngineRelease,
+      materializeTemplate: gh.materializeTemplate,
+      pr: gh.realUpgradePr,
+      log: (m) => process.stderr.write(m + '\n'),
+      confirm: makeConfirm(argv),
+    },
+  );
+  emit(out.result);
+  return out.exitCode;
+}
+
 async function main(argv: string[]): Promise<number> {
   const verb = argv[0] as Verb | undefined;
   if (verb === 'build') return cmdBuild(argv.slice(1));
@@ -437,6 +579,8 @@ async function main(argv: string[]): Promise<number> {
   if (verb === 'release') return cmdRelease(argv.slice(1));
   if (verb === 'deploy-preview') return cmdDeployPreview(argv.slice(1));
   if (verb === 'notify') return cmdNotify(argv.slice(1));
+  if (verb === 'bootstrap') return cmdBootstrap(argv.slice(1));
+  if (verb === 'upgrade') return cmdUpgrade(argv.slice(1));
   if (verb && verb in STUB_SLICE) {
     process.stderr.write(`oak ${verb}: not implemented yet (${STUB_SLICE[verb]}).\n`);
     return 1;
@@ -451,7 +595,12 @@ async function main(argv: string[]): Promise<number> {
       `  oak deposit status  [--sandbox] [--instance <dir>]\n` +
       `  oak release --tag <vX.Y.Z> [--paper <dir>] [--instance <dir>] [--site-url <url>]\n` +
       `  oak deploy-preview <site> [--instance <dir>] [--repo <owner/repo>]\n` +
-      `  oak notify new-version [--pr <n> | --site <dir>] [--repo <owner/repo>]\n`,
+      `  oak notify new-version [--pr <n> | --site <dir>] [--repo <owner/repo>]\n` +
+      `  oak bootstrap paper   --repo <owner/name> [--from <author-url> [--source-ref <ref>]] [--instance <owner/config>]\n` +
+      `                        [--edition <id>] [--engine-version <tag>] [--owner <@user|@org/team>] [--private] [--no-require-checks] [--yes]\n` +
+      `  oak bootstrap journal --repo <owner/name> (--external | --co-located) [--name <name>] [--edition <id>]\n` +
+      `                        [--engine-version <tag>] [--owner <@user|@org/team>] [--no-require-checks] [--yes]\n` +
+      `  oak upgrade (--repo <owner/name> | --paper <dir>) [--to <tag>] [--version-only|--files-only|--both] [--yes]\n`,
   );
   return 2;
 }

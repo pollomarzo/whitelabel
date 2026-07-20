@@ -1,0 +1,5 @@
+# Paper registry (design §9). One entry per paper: {id, slug, location, edition} ([R47]).
+# `id` is the deposit/dedup key (myst-native project.id); `slug` is the URL/thumbnail path;
+# `location` is {repo, path} where the paper lives. Additive-only (dec. 24). Empty until the
+# first paper is registered.
+[]

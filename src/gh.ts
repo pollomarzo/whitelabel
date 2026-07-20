@@ -10,17 +10,43 @@
  * working-tree myst.yml write, which is enough for the slice-3 acceptance (a sandbox record).
  */
 import { execFileSync } from 'node:child_process';
+import { cpSync, mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { GitContext } from './zenodo.js';
 import type { GhPr, PagesDeployer } from './preview.js';
 import type { CheckRun } from './checks.js';
+import type { Provisioner } from './bootstrap.js';
+import type { UpgradePr } from './upgrade.js';
 
 function git(repoRoot: string, args: string[]): string {
   return execFileSync('git', ['-C', repoRoot, ...args], { encoding: 'utf8' }).trim();
 }
 
-function gh(args: string[], opts: { input?: string } = {}): string {
-  return execFileSync('gh', args, { encoding: 'utf8', input: opts.input }).trim();
+/** git without a `-C` (clone / raw), optionally in `cwd`. */
+function gitRaw(args: string[], cwd?: string): string {
+  return execFileSync('git', args, { encoding: 'utf8', cwd }).trim();
 }
+
+function gh(args: string[], opts: { input?: string; cwd?: string } = {}): string {
+  return execFileSync('gh', args, { encoding: 'utf8', input: opts.input, cwd: opts.cwd }).trim();
+}
+
+/** true when `gh api <path>` returns 2xx (idempotency GET probe). */
+function ghOk(args: string[]): boolean {
+  try {
+    execFileSync('gh', args, { stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Commit-as-bot identity flags (a CI runner has no git identity — see openDoiPr). */
+const BOT_ID = [
+  '-c', 'user.name=github-actions[bot]',
+  '-c', 'user.email=41898282+github-actions[bot]@users.noreply.github.com',
+];
 
 /** The real git/gh context injected into `cmdPublish`. */
 export const realGitContext: GitContext = {
@@ -208,5 +234,188 @@ export const realCheckRun: CheckRunPoster = {
       output: { title: run.title, summary: run.summary, annotations: run.annotations },
     });
     gh(['api', '--method', 'POST', `repos/${repo}/check-runs`, '--input', '-'], { input: body });
+  },
+};
+
+/* --------------------------------------------------------------------------
+ * bootstrap.ts seam — the GitHub/git provisioning (slice 5). Idempotent shells over
+ * `gh api`/`git`, ported from create-submission-target.sh's `apply_rulesets_to_repo` +
+ * repo-create/seed/ingest. Every mutation GET-then-acts; effects are injectable for tests.
+ * ------------------------------------------------------------------------ */
+
+export const realProvisioner: Provisioner = {
+  ownerType(owner) {
+    return gh(['api', `users/${owner}`, '--jq', '.type']) === 'Organization' ? 'Organization' : 'User';
+  },
+  repoExists(repo) {
+    return ghOk(['api', `repos/${repo}`]);
+  },
+  createRepo(repo, opts) {
+    gh(['repo', 'create', repo, opts.private ? '--private' : '--public', '--description', opts.description]);
+  },
+  branchExists(repo, branch) {
+    return ghOk(['api', `repos/${repo}/branches/${branch}`]);
+  },
+  seedBranch(repo, branch, sourceDir, message) {
+    // Clone the (empty) repo via gh so origin + auth come from the user's gh config (no
+    // hardcoded transport), then bring the locally-rendered tree in, commit, and push.
+    const tmp = mkdtempSync(join(tmpdir(), 'oak-seed-'));
+    gh(['repo', 'clone', repo, tmp]);
+    cpSync(sourceDir, tmp, { recursive: true });
+    gitRaw(['checkout', '-B', branch], tmp);
+    gitRaw(['add', '-A'], tmp);
+    gitRaw([...BOT_ID, 'commit', '-m', message], tmp);
+    gitRaw(['push', 'origin', `${branch}:${branch}`], tmp);
+  },
+  ingestReviewBranch(repo, opts) {
+    const tmp = mkdtempSync(join(tmpdir(), 'oak-ingest-'));
+    gh(['repo', 'clone', repo, tmp]);
+    gitRaw(['fetch', 'origin', 'main'], tmp);
+    gitRaw(['fetch', opts.sourceUrl, opts.sourceRef], tmp);
+    gitRaw(['checkout', '-B', 'review', 'origin/main'], tmp);
+    gitRaw(['rm', '-rf', '.'], tmp);
+    gitRaw(['checkout', 'FETCH_HEAD', '--', '.'], tmp);
+    // NEW MODEL: restore the ENTIRE editor-side .github (not just workflows + CODEOWNERS) so
+    // author FETCH_HEAD content can never supply the trust-boundary pins.yml.
+    gitRaw(['checkout', 'origin/main', '--', '.github'], tmp);
+    if (ghOk(['api', `repos/${repo}/contents/CODEOWNERS`])) {
+      try {
+        gitRaw(['checkout', 'origin/main', '--', 'CODEOWNERS'], tmp);
+      } catch {
+        /* CODEOWNERS may live under .github/ — already restored above */
+      }
+    }
+    gitRaw(['add', '-A'], tmp);
+    gitRaw([...BOT_ID, 'commit', '-m', opts.message], tmp);
+    gitRaw(['push', 'origin', 'review'], tmp);
+  },
+  prExists(repo, head) {
+    try {
+      return Number(gh(['pr', 'list', '--repo', repo, '--head', head, '--json', 'number', '--jq', 'length'])) > 0;
+    } catch {
+      return false;
+    }
+  },
+  openPr(repo, opts) {
+    return gh([
+      'api', `repos/${repo}/pulls`, '--method', 'POST',
+      '--field', `title=${opts.title}`, '--field', `head=${opts.head}`,
+      '--field', `base=${opts.base}`, '--field', `body=${opts.body}`,
+      '--jq', '.html_url',
+    ]);
+  },
+  grantTeamWrite(repo, team) {
+    const [org, slug] = team.split('/');
+    gh(['api', '-X', 'PUT', `orgs/${org}/teams/${slug}/repos/${repo}`, '-f', 'permission=push']);
+  },
+  teamId(team) {
+    const [org, slug] = team.split('/');
+    return Number(gh(['api', `orgs/${org}/teams/${slug}`, '--jq', '.id']));
+  },
+  rulesetExists(repo, name) {
+    try {
+      return gh(['api', `repos/${repo}/rulesets`, '--jq', `.[] | select(.name=="${name}") | .id`]) !== '';
+    } catch {
+      return false;
+    }
+  },
+  createRuleset(repo, body) {
+    gh(['api', '-X', 'POST', `repos/${repo}/rulesets`, '--input', '-'], { input: JSON.stringify(body) });
+  },
+  pagesEnabled(repo) {
+    return ghOk(['api', `repos/${repo}/pages`]);
+  },
+  enablePages(repo) {
+    gh(['api', '-X', 'POST', `repos/${repo}/pages`, '-f', 'build_type=workflow']);
+  },
+  environmentExists(repo, name) {
+    return ghOk(['api', `repos/${repo}/environments/${name}`]);
+  },
+  upsertEnvironment(repo, name) {
+    gh([
+      'api', '-X', 'PUT', `repos/${repo}/environments/${name}`,
+      '--field', 'deployment_branch_policy[protected_branches]=false',
+      '--field', 'deployment_branch_policy[custom_branch_policies]=true',
+    ]);
+  },
+  branchPolicyExists(repo, env, name) {
+    try {
+      return (
+        gh([
+          'api', `repos/${repo}/environments/${env}/deployment-branch-policies`,
+          '--jq', `.branch_policies[] | select(.name=="${name}") | .id`,
+        ]) !== ''
+      );
+    } catch {
+      return false;
+    }
+  },
+  createBranchPolicy(repo, env, name, type) {
+    gh([
+      'api', '-X', 'POST', `repos/${repo}/environments/${env}/deployment-branch-policies`,
+      '--field', `name=${name}`, '--field', `type=${type}`,
+    ]);
+  },
+  createLabel(repo, name, opts) {
+    const args = ['label', 'create', name, '--repo', repo, '--force'];
+    if (opts.color) args.push('--color', opts.color);
+    if (opts.description) args.push('--description', opts.description);
+    try {
+      gh(args);
+    } catch {
+      /* label already exists at this definition — fine */
+    }
+  },
+  setSecret(repo, name, value) {
+    gh(['secret', 'set', name, '--repo', repo, '--body', value]);
+  },
+  repoVisibility(repo) {
+    return gh(['api', `repos/${repo}`, '--jq', '.visibility']) === 'private' ? 'private' : 'public';
+  },
+  setRepoPublic(repo) {
+    gh(['api', '-X', 'PATCH', `repos/${repo}`, '-F', 'private=false']);
+  },
+};
+
+/* --------------------------------------------------------------------------
+ * upgrade.ts seams — target resolution, template materialization, the gated resync PR.
+ * ------------------------------------------------------------------------ */
+
+/** The authenticated gh user login (`gh api user`). */
+export function authedUser(): string {
+  return gh(['api', 'user', '--jq', '.login']);
+}
+
+/** Full clone of `repo` into a temp dir (origin set) for an in-repo upgrade. */
+export function tempClone(repo: string): string {
+  const tmp = mkdtempSync(join(tmpdir(), 'oak-upgrade-'));
+  gh(['repo', 'clone', repo, tmp]);
+  return tmp;
+}
+
+/** Latest engine release tag for `engineRepo` (`gh release list`). */
+export function latestEngineRelease(engineRepo: string): string {
+  const tag = gh(['release', 'list', '--repo', engineRepo, '--limit', '1', '--json', 'tagName', '--jq', '.[0].tagName']);
+  if (!tag) throw new Error(`no releases found on ${engineRepo} — pass --to <tag>`);
+  return tag;
+}
+
+/** Shallow-clone `engineRepo` at `tag` and return its `copier-template/` path. */
+export function materializeTemplate(engineRepo: string, tag: string): string {
+  const tmp = mkdtempSync(join(tmpdir(), 'oak-tmpl-'));
+  gh(['repo', 'clone', engineRepo, tmp, '--', '--depth', '1', '--branch', tag]);
+  return join(tmp, 'copier-template');
+}
+
+/** The gated upgrade/resync PR — openDoiPr's branch→commit-as-bot→push→gh-pr-create shape. */
+export const realUpgradePr: UpgradePr = {
+  open(repoRoot, opts) {
+    git(repoRoot, ['checkout', '-B', opts.branch]);
+    git(repoRoot, ['add', ...opts.paths]);
+    git(repoRoot, [...BOT_ID, 'commit', '-m', opts.title]);
+    git(repoRoot, ['push', '-u', 'origin', opts.branch, '--force']);
+    // Run `gh` inside the clone so it infers the target repo from origin (in CI the CWD is
+    // already the repo; locally `oak upgrade` clones to a tmp dir, so pass cwd explicitly).
+    return gh(['pr', 'create', '--title', opts.title, '--body', opts.body, '--head', opts.branch], { cwd: repoRoot });
   },
 };

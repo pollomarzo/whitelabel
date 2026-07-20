@@ -1,0 +1,29 @@
+name: Engine version bump
+
+# Scheduled logic-ref bump (design §6b-left, dec. 17). Floats
+# project.options.oaktree-sapling.version to the latest engine release and opens a one-line
+# PR. The bump is DATA (myst.yml, not CODEOWNERS-gated), so an editor merges it after the
+# preview build shows the result; it touches no secret. Runs `oak upgrade --version-only`,
+# which reads the engine repo from pins.yml, resolves the latest release, writes myst.yml via
+# a YAML round-trip (never sed), and opens the PR. The frequent logic-ref cadence's automated
+# home; the rare frozen-file resync is the manual `oak upgrade --files-only` path.
+
+on:
+  schedule:
+    - cron: "17 4 * * 1" # weekly, Monday 04:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write # commit the bump branch
+  pull-requests: write # open the bump PR
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/engine
+        with:
+          args: upgrade --paper . --version-only --yes
+        env:
+          GH_TOKEN: ${{ github.token }}
