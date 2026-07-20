@@ -4,7 +4,7 @@
   "description": "White-label journal engine: MyST + GitHub + Zenodo. All platform logic, referenced by version.",
   "type": "module",
   "bin": {
-    "oak": "dist/cli.js"
+    "oak": "dist/cli.cjs"
   },
   "scripts": {
     "test": "vitest run",
