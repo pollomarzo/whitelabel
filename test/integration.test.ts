@@ -8,7 +8,7 @@
  * Skipped unless the bundle + typst + the in-engine template are all present (so the
  * default `npm test` stays portable). CI bundles first, then this gates the tag.
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, copyFileSync, existsSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -16,6 +16,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseDocument } from 'yaml';
 import { DERIVED_CONFIG_FILE } from '../src/yaml-io.js';
+import { bundleState, assertBundleNotStale } from './bundle-state.js';
 import { readFileSync } from 'node:fs';
 
 const engineDir = fileURLToPath(new URL('..', import.meta.url));
@@ -31,9 +32,12 @@ function typstPresent(): boolean {
   }
 }
 
-const runnable = existsSync(bundle) && existsSync(template) && typstPresent();
+// absent bundle → skip (portable); STALE bundle → hard fail in beforeAll, never a silent
+// pass against old code (bundle-state.ts).
+const runnable = bundleState() !== 'absent' && existsSync(template) && typstPresent();
 
 describe.skipIf(!runnable)('fixture build through the bundled CLI', () => {
+  beforeAll(assertBundleNotStale);
   it('renders a real PDF with articles preserved and the engine template', () => {
     const tmp = mkdtempSync(join(tmpdir(), 'oak-int-'));
     for (const f of ['myst.yml', 'index.md', 'bib.bib']) {

@@ -7,7 +7,7 @@
     "oak": "dist/cli.cjs"
   },
   "scripts": {
-    "test": "vitest run",
+    "test": "npm run bundle && vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "bundle": "esbuild src/cli.ts --bundle --platform=node --format=cjs --outfile=dist/cli.cjs",
