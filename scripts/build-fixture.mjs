@@ -10,7 +10,7 @@
  * the two-pass working-tree injection. This is the "test with a local template" path:
  * no release zip, no network for the PDF — the engine template is used by path.
  */
-import { mkdtempSync, copyFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, copyFileSync, existsSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -43,8 +43,18 @@ execFileSync(
   { stdio: 'inherit' },
 );
 
-const pdf = join(tmp, '_build', 'exports', 'myst_typst', 'index.pdf');
-console.error(`\nPDF: ${existsSync(pdf) ? pdf : '(not produced)'}`);
+// Glob rather than hardcode: myst derives the export subdir from the CONFIG FILENAME, so it
+// moved when the build switched to the derived config (`myst.yml` → `myst.oak.yml` gave
+// `myst_typst` → `myst-oak_typst`, [R71]). `findExportedPdf` in cli.ts already globs, which is
+// why the deposit path was unaffected; this canary was the only thing pinned to the old name.
+const exportsDir = join(tmp, '_build', 'exports');
+const pdf = existsSync(exportsDir)
+  ? readdirSync(exportsDir, { recursive: true })
+      .map(String)
+      .filter((f) => f.endsWith('.pdf'))
+      .map((f) => join(exportsDir, f))[0]
+  : undefined;
+console.error(`\nPDF: ${pdf && existsSync(pdf) ? pdf : '(not produced)'}`);
 if (!process.argv.includes('--keep')) {
   console.error('(pass --keep to retain the temp dir)');
 }

@@ -10,11 +10,12 @@
  */
 import { describe, it, expect } from 'vitest';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, copyFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, copyFileSync, existsSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseDocument } from 'yaml';
+import { DERIVED_CONFIG_FILE } from '../src/yaml-io.js';
 import { readFileSync } from 'node:fs';
 
 const engineDir = fileURLToPath(new URL('..', import.meta.url));
@@ -39,6 +40,8 @@ describe.skipIf(!runnable)('fixture build through the bundled CLI', () => {
       copyFileSync(join(engineDir, 'test', 'fixture-paper', f), join(tmp, f));
     }
 
+    const authorBefore = readFileSync(join(tmp, 'myst.yml')); // raw bytes, pre-build
+
     execFileSync(
       'node',
       [
@@ -55,12 +58,22 @@ describe.skipIf(!runnable)('fixture build through the bundled CLI', () => {
       { stdio: 'pipe' },
     );
 
-    // a real PDF, named from the article (index.md → index.pdf, proving articles took effect)
-    const pdf = join(tmp, '_build', 'exports', 'myst_typst', 'index.pdf');
-    expect(existsSync(pdf)).toBe(true);
+    // a real PDF, named from the article (index.md → index.pdf, proving articles took effect).
+    // Globbed, not hardcoded: myst derives the export subdir from the CONFIG FILENAME, so it
+    // is `myst-oak_typst` under the derived config ([R71]) — cli.ts's findExportedPdf globs
+    // for the same reason, which is why the deposit path was unaffected by the switch.
+    const exportsDir = join(tmp, '_build', 'exports');
+    const pdfs = readdirSync(exportsDir, { recursive: true })
+      .map(String)
+      .filter((f) => f.endsWith('index.pdf'));
+    expect(pdfs).toHaveLength(1);
 
-    // the two-pass wrote the complete typst entry (articles + engine template) to own config
-    const doc = parseDocument(readFileSync(join(tmp, 'myst.yml'), 'utf8'));
+    // THE [R71] INVARIANT, through the real bundled CLI: the author's config is untouched.
+    expect(readFileSync(join(tmp, 'myst.yml')).equals(authorBefore)).toBe(true);
+
+    // the two-pass wrote the complete typst entry (articles + engine template) to the DERIVED
+    // config — never the author's.
+    const doc = parseDocument(readFileSync(join(tmp, DERIVED_CONFIG_FILE), 'utf8'));
     expect(doc.getIn(['project', 'exports', 0, 'template'])).toBe(template);
     expect(doc.getIn(['project', 'exports', 0, 'articles', 0, 'file'])).toBe('index.md');
     // the author's sibling option survived the whole pipeline (finding 3)
