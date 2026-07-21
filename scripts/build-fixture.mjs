@@ -43,18 +43,14 @@ execFileSync(
   { stdio: 'inherit' },
 );
 
-// Glob rather than hardcode: myst derives the export subdir from the CONFIG FILENAME, so it
-// moved when the build switched to the derived config (`myst.yml` → `myst.oak.yml` gave
-// `myst_typst` → `myst-oak_typst`, [R71]). `findExportedPdf` in cli.ts already globs, which is
-// why the deposit path was unaffected; this canary was the only thing pinned to the old name.
+// Just report what was produced — the exact pinned path (compose TYPST_OUTPUT) is asserted by
+// the integration test, which can import the constant; this plain .mjs cannot, so it globs
+// rather than duplicate the literal.
 const exportsDir = join(tmp, '_build', 'exports');
 const pdf = existsSync(exportsDir)
-  ? readdirSync(exportsDir, { recursive: true })
-      .map(String)
-      .filter((f) => f.endsWith('.pdf'))
-      .map((f) => join(exportsDir, f))[0]
+  ? readdirSync(exportsDir, { recursive: true }).map(String).find((f) => f.endsWith('.pdf'))
   : undefined;
-console.error(`\nPDF: ${pdf && existsSync(pdf) ? pdf : '(not produced)'}`);
+console.error(`\nPDF: ${pdf ? join(exportsDir, pdf) : '(not produced)'}`);
 if (!process.argv.includes('--keep')) {
   console.error('(pass --keep to retain the temp dir)');
 }

@@ -58,8 +58,10 @@ complete engine typst entry + theme → `build`. **Both writes go to the DERIVED
 `myst.oak.yml` ([R71])** — the author's `myst.yml` is an input and is never modified.
 myst is pointed at the derived file via `new Session({ configFiles })`; it is gitignored
 by the frozen template and NOT auto-deleted (myst's HTML build `process.exit(0)`s on
-success, so no cleanup hook can reliably run). Note myst derives the export subdir from
-the config filename, so PDFs land in `_build/exports/myst-oak_typst/`.
+success, so no cleanup hook can reliably run). compose also pins the export `output:` (`TYPST_OUTPUT`), so the PDF
+lands at `_build/exports/paper.pdf` for every paper — myst would otherwise
+derive both the directory and (for multi-article exports) the filename from the
+declaring config's name, coupling artifact paths to an engine-internal filename.
 
 ### Releasing — a runnable engine ⟺ a release ([R57], `RELEASING.md`)
 

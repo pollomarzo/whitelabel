@@ -16,6 +16,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseDocument } from 'yaml';
 import { DERIVED_CONFIG_FILE } from '../src/yaml-io.js';
+import { TYPST_OUTPUT } from '../src/compose.js';
 import { bundleState, assertBundleNotStale } from './bundle-state.js';
 import { readFileSync } from 'node:fs';
 
@@ -62,15 +63,12 @@ describe.skipIf(!runnable)('fixture build through the bundled CLI', () => {
       { stdio: 'pipe' },
     );
 
-    // a real PDF, named from the article (index.md → index.pdf, proving articles took effect).
-    // Globbed, not hardcoded: myst derives the export subdir from the CONFIG FILENAME, so it
-    // is `myst-oak_typst` under the derived config ([R71]) — cli.ts's findExportedPdf globs
-    // for the same reason, which is why the deposit path was unaffected by the switch.
-    const exportsDir = join(tmp, '_build', 'exports');
-    const pdfs = readdirSync(exportsDir, { recursive: true })
-      .map(String)
-      .filter((f) => f.endsWith('index.pdf'));
-    expect(pdfs).toHaveLength(1);
+    // a real PDF at the ENGINE-PINNED path. Previously this asserted an `index.pdf` whose
+    // directory myst derived from the declaring config's filename; `output` pins both now, so
+    // the path is asserted exactly and the articles proof moves to the composed entry below.
+    expect(existsSync(join(tmp, TYPST_OUTPUT))).toBe(true);
+    // and nothing landed at a filename-derived path
+    expect(readdirSync(join(tmp, '_build', 'exports'))).toEqual(['paper.pdf']);
 
     // THE [R71] INVARIANT, through the real bundled CLI: the author's config is untouched.
     expect(readFileSync(join(tmp, 'myst.yml')).equals(authorBefore)).toBe(true);
@@ -79,7 +77,10 @@ describe.skipIf(!runnable)('fixture build through the bundled CLI', () => {
     // config — never the author's.
     const doc = parseDocument(readFileSync(join(tmp, DERIVED_CONFIG_FILE), 'utf8'));
     expect(doc.getIn(['project', 'exports', 0, 'template'])).toBe(template);
+    // articles took effect (the [R53] regression this canary exists for), asserted on the
+    // composed entry now that the output filename no longer encodes it
     expect(doc.getIn(['project', 'exports', 0, 'articles', 0, 'file'])).toBe('index.md');
+    expect(doc.getIn(['project', 'exports', 0, 'output'])).toBe(TYPST_OUTPUT);
     // the author's sibling option survived the whole pipeline (finding 3)
     expect(doc.getIn(['project', 'options', 'youtube'])).toBe(
       'https://youtu.be/dQw4w9WgXcQ',

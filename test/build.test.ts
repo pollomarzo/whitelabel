@@ -8,6 +8,7 @@ import { runBuild, type MystEdge } from '../src/build.js';
 import { DERIVED_CONFIG_FILE } from '../src/yaml-io.js';
 import type { ResolvedProject } from '../src/compose.js';
 import { typstTemplateUrl, themeZipUrl } from '../src/assets.js';
+import { TYPST_OUTPUT } from '../src/compose.js';
 
 const fixturePaper = fileURLToPath(new URL('./fixture-paper/myst.yml', import.meta.url));
 
@@ -79,6 +80,9 @@ describe('runBuild — the two-pass orchestrator ([R52])', () => {
       typstTemplateUrl('open-scholar-nexus/oaktree-sapling', 'v0.3.0'),
     );
     expect(doc.getIn(['project', 'exports', 0, 'articles', 0, 'file'])).toBe('index.md');
+    // engine also owns `output` — pinned so the artifact path never depends on the derived
+    // config's filename (myst would otherwise derive it from the declaring file)
+    expect(doc.getIn(['project', 'exports', 0, 'output'])).toBe(TYPST_OUTPUT);
     // theme override + sibling option preserved. NB the author's ORIGINAL youtube
     // survives — the override pass never touches options, and loadConfig's resolved
     // value ('…/x') is never written back to the working tree (finding 3).
