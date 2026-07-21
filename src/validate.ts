@@ -45,9 +45,11 @@ const realFs: FsProbes = {
 };
 
 /** Gate routing (id-gate-relocation): `structural` (missing index.md / stray myst.yml) blocks
- *  the build; `identity` (id present/shape/uniqueness) and `brand` do NOT — identity is enforced
- *  at merge via the Journal-checks Check Run, so a fresh/placeholder-id paper still renders. */
-export type FindingKlass = 'structural' | 'identity' | 'brand';
+ *  the build; `identity` (id present/shape/uniqueness), `brand` and `config` do NOT — identity is
+ *  enforced at merge via the Journal-checks Check Run, so a fresh/placeholder-id paper still
+ *  renders. `config` is instance-config hygiene ([R72] extends-layer overlap): it makes results
+ *  non-deterministic rather than impossible, so it gates merge, not the build. */
+export type FindingKlass = 'structural' | 'identity' | 'brand' | 'config';
 
 export interface NamedFinding {
   check: string;
@@ -167,6 +169,79 @@ function findSelf(registry: Registry | null, repo: string | null): { slug: strin
   return e ? { slug: e.slug } : undefined;
 }
 
+/* ---- extends-layer disjointness ([R72]) ---------------------------------- */
+
+/**
+ * Keys declared by ONE extends layer, as comparable coordinates.
+ *
+ * Granularity matters and differs per field: `site.options` / `project.options` merge
+ * **field-wise** base-wins (`fillPageFrontmatter.js:22-25`, [R68]), so two layers may safely
+ * own different keys inside them — compare at the LEAF (`site.options.logo`). Everything else
+ * merges at the top-level key (and `exports` merges whole-entry by id, [R52]/[R53]), so compare
+ * at the immediate key (`project.venue`). Comparing `site.options` as a unit would falsely flag
+ * paper-base's `hide_toc` against brand's `logo`.
+ */
+export function declaredKeys(config: unknown): string[] {
+  const out: string[] = [];
+  const root = (config ?? {}) as Record<string, unknown>;
+  for (const ns of ['project', 'site'] as const) {
+    const section = root[ns] as Record<string, unknown> | undefined;
+    if (!section || typeof section !== 'object') continue;
+    for (const [key, value] of Object.entries(section)) {
+      if (key === 'options' && value && typeof value === 'object' && !Array.isArray(value)) {
+        for (const leaf of Object.keys(value as Record<string, unknown>)) {
+          out.push(`${ns}.options.${leaf}`);
+        }
+      } else {
+        out.push(`${ns}.${key}`);
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * The extends layers must own DISJOINT keys ([R72]). myst folds `extends` entries under
+ * `Promise.all` with a shared accumulator, so precedence follows *load-completion* order, not
+ * declaration order — two layers declaring the same key is a race whose winner can change
+ * between runs, not an override. Only the paper's own config (the derived base slot) wins
+ * deterministically.
+ *
+ * Pure: takes already-parsed layer configs so it stays testable without fs.
+ */
+export function checkLayerDisjointness(
+  layers: Array<{ name: string; config: unknown }>,
+): Array<{ severity: 'error'; message: string }> {
+  const seen = new Map<string, string>(); // key → first layer that declared it
+  const clashes: string[] = [];
+  for (const { name, config } of layers) {
+    for (const key of declaredKeys(config)) {
+      const prior = seen.get(key);
+      if (prior && prior !== name) clashes.push(`${key} (${prior} vs ${name})`);
+      else seen.set(key, name);
+    }
+  }
+  if (!clashes.length) return [];
+  return [
+    {
+      severity: 'error',
+      message:
+        `extends layers declare overlapping keys: ${clashes.join(', ')}. ` +
+        'myst resolves sibling extends by load-completion order, so the winner is ' +
+        'non-deterministic — move each key to exactly one layer ([R72]).',
+    },
+  ];
+}
+
+function readLayer(path: string, probes: FsProbes): unknown | null {
+  if (!probes.existsProbe(path)) return null;
+  try {
+    return parse(readFileSync(path, 'utf8'));
+  } catch {
+    return null; // a malformed layer is another check's problem, not this one's
+  }
+}
+
 /* ---- Layer A aggregate --------------------------------------------------- */
 
 export function runLayerA(
@@ -175,10 +250,14 @@ export function runLayerA(
     instanceRoot: string | null;
     project: { id?: string };
     repo: string | null;
+    /** Engine checkout, for the [R72] extends-layer disjointness check. Omitted → skipped. */
+    engineRoot?: string | null;
+    /** Edition id, to locate the right `editions/<edition>.yml` layer. Omitted → skipped. */
+    edition?: string | null;
   },
   probes: FsProbes = realFs,
 ): NamedFinding[] {
-  const { paperRoot, instanceRoot, project, repo } = input;
+  const { paperRoot, instanceRoot, project, repo, engineRoot, edition } = input;
   const findings: NamedFinding[] = [];
   const add = (check: string, klass: FindingKlass, r: IdCheckResult) => {
     if (!r.ok) findings.push({ check, severity: r.severity, message: r.message, klass });
@@ -202,6 +281,20 @@ export function runLayerA(
     findings.push({ check: 'layout', severity: r.severity, message: r.message, klass: 'structural' });
   }
 
+  // [R72]: the three extends layers must own disjoint keys, or precedence is a race.
+  if (engineRoot && instanceRoot && edition) {
+    const layers = [
+      { name: 'paper-base.yml', path: join(engineRoot, 'paper-base.yml') },
+      { name: `editions/${edition}.yml`, path: join(instanceRoot, 'editions', `${edition}.yml`) },
+      { name: 'brand/brand.yml', path: join(instanceRoot, 'brand', 'brand.yml') },
+    ]
+      .map((l) => ({ name: l.name, config: readLayer(l.path, probes) }))
+      .filter((l) => l.config != null);
+    for (const r of checkLayerDisjointness(layers)) {
+      findings.push({ check: 'extends-disjoint', severity: r.severity, message: r.message, klass: 'config' });
+    }
+  }
+
   const brand = instanceRoot ? readBrandAssetOptions(instanceRoot) : { site: {}, project: {} };
   add('brand-favicon', 'brand', checkBrandFavicon({ instanceRoot, favicon: brand.site.favicon }, probes));
   add('brand-watermark', 'brand', checkBrandWatermark({ instanceRoot, logo: brand.project.logo }, probes));
@@ -221,7 +314,14 @@ export interface ValidateResult {
 }
 
 export async function runValidate(
-  input: { paperRoot: string; instanceRoot: string | null; edge: MystEdge },
+  input: {
+    paperRoot: string;
+    instanceRoot: string | null;
+    edge: MystEdge;
+    /** Engine checkout + edition, for the [R72] disjointness check. Omitted → skipped. */
+    engineRoot?: string | null;
+    edition?: string | null;
+  },
   opts: { strict?: boolean; repo?: string | null; pathBase?: string } = {},
   probes: FsProbes = realFs,
 ): Promise<ValidateResult> {
@@ -230,7 +330,14 @@ export async function runValidate(
 
   // Layer A — engine invariants
   const layerA = runLayerA(
-    { paperRoot: input.paperRoot, instanceRoot: input.instanceRoot, project, repo },
+    {
+      paperRoot: input.paperRoot,
+      instanceRoot: input.instanceRoot,
+      project,
+      repo,
+      engineRoot: input.engineRoot ?? null,
+      edition: input.edition ?? null,
+    },
     probes,
   );
   const errors = layerA.filter((f) => f.severity === 'error');

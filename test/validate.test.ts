@@ -6,6 +6,8 @@ import {
   checkBrandWatermark,
   runValidate,
   type FsProbes,
+  checkLayerDisjointness,
+  declaredKeys,
 } from '../src/validate.js';
 import type { MystEdge } from '../src/build.js';
 
@@ -210,5 +212,79 @@ describe('runValidate — exit codes over the fixture instance', () => {
     expect(lax.warnings.length).toBeGreaterThan(0);
     const strict = await runValidate(base, { repo: null, strict: true }, allTrue);
     expect(strict.exitCode).toBe(1);
+  });
+});
+
+describe('checkLayerDisjointness — extends layers must own disjoint keys ([R72])', () => {
+  const paperBase = {
+    project: { thumbnail: 'thumbnails/thumbnail.png', exports: [{ id: 'typst-pdf' }] },
+    site: { options: { hide_toc: true } },
+  };
+  const edition = {
+    project: { subject: 'Micropublication', venue: 'Fixture 2026', license: 'CC-BY-4.0' },
+  };
+  const brand = {
+    site: { options: { logo: './logo.svg', favicon: './favicon.svg' }, nav: [] },
+    project: { options: { logo: './logo-watermark.svg' } },
+  };
+
+  it("passes for today's engine layers (they are disjoint)", () => {
+    expect(
+      checkLayerDisjointness([
+        { name: 'paper-base.yml', config: paperBase },
+        { name: 'editions/x.yml', config: edition },
+        { name: 'brand/brand.yml', config: brand },
+      ]),
+    ).toEqual([]);
+  });
+
+  it('does NOT flag site.options siblings — that map merges field-wise ([R68])', () => {
+    // paper-base owns site.options.hide_toc, brand owns site.options.logo. Comparing
+    // `site.options` as a unit (rather than per leaf) would falsely flag these.
+    const out = checkLayerDisjointness([
+      { name: 'paper-base.yml', config: paperBase },
+      { name: 'brand/brand.yml', config: brand },
+    ]);
+    expect(out).toEqual([]);
+  });
+
+  it('flags a real overlap (edition overriding a paper-base default)', () => {
+    const greedyEdition = { ...edition, site: { options: { hide_toc: false } } };
+    const out = checkLayerDisjointness([
+      { name: 'paper-base.yml', config: paperBase },
+      { name: 'editions/x.yml', config: greedyEdition },
+    ]);
+    expect(out).toHaveLength(1);
+    expect(out[0]!.severity).toBe('error');
+    expect(out[0]!.message).toContain('site.options.hide_toc');
+    expect(out[0]!.message).toContain('paper-base.yml vs editions/x.yml');
+  });
+
+  it('flags a top-level project key declared twice', () => {
+    const out = checkLayerDisjointness([
+      { name: 'editions/x.yml', config: edition },
+      { name: 'brand/brand.yml', config: { project: { license: 'MIT' } } },
+    ]);
+    expect(out[0]!.message).toContain('project.license');
+  });
+
+  it('declaredKeys splits options to leaves but keeps other keys at top level', () => {
+    expect(declaredKeys(brand).sort()).toEqual([
+      'project.options.logo',
+      'site.nav',
+      'site.options.favicon',
+      'site.options.logo',
+    ]);
+    expect(declaredKeys(paperBase).sort()).toEqual([
+      'project.exports',
+      'project.thumbnail',
+      'site.options.hide_toc',
+    ]);
+  });
+
+  it('tolerates empty / malformed layers', () => {
+    expect(checkLayerDisjointness([{ name: 'a', config: null }, { name: 'b', config: {} }])).toEqual([]);
+    expect(declaredKeys(undefined)).toEqual([]);
+    expect(declaredKeys({ project: 'not-an-object' })).toEqual([]);
   });
 });

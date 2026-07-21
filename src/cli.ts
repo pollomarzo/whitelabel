@@ -340,6 +340,19 @@ async function cmdNotify(argv: string[]): Promise<number> {
  *  the report to stdout and, with `--report <path>`, writes the full JSON envelope for the
  *  Stage-2 `oak check-post` job to post. Does NOT post to GitHub itself — all PR write-back is
  *  now uniform Stage-2 (the untrusted validate job holds no write token). */
+/** The paper's declared edition, or null. `oak validate` must survive a paper with a missing
+ *  or malformed engine coordinate (that is itself a finding), so this never throws. */
+function readEditionQuietly(paperRoot: string): string | null {
+  try {
+    const v = parseDocument(readFileSync(join(paperRoot, 'myst.yml'), 'utf8')).getIn([
+      'project', 'options', 'oaktree-sapling', 'edition',
+    ]);
+    return typeof v === 'string' && v ? v : null;
+  } catch {
+    return null;
+  }
+}
+
 async function cmdValidate(argv: string[]): Promise<number> {
   const paperRoot = resolve(flag(argv, 'paper') ?? '.');
   const noInstance = has(argv, 'no-instance');
@@ -366,7 +379,14 @@ async function cmdValidate(argv: string[]): Promise<number> {
   let out;
   try {
     out = await runValidate(
-      { paperRoot, instanceRoot, edge: createMystEdge() },
+      {
+        paperRoot,
+        instanceRoot,
+        edge: createMystEdge(),
+        // [R72] disjointness needs the engine layer + which edition file to compare.
+        engineRoot: engineRoot(),
+        edition: readEditionQuietly(paperRoot),
+      },
       { strict, repo, pathBase: process.env.GITHUB_WORKSPACE ?? paperRoot },
     );
   } finally {
