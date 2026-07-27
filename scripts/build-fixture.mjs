@@ -10,7 +10,7 @@
  * the two-pass working-tree injection. This is the "test with a local template" path:
  * no release zip, no network for the PDF — the engine template is used by path.
  */
-import { mkdtempSync, copyFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, copyFileSync, existsSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -43,8 +43,14 @@ execFileSync(
   { stdio: 'inherit' },
 );
 
-const pdf = join(tmp, '_build', 'exports', 'myst_typst', 'index.pdf');
-console.error(`\nPDF: ${existsSync(pdf) ? pdf : '(not produced)'}`);
+// Just report what was produced — the exact pinned path (compose TYPST_OUTPUT) is asserted by
+// the integration test, which can import the constant; this plain .mjs cannot, so it globs
+// rather than duplicate the literal.
+const exportsDir = join(tmp, '_build', 'exports');
+const pdf = existsSync(exportsDir)
+  ? readdirSync(exportsDir, { recursive: true }).map(String).find((f) => f.endsWith('.pdf'))
+  : undefined;
+console.error(`\nPDF: ${pdf ? join(exportsDir, pdf) : '(not produced)'}`);
 if (!process.argv.includes('--keep')) {
   console.error('(pass --keep to retain the temp dir)');
 }

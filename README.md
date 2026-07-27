@@ -32,7 +32,7 @@ test renders a real PDF through the bundled CLI):
 | `src/compose.ts` | **pure** compose(): assembles the engine‹edition‹brand extends chain + computes the engine `ownOverride` (asset URLs). Unit-tested. |
 | `src/ref.ts` | engine-ref classification + the floating-author trust policy (dec. 23 / [R41]); syntactic half only — ancestry check is CI-side. |
 | `src/assets.ts` | version-matched typst-template + theme-zip URLs (closes [R5]). |
-| `src/yaml-io.ts` | working-tree myst.yml round-trips (Document API, never sed — [R3]). |
+| `src/yaml-io.ts` | config round-trips (Document API, never sed — [R3]) + `DERIVED_CONFIG_FILE`. The author's `myst.yml` is read-only; writes go to the derived `myst.oak.yml` ([R71]). |
 | `src/build.ts` | **`oak build`**: the two-pass orchestrator ([R52]); myst edge injected for testing. |
 | `src/myst.ts` | the mystmd edge (the one module importing bundled myst-cli — [R51]); sets the current project+site pointers via `findCurrent*AndLoad` so `build` renders HTML ([R59]). |
 | `src/cli.ts` | `oak` entry point; `build` + `deposit`/`release` + `validate` implemented; `deploy-preview`/`notify`/`bootstrap`/`upgrade` stubbed by slice. |
@@ -54,8 +54,14 @@ npm run build:fixture    # builds the fixture paper via the in-engine typst temp
 `oak build` auto-detects `templates/typst` (no release zip needed); `--typst-template
 <path>` overrides it, `--no-site-template` uses myst's default theme until the fork
 release exists. The two-pass ([R52]): write `extends:` → `loadConfig` → write the
-complete engine typst entry + theme to the working-tree OWN config → `build`. Neither
-write is committed.
+complete engine typst entry + theme → `build`. **Both writes go to the DERIVED config
+`myst.oak.yml` ([R71])** — the author's `myst.yml` is an input and is never modified.
+myst is pointed at the derived file via `new Session({ configFiles })`; it is gitignored
+by the frozen template and NOT auto-deleted (myst's HTML build `process.exit(0)`s on
+success, so no cleanup hook can reliably run). compose also pins the export `output:` (`TYPST_OUTPUT`), so the PDF
+lands at `_build/exports/paper.pdf` for every paper — myst would otherwise
+derive both the directory and (for multi-article exports) the filename from the
+declaring config's name, coupling artifact paths to an engine-internal filename.
 
 ### Releasing — a runnable engine ⟺ a release ([R57], `RELEASING.md`)
 
@@ -87,7 +93,7 @@ re-renderable on linux-x86_64 + node with nothing fetched. Locally, keep `typst`
    id, whole-entry, base-wins, NO field merge; splitting a skeleton in paper-base from
    `articles`/`template` in the edition races and drops fields (caught in the first real
    build). So the complete export lives in `paper-base.yml`, editions carry none, compose
-   swaps only `template:` on the paper's OWN working-tree config (deterministic win).
+   swaps only `template:` on the derived config's base slot (deterministic win, [R71]).
 3. **`project.options.youtube` coexists with `options.oaktree-sapling`** — schema reads
    only the engine subkey; the override pass touches only exports + site.template, never
    options. Guarded end-to-end (the fixture's real youtube survives the whole pipeline).

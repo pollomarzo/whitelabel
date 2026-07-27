@@ -28,6 +28,22 @@ import { isAbsolute, join } from 'node:path';
 import { readEngineOptions } from './schema.js';
 import { typstTemplateUrl, themeZipUrl } from './assets.js';
 
+/**
+ * Where the typst PDF is written, relative to the paper root (myst resolves a relative
+ * `output` against the DECLARING config's directory — `collectExportOptions.js:250`).
+ *
+ * Pinned because myst's default path is derived from the export's declaring file, which for a
+ * project-config export is the config itself. That made both the directory
+ * (`_build/exports/<slug(config)>_typst/`) and — for MULTI-ARTICLE exports — the filename
+ * (`resolveOutput` falls back to `sourceFile` when `articles` has more than one entry) depend on
+ * an engine-internal filename, so renaming the derived config silently moved every paper's
+ * artifact. An explicit `output` decouples them: one documented path for every paper.
+ *
+ * The extension is load-bearing: WITH one myst treats the value as the exact output file;
+ * without one it is a folder, which would leave the multi-article filename still derived.
+ */
+export const TYPST_OUTPUT = '_build/exports/paper.pdf';
+
 /** Brand asset fields that carry a PATH myst resolves against the PAPER root, not the
  *  declaring brand dir ([R62]) — so compose absolutizes them against `<instanceRoot>/brand`.
  *  Split by config namespace, because the two consumers read different places:
@@ -211,17 +227,22 @@ export function compose(input: ComposeInput): ComposeResult {
   // --- ownOverride: engine overrides merged into the paper's OWN config ([R52]) -----
   const ownOverride: OwnOverride = {};
 
-  // Typst export — engine owns `template:` authoritatively (finding 2 / [R5]). Because
-  // myst merges exports by id WHOLE-ENTRY (no field merge), the winning entry must be
-  // complete: spread the resolved export (carries the edition's `articles`) and set the
-  // engine-pinned template. Placed in own config so base-wins is deterministic.
+  // Typst export — engine owns `template:` AND `output:` authoritatively (finding 2 / [R5],
+  // TYPST_OUTPUT). Because myst merges exports by id WHOLE-ENTRY (no field merge), the winning
+  // entry must be complete: spread the resolved export (carries the edition's `articles`) and
+  // set both engine-owned fields. Placed in own config so base-wins is deterministic.
+  //
+  // Both are set HERE rather than declared in paper-base.yml for the same reason: a paper that
+  // overrides the whole entry (a multi-article export, e.g. paper + supplement) would silently
+  // drop a field declared only in paper-base — giving stable paths to simple papers and leaked
+  // ones to exactly the papers that most need them.
   const typst = (resolvedProject.exports ?? []).find(
     (e) => e['format'] === 'typst' || e['id'] === 'typst-pdf',
   );
   if (typst) {
     const template =
       assetOverrides.typstTemplate ?? typstTemplateUrl(engineRepo, engineVersion);
-    ownOverride.project = { exports: [{ ...typst, template }] };
+    ownOverride.project = { exports: [{ ...typst, template, output: TYPST_OUTPUT }] };
   } else {
     warnings.push(
       'no typst export found in the resolved config; PDF export + Zenodo deposit will be skipped',

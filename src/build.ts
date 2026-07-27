@@ -1,10 +1,13 @@
 /**
  * build.ts — `oak build`, the two-pass orchestrator ([R52], design §12a).
  *
- * Pass 1: write the `extends:` chain into the working-tree myst.yml → loadConfig →
- *         resolved project (its typst export now carries the edition's `articles`).
+ * The author's `myst.yml` is READ-ONLY ([R71]); both passes write the DERIVED config
+ * (`myst.oak.yml`) beside it, and myst is pointed there via `Session({ configFiles })`.
+ *
+ * Pass 1: author config + `extends:` chain → derived → loadConfig → resolved project
+ *         (its typst export now carries the edition's `articles`).
  * Pass 2: compose(resolved) → ownOverride → write the complete engine typst entry +
- *         theme `site.template` into the working-tree own config → build.
+ *         theme `site.template` into the derived config → build.
  *
  * The myst edge (loadConfig + build) is injected as `MystEdge` so this orchestration is
  * unit-testable with a fake — the real edge (myst.ts) pulls in the bundled myst-cli.
@@ -16,11 +19,12 @@ import { runLayerA } from './validate.js';
 import { originRepo } from './gh.js';
 import {
   readDoc,
-  writeDoc,
+  writeDerivedDoc,
   setExtends,
   applyOwnOverride,
   readEngineCoordinateRaw,
   readBrandAssetOptions,
+  DERIVED_CONFIG_FILE,
 } from './yaml-io.js';
 
 export interface BuildOpts {
@@ -31,12 +35,19 @@ export interface BuildOpts {
   exportsOnly?: boolean;
 }
 
-/** The seam to mystmd (myst.ts implements it with the bundled myst-cli). */
+/**
+ * The seam to mystmd (myst.ts implements it with the bundled myst-cli).
+ *
+ * `configFile` selects WHICH config in `dir` myst reads, via `new Session({ configFiles })`
+ * ([R71]). Omitted → myst's default (`myst.yml`/`myst.yaml`), i.e. the author's own config —
+ * which is what `oak validate` wants, since it does not compose. `build` passes the derived
+ * config. Sessions are cached per config name in the real edge.
+ */
 export interface MystEdge {
   /** loadConfig(session, dir).project — the resolved project frontmatter. */
-  loadProject(dir: string): Promise<ResolvedProject>;
+  loadProject(dir: string, configFile?: string): Promise<ResolvedProject>;
   /** build(session, [], opts) from within `dir`. */
-  build(dir: string, opts: BuildOpts): Promise<void>;
+  build(dir: string, opts: BuildOpts, configFile?: string): Promise<void>;
   /**
    * Load AND process the project at `dir` (config + current-project pointer + mdast), then run
    * `fn` against the myst Session with the current project set — so the curvenote Layer-B checks
@@ -79,18 +90,25 @@ export async function runBuild(input: RunBuildInput): Promise<RunBuildResult> {
     edge,
   } = input;
 
-  const mystPath = join(paperRoot, 'myst.yml');
-  const doc = readDoc(mystPath);
+  // The author's config is an INPUT — read, never written ([R71]). Everything the engine
+  // injects goes to the DERIVED config beside it, which is what myst is pointed at.
+  const authorPath = join(paperRoot, 'myst.yml');
+  const derivedPath = join(paperRoot, DERIVED_CONFIG_FILE);
+  const doc = readDoc(authorPath);
 
   // Raw, pre-extends read of the engine coordinate (the local `yq` equivalent, §6a).
   const { version: engineVersion, edition } = readEngineCoordinateRaw(doc);
 
-  // --- Pass 1: inject the extends chain, then resolve --------------------------------
+  // --- Pass 1: materialize author config + extends chain into the derived config -----
+  // The author's frontmatter lands in the derived file's BASE slot, where myst's base-wins is
+  // deterministic; the engine layers stay `extends:`. Deriving by `extends:`-ing the author's
+  // myst.yml instead would demote it to a racing sibling ([R72]) and make author-overrides-venue
+  // precedence non-deterministic.
   const { extendsChain } = extendsChainFor({ engineRoot, instanceRoot, edition, buildKind });
   setExtends(doc, extendsChain);
-  writeDoc(mystPath, doc);
+  writeDerivedDoc(derivedPath, doc);
 
-  const resolvedProject = await edge.loadProject(paperRoot);
+  const resolvedProject = await edge.loadProject(paperRoot, DERIVED_CONFIG_FILE);
 
   // --- Pre-flight validate (Layer A): the engine's own invariants gate the build ([R21]).
   // A sentinel/malformed id, broken layout, or (soft) brand issue is caught before the
@@ -100,6 +118,8 @@ export async function runBuild(input: RunBuildInput): Promise<RunBuildResult> {
     instanceRoot,
     project: resolvedProject,
     repo: process.env.GITHUB_REPOSITORY ?? originRepo(paperRoot),
+    engineRoot,
+    edition,
   });
   // Only STRUCTURAL invariants (missing index.md / stray myst.yml) gate the build. Identity
   // errors (a placeholder/invalid/duplicate id) do NOT stop the build — the id is enforced at
@@ -135,12 +155,12 @@ export async function runBuild(input: RunBuildInput): Promise<RunBuildResult> {
     brandAssets,
   });
 
-  // --- Pass 2: apply the engine override to the OWN config, then build --------------
+  // --- Pass 2: apply the engine override to the derived config, then build ----------
   applyOwnOverride(doc, result.ownOverride);
-  writeDoc(mystPath, doc);
+  writeDerivedDoc(derivedPath, doc);
 
   if (baseUrl) process.env.BASE_URL = baseUrl;
-  await edge.build(paperRoot, buildOpts);
+  await edge.build(paperRoot, buildOpts, DERIVED_CONFIG_FILE);
 
   return { resolvedProject, extendsChain, warnings: [...result.warnings, ...layerAWarnings] };
 }

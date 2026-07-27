@@ -7,12 +7,13 @@
  * unbundled myst-cli crashes on Node 24 (the docx interop bug the esbuild bundle papers over,
  * [R51]). So this exercises the exact artifact CI runs. Skipped unless the bundle is present.
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, copyFileSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { bundleState, assertBundleNotStale } from './bundle-state.js';
 
 const engineDir = fileURLToPath(new URL('..', import.meta.url));
 const bundle = join(engineDir, 'dist', 'cli.cjs');
@@ -37,7 +38,8 @@ function runValidate(paper: string): { exitCode: number; out: any } {
   return { exitCode, out: JSON.parse(stdout) };
 }
 
-describe.skipIf(!existsSync(bundle))('oak validate — curvenote Layer-B checks (bundled)', () => {
+describe.skipIf(bundleState() === 'absent')('oak validate — curvenote Layer-B checks (bundled)', () => {
+  beforeAll(assertBundleNotStale);
   it('passes the well-formed fixture: the 5 journal-selected checks pass, exit 0, success', () => {
     const { exitCode, out } = runValidate(fixturePaper);
     expect(exitCode).toBe(0);

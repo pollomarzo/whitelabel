@@ -8,13 +8,16 @@
  * Skipped unless the bundle + typst + the in-engine template are all present (so the
  * default `npm test` stays portable). CI bundles first, then this gates the tag.
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, copyFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, copyFileSync, existsSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseDocument } from 'yaml';
+import { DERIVED_CONFIG_FILE } from '../src/yaml-io.js';
+import { TYPST_OUTPUT } from '../src/compose.js';
+import { bundleState, assertBundleNotStale } from './bundle-state.js';
 import { readFileSync } from 'node:fs';
 
 const engineDir = fileURLToPath(new URL('..', import.meta.url));
@@ -30,14 +33,19 @@ function typstPresent(): boolean {
   }
 }
 
-const runnable = existsSync(bundle) && existsSync(template) && typstPresent();
+// absent bundle → skip (portable); STALE bundle → hard fail in beforeAll, never a silent
+// pass against old code (bundle-state.ts).
+const runnable = bundleState() !== 'absent' && existsSync(template) && typstPresent();
 
 describe.skipIf(!runnable)('fixture build through the bundled CLI', () => {
+  beforeAll(assertBundleNotStale);
   it('renders a real PDF with articles preserved and the engine template', () => {
     const tmp = mkdtempSync(join(tmpdir(), 'oak-int-'));
     for (const f of ['myst.yml', 'index.md', 'bib.bib']) {
       copyFileSync(join(engineDir, 'test', 'fixture-paper', f), join(tmp, f));
     }
+
+    const authorBefore = readFileSync(join(tmp, 'myst.yml')); // raw bytes, pre-build
 
     execFileSync(
       'node',
@@ -55,14 +63,24 @@ describe.skipIf(!runnable)('fixture build through the bundled CLI', () => {
       { stdio: 'pipe' },
     );
 
-    // a real PDF, named from the article (index.md → index.pdf, proving articles took effect)
-    const pdf = join(tmp, '_build', 'exports', 'myst_typst', 'index.pdf');
-    expect(existsSync(pdf)).toBe(true);
+    // a real PDF at the ENGINE-PINNED path. Previously this asserted an `index.pdf` whose
+    // directory myst derived from the declaring config's filename; `output` pins both now, so
+    // the path is asserted exactly and the articles proof moves to the composed entry below.
+    expect(existsSync(join(tmp, TYPST_OUTPUT))).toBe(true);
+    // and nothing landed at a filename-derived path
+    expect(readdirSync(join(tmp, '_build', 'exports'))).toEqual(['paper.pdf']);
 
-    // the two-pass wrote the complete typst entry (articles + engine template) to own config
-    const doc = parseDocument(readFileSync(join(tmp, 'myst.yml'), 'utf8'));
+    // THE [R71] INVARIANT, through the real bundled CLI: the author's config is untouched.
+    expect(readFileSync(join(tmp, 'myst.yml')).equals(authorBefore)).toBe(true);
+
+    // the two-pass wrote the complete typst entry (articles + engine template) to the DERIVED
+    // config — never the author's.
+    const doc = parseDocument(readFileSync(join(tmp, DERIVED_CONFIG_FILE), 'utf8'));
     expect(doc.getIn(['project', 'exports', 0, 'template'])).toBe(template);
+    // articles took effect (the [R53] regression this canary exists for), asserted on the
+    // composed entry now that the output filename no longer encodes it
     expect(doc.getIn(['project', 'exports', 0, 'articles', 0, 'file'])).toBe('index.md');
+    expect(doc.getIn(['project', 'exports', 0, 'output'])).toBe(TYPST_OUTPUT);
     // the author's sibling option survived the whole pipeline (finding 3)
     expect(doc.getIn(['project', 'options', 'youtube'])).toBe(
       'https://youtu.be/dQw4w9WgXcQ',

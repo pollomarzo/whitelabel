@@ -29,13 +29,32 @@ import type { MystEdge, BuildOpts } from './build.js';
 import type { ResolvedProject } from './compose.js';
 
 export function createMystEdge(): MystEdge {
-  const session = new Session();
+  /**
+   * One Session per config filename ([R71]). `configFiles` is a first-class Session option
+   * (`myst-cli/session/session.js:70`, default `['myst.yml','myst.yaml']`) and every lookup
+   * routes through it — `configFromPath`, `defaultConfigFile`, `project/load.js`, `fromTOC.js`,
+   * `fromPath.js` — so pointing it at the derived config makes myst ignore the author's
+   * `myst.yml` entirely. Keyed cache rather than one session: `build` reads the derived config
+   * while `validate` (which does not compose) still reads the author's.
+   */
+  const sessions = new Map<string, Session>();
+  const sessionFor = (configFile?: string): Session => {
+    const key = configFile ?? '';
+    let s = sessions.get(key);
+    if (!s) {
+      s = configFile ? new Session({ configFiles: [configFile] }) : new Session();
+      sessions.set(key, s);
+    }
+    return s;
+  };
+
   return {
-    async loadProject(dir: string): Promise<ResolvedProject> {
-      const res = await loadConfig(session, dir);
+    async loadProject(dir: string, configFile?: string): Promise<ResolvedProject> {
+      const res = await loadConfig(sessionFor(configFile), dir);
       return (res?.project ?? {}) as ResolvedProject;
     },
-    async build(dir: string, opts: BuildOpts): Promise<void> {
+    async build(dir: string, opts: BuildOpts, configFile?: string): Promise<void> {
+      const session = sessionFor(configFile);
       const prev = process.cwd();
       process.chdir(dir);
       try {
@@ -54,6 +73,12 @@ export function createMystEdge(): MystEdge {
       }
     },
     async withProjectSession<T>(dir: string, fn: (session: ISession) => Promise<T>): Promise<T> {
+      // Author's config (default configFiles): `oak validate` does not compose, so there is no
+      // derived config to read. FOLLOW-UP OWED ([R71]): the Layer-B editorial checks arguably
+      // should see the COMPOSED config, since that is what actually gets published — deliberately
+      // not changed here, because it can flip the Journal-checks merge verdict and needs its own
+      // evaluation rather than riding a mechanical refactor.
+      const session = sessionFor();
       const prev = process.cwd();
       process.chdir(dir);
       try {
