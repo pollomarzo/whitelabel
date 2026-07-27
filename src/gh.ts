@@ -9,7 +9,7 @@
  * are absent (a local sandbox rehearsal), the caller degrades to just the Zenodo work + a
  * working-tree myst.yml write, which is enough for the slice-3 acceptance (a sandbox record).
  */
-import { execFileSync } from 'node:child_process';
+import { execFileSync, type StdioOptions } from 'node:child_process';
 import { cpSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -19,8 +19,19 @@ import type { CheckRun } from './checks.js';
 import type { Provisioner } from './bootstrap.js';
 import type { UpgradePr } from './upgrade.js';
 
-function git(repoRoot: string, args: string[]): string {
-  return execFileSync('git', ['-C', repoRoot, ...args], { encoding: 'utf8' }).trim();
+/**
+ * `execFileSync` forwards the child's stderr to ours unless stdio says otherwise, so a probe
+ * that treats failure as a valid answer still prints the failure. `quiet` pipes stderr into
+ * the (discarded) result instead — use it only where the throw is caught and answered.
+ */
+const stdio = (quiet?: boolean): StdioOptions | undefined =>
+  quiet ? ['pipe', 'pipe', 'pipe'] : undefined;
+
+function git(repoRoot: string, args: string[], opts: { quiet?: boolean } = {}): string {
+  return execFileSync('git', ['-C', repoRoot, ...args], {
+    encoding: 'utf8',
+    stdio: stdio(opts.quiet),
+  }).trim();
 }
 
 /** git without a `-C` (clone / raw), optionally in `cwd`. */
@@ -28,8 +39,13 @@ function gitRaw(args: string[], cwd?: string): string {
   return execFileSync('git', args, { encoding: 'utf8', cwd }).trim();
 }
 
-function gh(args: string[], opts: { input?: string; cwd?: string } = {}): string {
-  return execFileSync('gh', args, { encoding: 'utf8', input: opts.input, cwd: opts.cwd }).trim();
+function gh(args: string[], opts: { input?: string; cwd?: string; quiet?: boolean } = {}): string {
+  return execFileSync('gh', args, {
+    encoding: 'utf8',
+    input: opts.input,
+    cwd: opts.cwd,
+    stdio: stdio(opts.quiet),
+  }).trim();
 }
 
 /** true when `gh api <path>` returns 2xx (idempotency GET probe). */
@@ -62,6 +78,9 @@ export const realGitContext: GitContext = {
     const repo = originRepo(repoRoot);
     if (!repo) return null;
     try {
+      // NOT quiet: "commit has no PR" exits 0 with empty output, so this catch is reached only
+      // on a genuine gh failure (auth / network / rate limit) — and review_pr is deposited into
+      // provenance, so that failure must stay visible rather than silently becoming null.
       const out = gh(['api', `repos/${repo}/commits/${sha}/pulls`, '--jq', '.[0].number // empty']);
       return out || null;
     } catch {
@@ -73,7 +92,7 @@ export const realGitContext: GitContext = {
 /** owner/repo from the origin remote, or null. */
 export function originRepo(repoRoot: string): string | null {
   try {
-    const url = git(repoRoot, ['remote', 'get-url', 'origin']);
+    const url = git(repoRoot, ['remote', 'get-url', 'origin'], { quiet: true });
     const m = /github\.com[/:]([^/]+\/[^/]+?)(?:\.git)?$/.exec(url);
     return m ? m[1]! : null;
   } catch {

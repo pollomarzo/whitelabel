@@ -1,0 +1,48 @@
+# test — advisory PR feedback for engine changes.
+#
+# The RELEASE gate lives in scripts/cut-engine-release.sh (§12 step 0 / dec. 8): it runs this
+# same suite plus the pinned bin/typst + fixture render before a tag can exist, and that is the
+# gate a bad engine tag must not pass. This workflow exists only to surface the same failures at
+# PR time instead of at cut time — it is deliberately NOT a required status check, so it never
+# blocks a merge.
+name: test
+
+on:
+  pull_request:
+  push: { branches: [main] }
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-${{ github.event_name == 'pull_request' && github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24 # matches cut-engine-release.yml + the bundle's validated runtime
+          cache: npm
+
+      - run: npm ci
+
+      # Not covered by the release canary: vitest transpiles TS through esbuild, which strips
+      # types WITHOUT checking them, so a type error passes `npm test` and reaches a tag.
+      - run: npm run typecheck
+
+      # REQUIRED before `npm test`, not incidental: dist/cli.cjs is gitignored, and both
+      # integration suites are `describe.skipIf(!existsSync(bundle))`. Without this step they
+      # skip silently and the job reports green on unit tests alone. Doubles as the standing
+      # check that esbuild still bundles myst-cli to CJS ([R51]'s live risk).
+      - run: npm run bundle
+
+      # 147 of 148. test/integration.test.ts additionally guards on typst being on PATH and
+      # skips here: installing it would fork the version pinned by typst.version, and [R66] is
+      # explicit that there is one source of truth for that. The PDF canary stays the release
+      # gate's job, where the binary it renders with is the binary it ships.
+      - run: npm test
