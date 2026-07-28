@@ -419,11 +419,13 @@ export function latestEngineRelease(engineRepo: string): string {
   return tag;
 }
 
-/** Shallow-clone `engineRepo` at `tag` and return its `copier-template/` path. */
+/** Shallow-clone `engineRepo` at `tag` and return its `templates/paper/` path. `oak upgrade`
+ *  only resyncs the frozen shim (`.github/` + `CODEOWNERS`), which lives in the paper template;
+ *  instance-config data is tenant-owned and never resynced, so one root suffices. */
 export function materializeTemplate(engineRepo: string, tag: string): string {
   const tmp = mkdtempSync(join(tmpdir(), 'oak-tmpl-'));
   gh(['repo', 'clone', engineRepo, tmp, '--', '--depth', '1', '--branch', tag]);
-  return join(tmp, 'copier-template');
+  return join(tmp, 'templates', 'paper');
 }
 
 /** The gated upgrade/resync PR — openDoiPr's branch→commit-as-bot→push→gh-pr-create shape. */

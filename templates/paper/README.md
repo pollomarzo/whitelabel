@@ -1,12 +1,11 @@
 # The paper-repo template (frozen shim + starter content)
 
-This is what `oak bootstrap` stamps a paper repo with (design §1, [R2]). The `.github/` set
-is **frozen and generic** — never edited after creation, CODEOWNERS-gated — because all
+This is what `oak bootstrap paper` stamps a paper repo with (design §1, [R2]). The `.github/`
+set is **frozen and generic** — never edited after creation, CODEOWNERS-gated — because all
 *logic* lives in the engine behind `project.options.oaktree-sapling.version`, improvable by a
 one-line version bump instead of a scaffold round across N repos ([R17]). Alongside it sits a
-minimal starter `myst.yml`/`index.md`/`bib.bib` the author replaces. The
-`instance-config/` subtree is a *separate* template — the journal scaffold `oak bootstrap
-journal` stamps — not part of a paper stamp.
+minimal starter `myst.yml`/`index.md`/`bib.bib` the author replaces. The journal scaffold is a
+*separate* template — `templates/instance/`, stamped by `oak bootstrap journal`.
 
 | File | Role |
 |---|---|
@@ -20,7 +19,6 @@ journal` stamps — not part of a paper stamp.
 | `.github/workflows/version-bump.yml` | scheduled logic-ref bump: `oak upgrade --version-only` opens the one-line PR (§6b, dec. 17) |
 | `CODEOWNERS` | gates `.github/` + itself to the editors |
 | `myst.yml` / `index.md` / `bib.bib` | starter paper content (the author replaces the placeholders) |
-| `instance-config/` | the journal scaffold (`journal.yml`/`editions/`/`brand/`/`registry/`) — a separate `oak bootstrap journal` template |
 
 `uses: ./.github/actions/engine` is a static *local* path, so no version literal is
 reintroduced (§6a). The four workflows keep only what GitHub forces to be static —
