@@ -1,0 +1,61 @@
+# conformance — release certification of the paper CI (plan-paper-ci-conformance.md).
+#
+# Drives the standing fixtures against an engine version V and asserts every shim path green
+# (build/Pages, journal checks, fork-safe preview, deposit chain, self-bump). Deliberately NOT
+# a required status check and NOT per-commit: it is a release/nightly gate (many real runs +
+# workflow_run latency + external round-trips ≈ 15–40 min). Advisory for now; a promotion gate
+# on a green cert is a later milestone (plan C5).
+#
+# Slice C0: only the `reset` job exists — idempotent teardown of a cert run's ephemeral state
+# (cert-* branches/PRs, *-cert-* tags) so runs are repeatable. The build/PR/deposit jobs (C1+)
+# land on top of this skeleton.
+name: conformance
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Engine version under test (e.g. v0.0.0-dev.18). C1+; unused by reset."
+        required: false
+      only-reset:
+        description: "Run just the teardown of prior cert state, then stop."
+        type: boolean
+        default: false
+
+# The harness holds ONLY the fixture-scoped PAT (CONFORMANCE_PAT); CF/Zenodo creds stay the
+# fixture repo's own secrets, read back from the fixture run. The ambient GITHUB_TOKEN cannot
+# drive the fixture (cross-repo reach + the recursion guard) — see plan §credentials.
+permissions:
+  contents: read
+
+concurrency:
+  group: conformance
+  cancel-in-progress: false
+
+jobs:
+  reset:
+    runs-on: ubuntu-latest
+    # A cert run is a deliberate act: the PAT lives behind a required-reviewer environment
+    # (personal-account interim home; org-shared secrets come with the open-scholar-nexus move).
+    environment: conformance
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      # dist/cli.cjs is gitignored; the harness runs the engine's CURRENT bundle (the code under
+      # review IS the harness), so build it before invoking `oak conformance`.
+      - run: npm run bundle
+
+      - name: Reset the fixture to a clean baseline
+        env:
+          GH_TOKEN: ${{ secrets.CONFORMANCE_PAT }}
+        run: node dist/cli.cjs conformance reset --repo ${{ vars.CONFORMANCE_FIXTURE_REPO }}
+
+  # C1+ (not built): install V via `oak upgrade`, drive push→main + PR + deposit paths, emit a
+  # tag-keyed cert record, always-run teardown. Each rides this reset baseline.

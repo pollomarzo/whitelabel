@@ -29,7 +29,8 @@ type Verb =
   | 'release'
   | 'notify'
   | 'bootstrap'
-  | 'upgrade';
+  | 'upgrade'
+  | 'conformance';
 
 const STUB_SLICE: Partial<Record<Verb, string>> = {};
 
@@ -591,6 +592,30 @@ async function cmdUpgrade(argv: string[]): Promise<number> {
   return out.exitCode;
 }
 
+/** `oak conformance` — the paper-CI conformance harness (plan-paper-ci-conformance.md). Slice
+ *  C0: `reset` (idempotent teardown of a cert run's ephemeral state). */
+async function cmdConformance(argv: string[]): Promise<number> {
+  const sub = argv[0];
+  const rest = argv.slice(1);
+  const gh = await import('./gh.js');
+  const conformance = await import('./conformance.js');
+  const deps = { gh: gh.realConformanceGh, log: (m: string) => process.stderr.write(m + '\n') };
+
+  if (sub === 'reset') {
+    const repo = flag(rest, 'repo');
+    if (!repo) {
+      process.stderr.write('oak conformance reset: --repo <owner/name> is required\n');
+      return 2;
+    }
+    const out = await conformance.cmdConformanceReset({ repo }, deps);
+    emit(out.result);
+    return out.exitCode;
+  }
+
+  process.stderr.write('oak conformance: usage: oak conformance reset --repo <owner/name>\n');
+  return 2;
+}
+
 async function main(argv: string[]): Promise<number> {
   const verb = argv[0] as Verb | undefined;
   if (verb === 'build') return cmdBuild(argv.slice(1));
@@ -602,6 +627,7 @@ async function main(argv: string[]): Promise<number> {
   if (verb === 'notify') return cmdNotify(argv.slice(1));
   if (verb === 'bootstrap') return cmdBootstrap(argv.slice(1));
   if (verb === 'upgrade') return cmdUpgrade(argv.slice(1));
+  if (verb === 'conformance') return cmdConformance(argv.slice(1));
   if (verb && verb in STUB_SLICE) {
     process.stderr.write(`oak ${verb}: not implemented yet (${STUB_SLICE[verb]}).\n`);
     return 1;
@@ -621,7 +647,8 @@ async function main(argv: string[]): Promise<number> {
       `                        [--edition <id>] [--engine-version <tag>] [--owner <@user|@org/team>] [--private] [--no-require-checks] [--yes]\n` +
       `  oak bootstrap journal --repo <owner/name> (--external | --co-located) [--name <name>] [--edition <id>]\n` +
       `                        [--engine-version <tag>] [--owner <@user|@org/team>] [--no-require-checks] [--yes]\n` +
-      `  oak upgrade (--repo <owner/name> | --paper <dir>) [--to <tag>] [--version-only|--files-only|--both] [--yes]\n`,
+      `  oak upgrade (--repo <owner/name> | --paper <dir>) [--to <tag>] [--version-only|--files-only|--both] [--yes]\n` +
+      `  oak conformance reset --repo <owner/name>\n`,
   );
   return 2;
 }
