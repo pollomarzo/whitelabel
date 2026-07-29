@@ -18,6 +18,7 @@ import type { GhPr, PagesDeployer } from './preview.js';
 import type { CheckRun } from './checks.js';
 import type { Provisioner } from './bootstrap.js';
 import type { UpgradePr } from './upgrade.js';
+import type { ConformanceGh } from './conformance.js';
 
 /**
  * `execFileSync` forwards the child's stderr to ours unless stdio says otherwise, so a probe
@@ -438,5 +439,44 @@ export const realUpgradePr: UpgradePr = {
     // Run `gh` inside the clone so it infers the target repo from origin (in CI the CWD is
     // already the repo; locally `oak upgrade` clones to a tmp dir, so pass cwd explicitly).
     return gh(['pr', 'create', '--title', opts.title, '--body', opts.body, '--head', opts.branch], { cwd: repoRoot });
+  },
+};
+
+/** The real GitHub seam for `oak conformance` (slice C0: reset). Drives the fixture repos via
+ *  the fixture-scoped PAT (gh reads GH_TOKEN). Deletes are DELETE-ref calls wrapped so an
+ *  already-absent target is a no-op, not a throw. */
+export const realConformanceGh: ConformanceGh = {
+  listOpenPrs(repo, label) {
+    // A not-yet-provisioned label makes `gh pr list --label` error; treat as no PRs.
+    let out: string;
+    try {
+      out = gh(['pr', 'list', '--repo', repo, '--state', 'open', '--label', label, '--json', 'number,headRefName'], { quiet: true });
+    } catch {
+      return [];
+    }
+    if (!out) return [];
+    return (JSON.parse(out) as { number: number; headRefName: string }[]).map((p) => ({
+      number: p.number,
+      headRef: p.headRefName,
+    }));
+  },
+  closePr(repo, prNumber) {
+    gh(['pr', 'close', String(prNumber), '--repo', repo]);
+  },
+  listBranches(repo, prefix) {
+    // matching-refs returns refs whose name starts with the given path (empty [] when none).
+    const out = gh(['api', `repos/${repo}/git/matching-refs/heads/${prefix}`, '--jq', '.[].ref']);
+    return out ? out.split('\n').map((r) => r.replace(/^refs\/heads\//, '')) : [];
+  },
+  deleteBranch(repo, branch) {
+    ghOk(['api', '-X', 'DELETE', `repos/${repo}/git/refs/heads/${branch}`]);
+  },
+  listTags(repo, marker) {
+    // No "contains" ref filter — list tags and match the middle marker in JS.
+    const out = gh(['api', `repos/${repo}/tags`, '--paginate', '--jq', '.[].name']);
+    return out ? out.split('\n').filter((t) => t.includes(marker)) : [];
+  },
+  deleteTag(repo, tag) {
+    ghOk(['api', '-X', 'DELETE', `repos/${repo}/git/refs/tags/${tag}`]);
   },
 };
