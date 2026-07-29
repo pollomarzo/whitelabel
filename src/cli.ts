@@ -650,10 +650,19 @@ async function cmdConformance(argv: string[]): Promise<number> {
       },
     );
     emit(out.result);
+    // The tag-keyed cert record (the C5 promotion-gate seam): persist the verdict for a later
+    // gate to read. stdout already carries it; --record writes it to a file the workflow can
+    // attach to the engine tag's release.
+    const record = flag(rest, 'record');
+    if (record) writeFileSync(resolve(record), JSON.stringify(out.result, null, 2) + '\n');
     return out.exitCode;
   }
 
-  process.stderr.write('oak conformance: usage:\n  oak conformance reset   --repo <owner/name>\n  oak conformance certify --repo <owner/name> --tag <vX.Y.Z>\n');
+  process.stderr.write(
+    'oak conformance: usage:\n' +
+      '  oak conformance reset   --repo <owner/name>\n' +
+      '  oak conformance certify --repo <owner/name> --tag <vX.Y.Z> [--run-id <id>] [--record <path>]\n',
+  );
   return 2;
 }
 

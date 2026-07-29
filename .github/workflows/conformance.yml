@@ -38,6 +38,8 @@ jobs:
     # A cert run is a deliberate act: the PAT lives behind a required-reviewer environment
     # (personal-account interim home; org-shared secrets come with the open-scholar-nexus move).
     environment: conformance
+    permissions:
+      contents: write # attach the cert record to the engine tag's GH Release (ambient token)
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -52,9 +54,11 @@ jobs:
       # review IS the harness), so build it before invoking `oak conformance`.
       - run: npm run bundle
 
-      # With a `tag` and not only-reset: certify push→main (install V → merge → assert build +
-      # Pages 200 + Journal-checks Check Run; `certify` resets first). Else: just reset.
+      # With a `tag` and not only-reset: certify push→main + preview + deposit (`certify` resets
+      # first and tears down after). Else: just reset. The certify exit code (0=CERTIFIED,
+      # 1=FAILED, 2=INCONCLUSIVE) is stashed for the outcome step below.
       - name: Certify (or reset)
+        id: cert
         env:
           GH_TOKEN: ${{ secrets.CONFORMANCE_PAT }}
           FIXTURE: ${{ vars.CONFORMANCE_FIXTURE_REPO }}
@@ -66,9 +70,30 @@ jobs:
           git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
           if [ "$ONLY_RESET" = "true" ] || [ -z "$TAG" ]; then
             node dist/cli.cjs conformance reset --repo "$FIXTURE"
-          else
-            node dist/cli.cjs conformance certify --repo "$FIXTURE" --tag "$TAG" --run-id "${{ github.run_id }}"
+            exit 0
           fi
+          set +e
+          node dist/cli.cjs conformance certify --repo "$FIXTURE" --tag "$TAG" --run-id "${{ github.run_id }}" --record cert.json
+          echo "code=$?" >> "$GITHUB_OUTPUT"
+          set -e
 
-  # C2+ (not built): explicit same-repo + fork PR previews (sticky), deposit chain, tag-keyed
-  # cert record + verdict, always-run teardown. Each rides this certify path.
+      # Persist the tag-keyed cert record on the engine release (the C5 promotion-gate seam). Uses
+      # the ambient token — the fixture-scoped PAT can't write the engine repo.
+      - name: Record cert verdict on the engine release
+        if: ${{ inputs.tag != '' && inputs.only-reset != true && hashFiles('cert.json') != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ inputs.tag }}" cert.json --clobber
+
+      # A cert FAILURE (1) reddens the run; an INCONCLUSIVE (2, third-party outage) does NOT —
+      # "red must mean us". The verdict lives in the record + logs either way.
+      - name: Reflect cert outcome
+        if: ${{ inputs.tag != '' && inputs.only-reset != true }}
+        env:
+          CODE: ${{ steps.cert.outputs.code }}
+        run: |
+          echo "cert exit code: ${CODE:-<none>}"
+          [ "$CODE" = "1" ] && exit 1 || exit 0
+
+  # Remaining (not built): fork PR path (2nd-account fork + token), C5 promotion gate reading the
+  # cert record attached above.
