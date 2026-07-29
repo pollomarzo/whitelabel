@@ -158,6 +158,7 @@ function fakeCertGh(over: {
   pushedTags: [string, string][];
   approvals: [number, string][];
   deletedReleases: string[];
+  resetSweeps: number;
 } {
   const labeled: [number, string][] = [];
   const merged: number[] = [];
@@ -165,6 +166,7 @@ function fakeCertGh(over: {
   const pushedTags: [string, string][] = [];
   const approvals: [number, string][] = [];
   const deletedReleases: string[] = [];
+  let resetSweeps = 0; // reset() calls listOpenPrs first — count sweeps to prove teardown ran
   let publishPolls = 0;
   const defaultWorkflowRuns = (sha: string): WorkflowRun[] => {
     const runs = [...SUCCESS_CI];
@@ -188,7 +190,13 @@ function fakeCertGh(over: {
     pushedTags,
     approvals,
     deletedReleases,
-    listOpenPrs: () => [],
+    get resetSweeps() {
+      return resetSweeps;
+    },
+    listOpenPrs: () => {
+      resetSweeps += 1;
+      return [];
+    },
     closePr: (_r, n) => closed.push(n),
     listBranches: () => [],
     deleteBranch: () => {},
@@ -291,15 +299,36 @@ describe('cmdConformanceCertify', () => {
     expect(gh.merged).toEqual([7]); // push→main still happened; preview is the failing phase
   });
 
-  it('fails at the preview phase when the preview URL does not serve 200', async () => {
+  it('is INCONCLUSIVE (not failed) when the preview URL persistently 5xxs — a third-party outage', async () => {
     const gh = fakeCertGh();
     const out = await cmdConformanceCertify(
       { repo: REPO, tag: TAG },
       certDeps(gh, { probe: async (url) => (url.includes('pages.dev') ? 503 : 200) }),
     );
-    expect(out.exitCode).toBe(1);
-    expect(out.result).toMatchObject({ status: 'failed', path: 'preview-same-repo' });
-    expect(out.result.failure).toContain('503');
+    expect(out.exitCode).toBe(2); // inconclusive, not a red
+    expect(out.result).toMatchObject({ status: 'inconclusive', path: 'preview-same-repo' });
+    expect(out.result.reason).toContain('503');
+  });
+
+  it('is INCONCLUSIVE when a run never completes (poll timeout = slow/stuck third party)', async () => {
+    const gh = fakeCertGh({
+      workflowRuns: () => [{ id: 9, name: 'Paper CI', status: 'in_progress', conclusion: null, url: 'stuck', event: 'push' }],
+    });
+    const out = await cmdConformanceCertify({ repo: REPO, tag: TAG }, certDeps(gh));
+    expect(out.exitCode).toBe(2);
+    expect(out.result).toMatchObject({ status: 'inconclusive', path: 'push-main' });
+    expect(out.result.reason).toContain('timed out');
+  });
+
+  it('runs teardown (reset) on both success and failure', async () => {
+    const ok = fakeCertGh();
+    await cmdConformanceCertify({ repo: REPO, tag: TAG, runId: '42' }, certDeps(ok));
+    expect(ok.resetSweeps).toBeGreaterThanOrEqual(2); // reset-at-start + always-run teardown
+
+    const bad = fakeCertGh({ committedDoi: () => null }); // fails at the deposit phase
+    const out = await cmdConformanceCertify({ repo: REPO, tag: TAG }, certDeps(bad));
+    expect(out.result.status).toBe('failed');
+    expect(bad.resetSweeps).toBeGreaterThanOrEqual(2); // teardown still ran on failure
   });
 
   it('fails at the deposit phase when the fixture carries no committed sandbox DOI', async () => {

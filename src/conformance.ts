@@ -179,12 +179,28 @@ export async function cmdConformanceReset(input: ResetInput, deps: ResetDeps): P
  * ======================================================================================== */
 
 /** Poll bounds for waiting on real runs. A push→main Paper CI + Pages deploy is minutes; be
- *  generous (retry/fault-attribution is a later slice, C4). Tests inject a no-op `sleep`. */
+ *  generous. Tests inject a no-op `sleep`. */
 const POLL = { tries: 80, intervalMs: 15_000 };
+
+/** Probe retry bounds — a preview/Pages URL can 5xx/refuse briefly right after deploy. */
+const PROBE = { tries: 6, intervalMs: 5_000 };
+
+/**
+ * A failure that is NOT the engine's fault — a third-party outage/slowness (Cloudflare, Pages,
+ * Zenodo, the GitHub API) or a poll timeout. It yields an **inconclusive** verdict, never a red
+ * "the engine is broken": a cert red must mean *us* (design C4 — "red must mean us").
+ */
+export class ThirdPartyError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ThirdPartyError';
+  }
+}
 
 /**
  * Call `attempt` until it returns a value (ready), rethrowing whatever it throws (a definitive
- * failure — e.g. a concluded-but-failed run); `null` means "keep waiting". Throws on timeout.
+ * failure — e.g. a concluded-but-failed run); `null` means "keep waiting". A timeout is treated
+ * as third-party (a stuck/slow runner is not an engine defect).
  */
 async function pollUntil<T>(
   label: string,
@@ -197,7 +213,28 @@ async function pollUntil<T>(
     if (ready !== null) return ready;
     if (i < opts.tries - 1) await deps.sleep(opts.intervalMs);
   }
-  throw new Error(`timed out waiting for ${label} (${opts.tries}×${opts.intervalMs}ms)`);
+  throw new ThirdPartyError(`timed out waiting for ${label} (${opts.tries}×${opts.intervalMs}ms) — slow/stuck third party`);
+}
+
+/**
+ * Assert a URL serves 200, retrying transient statuses (network error / 429 / 5xx) with backoff.
+ * A persistent transient → `ThirdPartyError` (inconclusive); a definitive 4xx (e.g. 404 = nothing
+ * deployed) → a normal Error (our break — the deploy produced no page).
+ */
+async function assertServes200(
+  deps: { probe(url: string): Promise<number>; sleep(ms: number): Promise<void> },
+  url: string,
+  label: string,
+): Promise<void> {
+  const transient = (s: number) => s === 0 || s === 429 || s >= 500;
+  let status = 0;
+  for (let i = 0; i < PROBE.tries; i++) {
+    status = await deps.probe(url);
+    if (status === 200) return;
+    if (!transient(status)) throw new Error(`${label} ${url} returned ${status}, expected 200`);
+    if (i < PROBE.tries - 1) await deps.sleep(PROBE.intervalMs);
+  }
+  throw new ThirdPartyError(`${label} ${url} still ${status} after ${PROBE.tries} tries — transient/outage`);
 }
 
 /** null = still pending; the ref when it concluded success; throws when it concluded !success. */
@@ -290,8 +327,7 @@ export async function cmdConformanceCertify(input: CertifyInput, deps: Conforman
 
     // 6. Pages actually SERVES (the part, not just the deploy job's conclusion — "green-but-empty").
     const pagesUrl = pagesUrlFor(repo);
-    const status = await probe(pagesUrl);
-    if (status !== 200) throw new Error(`Pages ${pagesUrl} returned ${status}, expected 200`);
+    await assertServes200({ probe, sleep }, pagesUrl, 'Pages');
     log(`Pages 200: ${pagesUrl}`);
 
     // 7. The "Journal checks" Check Run was actually posted on main (check-post ran, not just check).
@@ -333,8 +369,7 @@ export async function cmdConformanceCertify(input: CertifyInput, deps: Conforman
     // The preview actually SERVES 200 (not just that a comment was posted).
     const previewUrl = extractPreviewUrl(previewBody);
     if (!previewUrl) throw new Error('preview comment posted but carries no Cloudflare URL — degraded to artifact (fixture CF secrets missing?)');
-    const previewStatus = await probe(previewUrl);
-    if (previewStatus !== 200) throw new Error(`preview ${previewUrl} returned ${previewStatus}, expected 200`);
+    await assertServes200({ probe, sleep }, previewUrl, 'preview');
     log(`preview 200: ${previewUrl}`);
 
     // Close this observation-only PR + delete its branch (reset also handles it on a crash).
@@ -420,6 +455,7 @@ export async function cmdConformanceCertify(input: CertifyInput, deps: Conforman
     gh.deleteTag(repo, depositTag); // tolerated no-op if the Release cleanup already removed it
     log(`deposit CERTIFIED for ${tag}`);
 
+    log(`engine ${tag}: paper-CI CERTIFIED (push-main, preview, deposit)`);
     return {
       exitCode: 0,
       result: {
@@ -437,8 +473,22 @@ export async function cmdConformanceCertify(input: CertifyInput, deps: Conforman
       },
     };
   } catch (err) {
-    const failure = err instanceof Error ? err.message : String(err);
-    log(`certify FAILED for ${tag} at ${phase}: ${failure}`);
-    return { exitCode: 1, result: { status: 'failed', tag, path: phase, repo, failure } };
+    // Attribute the failure: a ThirdPartyError (outage/timeout) is INCONCLUSIVE (exit 2), never
+    // a red "the engine is broken"; anything else is a definitive cert FAILURE (exit 1).
+    const message = err instanceof Error ? err.message : String(err);
+    if (err instanceof ThirdPartyError) {
+      log(`engine ${tag}: paper-CI INCONCLUSIVE at ${phase}: ${message}`);
+      return { exitCode: 2, result: { status: 'inconclusive', tag, path: phase, repo, reason: message } };
+    }
+    log(`engine ${tag}: paper-CI FAILED at ${phase}: ${message}`);
+    return { exitCode: 1, result: { status: 'failed', tag, path: phase, repo, failure: message } };
+  } finally {
+    // Always-run teardown: every run leaves the fixture clean regardless of outcome. Guarded so a
+    // teardown hiccup never masks the verdict (the run logs + verdict URLs remain for debugging).
+    try {
+      await cmdConformanceReset({ repo }, { gh, log });
+    } catch (e) {
+      log(`teardown warning: ${e instanceof Error ? e.message : String(e)}`);
+    }
   }
 }
