@@ -67,7 +67,7 @@ jobs:
           if [ "$ONLY_RESET" = "true" ] || [ -z "$TAG" ]; then
             node dist/cli.cjs conformance reset --repo "$FIXTURE"
           else
-            node dist/cli.cjs conformance certify --repo "$FIXTURE" --tag "$TAG"
+            node dist/cli.cjs conformance certify --repo "$FIXTURE" --tag "$TAG" --run-id "${{ github.run_id }}"
           fi
 
   # C2+ (not built): explicit same-repo + fork PR previews (sticky), deposit chain, tag-keyed

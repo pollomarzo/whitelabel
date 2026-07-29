@@ -621,7 +621,7 @@ async function cmdConformance(argv: string[]): Promise<number> {
     }
     const upgrade = await import('./upgrade.js');
     const out = await conformance.cmdConformanceCertify(
-      { repo, tag },
+      { repo, tag, runId: flag(rest, 'run-id') },
       {
         ...deps,
         sleep: (ms) => new Promise<void>((r) => setTimeout(r, ms)),
