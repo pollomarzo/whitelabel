@@ -49,7 +49,7 @@ describe('checkLayout', () => {
         'myst.yml',
         'index.md',
         '.engine/test/fixture-paper/myst.yml', // engine checkout under the paper root
-        '.engine/copier-template/myst.yml',
+        '.engine/templates/paper/myst.yml',
         '.git/whatever',
         'node_modules/pkg/myst.yml',
       ],

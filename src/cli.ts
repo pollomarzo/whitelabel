@@ -487,7 +487,8 @@ async function cmdBootstrap(argv: string[]): Promise<number> {
   const rest = argv.slice(1);
   const gh = await import('./gh.js');
   const bootstrap = await import('./bootstrap.js');
-  const templateRoot = join(engineRoot(), 'copier-template');
+  const paperTemplateRoot = bootstrap.paperTemplateRoot(engineRoot());
+  const instanceTemplateRoot = bootstrap.instanceTemplateRoot(engineRoot());
 
   const repo = flag(rest, 'repo');
   if (!repo) {
@@ -504,7 +505,7 @@ async function cmdBootstrap(argv: string[]): Promise<number> {
       return 2;
     }
   }
-  const deps = { prov: gh.realProvisioner, templateRoot, log: (m: string) => process.stderr.write(m + '\n'), confirm: makeConfirm(rest), workdir: workdir('oak-bootstrap-') };
+  const deps = { prov: gh.realProvisioner, paperTemplateRoot, instanceTemplateRoot, log: (m: string) => process.stderr.write(m + '\n'), confirm: makeConfirm(rest), workdir: workdir('oak-bootstrap-') };
 
   if (sub === 'paper') {
     const out = await bootstrap.cmdBootstrapPaper(

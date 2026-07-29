@@ -11,8 +11,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseDocument } from 'yaml';
 import {
-  renderTemplate,
-  renderInstanceConfig,
+  renderPaperTemplate,
+  renderInstanceTemplate,
   buildReviewTree,
   cmdBootstrapPaper,
   cmdBootstrapJournal,
@@ -22,7 +22,8 @@ import {
   type BootstrapDeps,
 } from '../src/bootstrap.js';
 
-const TEMPLATE_ROOT = 'copier-template';
+const PAPER_ROOT = 'templates/paper';
+const INSTANCE_ROOT = 'templates/instance';
 const tmp = (p = 'oak-bs-') => mkdtempSync(join(tmpdir(), p));
 
 const answers = (over: Partial<TemplateAnswers> = {}): TemplateAnswers => ({
@@ -36,13 +37,13 @@ const answers = (over: Partial<TemplateAnswers> = {}): TemplateAnswers => ({
 });
 
 /* --------------------------------------------------------------------------
- * renderTemplate / renderInstanceConfig
+ * renderPaperTemplate / renderInstanceTemplate
  * ------------------------------------------------------------------------ */
 
-describe('renderTemplate', () => {
+describe('renderPaperTemplate', () => {
   it('renders pins.yml + CODEOWNERS + myst.yml and byte-copies the rest', () => {
     const dest = tmp();
-    const written = renderTemplate(TEMPLATE_ROOT, dest, answers());
+    const written = renderPaperTemplate(PAPER_ROOT, dest, answers());
 
     const pins = parseDocument(readFileSync(join(dest, '.github/actions/engine/pins.yml'), 'utf8'));
     expect(pins.get('engine_repo')).toBe('me/engine');
@@ -59,26 +60,26 @@ describe('renderTemplate', () => {
 
     // a byte-copied frozen file is identical to source
     const rel = '.github/workflows/ci.yml';
-    expect(readFileSync(join(dest, rel), 'utf8')).toBe(readFileSync(join(TEMPLATE_ROOT, rel), 'utf8'));
+    expect(readFileSync(join(dest, rel), 'utf8')).toBe(readFileSync(join(PAPER_ROOT, rel), 'utf8'));
 
-    // the template README + instance skeleton are NOT stamped into a paper
+    // the engine README is NOT stamped; the instance skeleton lives in a separate tree
     expect(existsSync(join(dest, 'README.md'))).toBe(false);
-    expect(existsSync(join(dest, 'instance-config'))).toBe(false);
+    expect(existsSync(join(dest, 'journal.yml'))).toBe(false);
     expect(written).toContain('.github/workflows/version-bump.yml');
   });
 
   it('co-located writes instance_repo: .', () => {
     const dest = tmp();
-    renderTemplate(TEMPLATE_ROOT, dest, answers({ instanceRepo: '.' }));
+    renderPaperTemplate(PAPER_ROOT, dest, answers({ instanceRepo: '.' }));
     const pins = parseDocument(readFileSync(join(dest, '.github/actions/engine/pins.yml'), 'utf8'));
     expect(pins.get('instance_repo')).toBe('.');
   });
 });
 
-describe('renderInstanceConfig', () => {
+describe('renderInstanceTemplate', () => {
   it('sets journal name and renames the edition file to <edition>.yml', () => {
     const dest = tmp();
-    renderInstanceConfig(TEMPLATE_ROOT, dest, answers({ edition: 'ed-2026' }));
+    renderInstanceTemplate(INSTANCE_ROOT, dest, answers({ edition: 'ed-2026' }));
     const journal = parseDocument(readFileSync(join(dest, 'journal.yml'), 'utf8'));
     expect(journal.get('name')).toBe('Test Journal');
     expect(existsSync(join(dest, 'editions/ed-2026.yml'))).toBe(true);
@@ -160,7 +161,7 @@ function fakeProv(state: FakeState = {}) {
 }
 
 function deps(prov: Provisioner): BootstrapDeps {
-  return { prov, templateRoot: TEMPLATE_ROOT, log: () => {}, confirm: async () => true, workdir: () => tmp('oak-seed-') };
+  return { prov, paperTemplateRoot: PAPER_ROOT, instanceTemplateRoot: INSTANCE_ROOT, log: () => {}, confirm: async () => true, workdir: () => tmp('oak-seed-') };
 }
 
 const paperInput = (over: Record<string, unknown> = {}) => ({

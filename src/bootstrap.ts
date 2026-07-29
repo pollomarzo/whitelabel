@@ -1,7 +1,8 @@
 /**
  * bootstrap.ts — `oak bootstrap paper` + `oak bootstrap journal` (slice 5). Stands up a
  * paper repo (bare or ingest) or a journal/tenant (external instance-config, or co-located
- * flagship) from the frozen `copier-template/`. Ports the ISP `create-submission-target.sh`
+ * flagship) from the frozen `templates/paper/` + `templates/instance/`. Ports the ISP
+ * `create-submission-target.sh`
  * provisioning (idempotent repo create → seed → ingest → rulesets → Pages → env → labels),
  * with the new-model corrections baked in:
  *
@@ -55,12 +56,23 @@ export interface TemplateAnswers {
 const RENDER_PINS = posix.join('.github', 'actions', 'engine', 'pins.yml');
 const RENDER_CODEOWNERS = 'CODEOWNERS';
 const RENDER_MYST = 'myst.yml';
-/** Top-level template entries the paper stamp never carries (template docs + the instance
- *  skeleton, which is stamped separately by renderInstanceConfig). */
-const PAPER_EXCLUDE = new Set(['README.md', 'instance-config']);
+/** Top-level template entries that are engine-side docs, never stamped into a tenant repo.
+ *  Applies to both templates (each ships its own README). Not a role-partition list — the
+ *  paper/instance split is now structural (separate source trees), so this is only the
+ *  README carve-out, guarded by the disjointness invariant (test/template.test.ts). */
+const EXCLUDE_FROM_STAMP = new Set(['README.md']);
+
+/** The two template source roots under the engine checkout. Named + one-liners so resolution
+ *  is testable rather than inlined at call sites. */
+export function paperTemplateRoot(engineRoot: string): string {
+  return join(engineRoot, 'templates', 'paper');
+}
+export function instanceTemplateRoot(engineRoot: string): string {
+  return join(engineRoot, 'templates', 'instance');
+}
 
 /** Every path under `dir`, recursive + relative (posix separators), files only. */
-function listFiles(dir: string, prefix = ''): string[] {
+export function listFiles(dir: string, prefix = ''): string[] {
   const out: string[] = [];
   for (const name of readdirSync(dir).sort()) {
     const abs = join(dir, name);
@@ -69,6 +81,13 @@ function listFiles(dir: string, prefix = ''): string[] {
     else out.push(rel);
   }
   return out;
+}
+
+/** The relative paths a render would actually stamp from `root` (all files minus the engine
+ *  README). Shared by the disjointness invariant test so it checks real stamped output, not
+ *  raw source files. Subpaths are preserved (no basename flatten). */
+export function stampedFiles(root: string): string[] {
+  return listFiles(root).filter((rel) => !EXCLUDE_FROM_STAMP.has(rel.split('/')[0]!));
 }
 
 function writeRel(destRoot: string, rel: string, contents: string | Buffer): void {
@@ -108,21 +127,19 @@ export function renderMyst(templateRoot: string, answers: TemplateAnswers): stri
 }
 
 /**
- * Render the paper-repo template (frozen shim + starter content) into `destRoot`. `pins.yml`,
- * `CODEOWNERS`, and `myst.yml` are rendered from answers; every other file is byte-copied.
- * Returns the written relative paths (posix). Excludes the template README + the instance
- * skeleton subtree.
+ * Render the paper-repo template (frozen shim + starter content) from its own root into
+ * `destRoot`. `pins.yml`, `CODEOWNERS`, and `myst.yml` are rendered from answers; every other
+ * file is byte-copied. Returns the written relative paths (posix). Excludes the engine README.
  */
-export function renderTemplate(templateRoot: string, destRoot: string, answers: TemplateAnswers): string[] {
+export function renderPaperTemplate(paperRoot: string, destRoot: string, answers: TemplateAnswers): string[] {
   const written: string[] = [];
-  for (const rel of listFiles(templateRoot)) {
-    const top = rel.split('/')[0]!;
-    if (PAPER_EXCLUDE.has(top)) continue;
-    if (rel === RENDER_PINS) writeRel(destRoot, rel, renderPins(templateRoot, answers));
+  for (const rel of listFiles(paperRoot)) {
+    if (EXCLUDE_FROM_STAMP.has(rel.split('/')[0]!)) continue;
+    if (rel === RENDER_PINS) writeRel(destRoot, rel, renderPins(paperRoot, answers));
     else if (rel === RENDER_CODEOWNERS)
-      writeRel(destRoot, rel, renderCodeowners(readFileSync(join(templateRoot, rel), 'utf8'), answers.owner));
-    else if (rel === RENDER_MYST) writeRel(destRoot, rel, renderMyst(templateRoot, answers));
-    else copyRel(templateRoot, destRoot, rel);
+      writeRel(destRoot, rel, renderCodeowners(readFileSync(join(paperRoot, rel), 'utf8'), answers.owner));
+    else if (rel === RENDER_MYST) writeRel(destRoot, rel, renderMyst(paperRoot, answers));
+    else copyRel(paperRoot, destRoot, rel);
     written.push(rel);
   }
   return written.sort();
@@ -130,24 +147,25 @@ export function renderTemplate(templateRoot: string, destRoot: string, answers: 
 
 /**
  * Render the instance-config skeleton (journal.yml / editions/<edition>.yml / brand/ /
- * registry) into `destRoot`. `journal.yml` `name` is set from answers; the edition file is
- * renamed to `editions/<edition>.yml`; the rest is byte-copied. Returns written rel paths.
+ * registry) from its own root into `destRoot`. `journal.yml` `name` is set from answers; the
+ * edition file is renamed to `editions/<edition>.yml`; the rest is byte-copied. Excludes the
+ * engine README. Returns written rel paths.
  */
-export function renderInstanceConfig(templateRoot: string, destRoot: string, answers: TemplateAnswers): string[] {
-  const srcRoot = join(templateRoot, 'instance-config');
+export function renderInstanceTemplate(instanceRoot: string, destRoot: string, answers: TemplateAnswers): string[] {
   const written: string[] = [];
-  for (const rel of listFiles(srcRoot)) {
+  for (const rel of listFiles(instanceRoot)) {
+    if (EXCLUDE_FROM_STAMP.has(rel.split('/')[0]!)) continue;
     if (rel === 'journal.yml') {
-      const doc = readDoc(join(srcRoot, rel));
+      const doc = readDoc(join(instanceRoot, rel));
       if (answers.journalName) doc.set('name', answers.journalName);
       writeRel(destRoot, rel, doc.toString());
     } else if (rel === posix.join('editions', 'edition.yml')) {
       const dest = posix.join('editions', `${answers.edition}.yml`);
-      copyFileBytes(join(srcRoot, rel), join(destRoot, dest));
+      copyFileBytes(join(instanceRoot, rel), join(destRoot, dest));
       written.push(dest);
       continue;
     } else {
-      copyFileBytes(join(srcRoot, rel), join(destRoot, rel));
+      copyFileBytes(join(instanceRoot, rel), join(destRoot, rel));
     }
     written.push(rel);
   }
@@ -315,7 +333,10 @@ const SECRET_MAP: Array<{ key: keyof SecretInputs; name: string }> = [
 
 export interface BootstrapDeps {
   prov: Provisioner;
-  templateRoot: string;
+  /** `templates/paper/` of the engine checkout — the frozen shim + starter content. */
+  paperTemplateRoot: string;
+  /** `templates/instance/` of the engine checkout — the instance-config scaffold. */
+  instanceTemplateRoot: string;
   log(msg: string): void;
   /** Print the plan + gate execution. Tests pass `() => true`; the CLI enforces --yes/TTY. */
   confirm(plan: string[]): Promise<boolean>;
@@ -499,7 +520,7 @@ export async function cmdBootstrapPaper(input: BootstrapPaperInput, deps: Bootst
 
   // Render the paper seed (frozen shim + starter content) once; reused for main seeding.
   const seedDir = deps.workdir();
-  renderTemplate(deps.templateRoot, seedDir, answers);
+  renderPaperTemplate(deps.paperTemplateRoot, seedDir, answers);
 
   if (!mainThere) {
     prov.seedBranch(repo, 'main', seedDir, 'startpoint');
@@ -600,10 +621,10 @@ export async function cmdBootstrapJournal(input: BootstrapJournalInput, deps: Bo
 
   const seedDir = deps.workdir();
   if (external) {
-    renderInstanceConfig(deps.templateRoot, seedDir, answers);
+    renderInstanceTemplate(deps.instanceTemplateRoot, seedDir, answers);
   } else {
-    renderTemplate(deps.templateRoot, seedDir, answers); // shim + starter paper (instance_repo: .)
-    renderInstanceConfig(deps.templateRoot, seedDir, answers); // co-located instance-config
+    renderPaperTemplate(deps.paperTemplateRoot, seedDir, answers); // shim + starter paper (instance_repo: .)
+    renderInstanceTemplate(deps.instanceTemplateRoot, seedDir, answers); // co-located instance-config
   }
 
   if (!mainThere) {

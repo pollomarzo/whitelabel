@@ -10,10 +10,10 @@ import { mkdtempSync, readFileSync, writeFileSync, appendFileSync, cpSync } from
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseDocument } from 'yaml';
-import { renderTemplate, type TemplateAnswers } from '../src/bootstrap.js';
+import { renderPaperTemplate, type TemplateAnswers } from '../src/bootstrap.js';
 import { computeDrift, readAnswers, cmdUpgrade, type UpgradePr, type UpgradeDeps } from '../src/upgrade.js';
 
-const TEMPLATE_ROOT = 'copier-template';
+const TEMPLATE_ROOT = 'templates/paper';
 const tmp = (p = 'oak-up-') => mkdtempSync(join(tmpdir(), p));
 
 const answers: TemplateAnswers = {
@@ -27,7 +27,7 @@ const answers: TemplateAnswers = {
 /** A paper repo on disk (frozen shim + starter content) at version v1.0.0. */
 function makeRepo(): string {
   const dir = tmp('oak-repo-');
-  renderTemplate(TEMPLATE_ROOT, dir, answers);
+  renderPaperTemplate(TEMPLATE_ROOT, dir, answers);
   return dir;
 }
 

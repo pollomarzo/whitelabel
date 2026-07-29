@@ -111,7 +111,7 @@ export interface UpgradePr {
 export interface UpgradeDeps {
   /** Latest engine release tag for `engineRepo` (used when --to is absent). */
   resolveTarget(engineRepo: string): string;
-  /** Materialize `copier-template/` of `engineRepo` at `tag`; returns its path. */
+  /** Materialize `templates/paper/` of `engineRepo` at `tag`; returns its path. */
   materializeTemplate(engineRepo: string, tag: string): string;
   pr: UpgradePr;
   log(msg: string): void;
