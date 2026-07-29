@@ -6,10 +6,15 @@
 import { describe, it, expect } from 'vitest';
 import {
   cmdConformanceReset,
+  cmdConformanceCertify,
+  pagesUrlFor,
   CONFORMANCE_LABEL,
   CERT_BRANCH_PREFIX,
   CERT_TAG_MARKER,
   type ConformanceGh,
+  type ConformanceDeps,
+  type WorkflowRun,
+  type CheckRunRef,
 } from '../src/conformance.js';
 
 const REPO = 'me/fixture-paper-repo';
@@ -106,5 +111,99 @@ describe('cmdConformanceReset', () => {
     expect(out.result.changed).toBe(0);
     expect(gh.branches).toEqual(['main']);
     expect(gh.tags).toEqual(['v0.0.1']);
+  });
+});
+
+/* --------------------------------------------------------------------------
+ * cmdConformanceCertify (C1 — install V + push→main)
+ * ------------------------------------------------------------------------ */
+
+const TAG = 'v0.0.0-dev.9';
+const SUCCESS_CI: WorkflowRun[] = [{ name: 'Paper CI', status: 'completed', conclusion: 'success', url: 'run-url', event: 'push' }];
+const SUCCESS_CHECK: CheckRunRef[] = [{ name: 'Journal checks', conclusion: 'success' }];
+
+/** Full seam for certify. Reset methods are inert (a certify run resets a clean fixture in
+ *  tests); the C1 methods are driven by `over`. Records label/merge calls for assertions. */
+function fakeCertGh(over: {
+  workflowRuns?: (sha: string) => WorkflowRun[];
+  checkRuns?: (sha: string) => CheckRunRef[];
+} = {}): ConformanceGh & { labeled: [number, string][]; merged: number[] } {
+  const labeled: [number, string][] = [];
+  const merged: number[] = [];
+  return {
+    labeled,
+    merged,
+    listOpenPrs: () => [],
+    closePr: () => {},
+    listBranches: () => [],
+    deleteBranch: () => {},
+    listTags: () => [],
+    deleteTag: () => {},
+    labelPr: (_r, n, l) => labeled.push([n, l]),
+    prHeadSha: () => 'pr-head-sha',
+    mergePr: (_r, n) => {
+      merged.push(n);
+      return 'merge-sha';
+    },
+    workflowRunsForCommit: (_r, sha) => (over.workflowRuns ?? (() => SUCCESS_CI))(sha),
+    checkRunsForCommit: (_r, sha) => (over.checkRuns ?? (() => SUCCESS_CHECK))(sha),
+  };
+}
+
+const certDeps = (
+  gh: ConformanceGh,
+  over: Partial<Pick<ConformanceDeps, 'probe' | 'installEngine'>> = {},
+): ConformanceDeps => ({
+  gh,
+  log: () => {},
+  sleep: async () => {}, // no real waits in tests
+  probe: over.probe ?? (async () => 200),
+  installEngine: over.installEngine ?? (async () => ({ upToDate: false, prNumber: 7, prUrl: 'https://github.com/me/fixture-paper-repo/pull/7' })),
+});
+
+describe('cmdConformanceCertify', () => {
+  it('installs V, labels + merges the PR, and CERTIFIES a green push→main', async () => {
+    const gh = fakeCertGh();
+    const out = await cmdConformanceCertify({ repo: REPO, tag: TAG }, certDeps(gh));
+
+    expect(out.exitCode).toBe(0);
+    expect(out.result).toMatchObject({
+      status: 'ok',
+      path: 'push-main',
+      tag: TAG,
+      prNumber: 7,
+      mergeSha: 'merge-sha',
+      pagesUrl: pagesUrlFor(REPO),
+    });
+    expect(gh.labeled).toEqual([[7, CONFORMANCE_LABEL]]);
+    expect(gh.merged).toEqual([7]); // the merge is the push→main trigger
+  });
+
+  it('fails without merging when the fixture is already at V (no upgrade PR)', async () => {
+    const gh = fakeCertGh();
+    const out = await cmdConformanceCertify(
+      { repo: REPO, tag: TAG },
+      certDeps(gh, { installEngine: async () => ({ upToDate: true, prNumber: null, prUrl: null }) }),
+    );
+    expect(out.exitCode).toBe(1);
+    expect(out.result).toMatchObject({ status: 'failed', path: 'install' });
+    expect(gh.merged).toEqual([]);
+  });
+
+  it('fails the cert when Paper CI concludes failure on main', async () => {
+    const gh = fakeCertGh({
+      workflowRuns: () => [{ name: 'Paper CI', status: 'completed', conclusion: 'failure', url: 'bad-run', event: 'push' }],
+    });
+    const out = await cmdConformanceCertify({ repo: REPO, tag: TAG }, certDeps(gh));
+    expect(out.exitCode).toBe(1);
+    expect(out.result).toMatchObject({ status: 'failed', path: 'push-main' });
+    expect(out.result.failure).toContain('Paper CI');
+  });
+
+  it('fails the cert when Pages does not serve 200 (green-but-empty guard)', async () => {
+    const gh = fakeCertGh();
+    const out = await cmdConformanceCertify({ repo: REPO, tag: TAG }, certDeps(gh, { probe: async () => 404 }));
+    expect(out.exitCode).toBe(1);
+    expect(out.result.failure).toContain('404');
   });
 });
