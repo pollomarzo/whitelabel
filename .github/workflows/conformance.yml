@@ -61,6 +61,9 @@ jobs:
           TAG: ${{ inputs.tag }}
           ONLY_RESET: ${{ inputs.only-reset }}
         run: |
+          # `oak upgrade --repo` clones the fixture and `git push`es a branch; a bare-GH_TOKEN
+          # runner has no git credential helper, so teach git to use the PAT for github.com.
+          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
           if [ "$ONLY_RESET" = "true" ] || [ -z "$TAG" ]; then
             node dist/cli.cjs conformance reset --repo "$FIXTURE"
           else
