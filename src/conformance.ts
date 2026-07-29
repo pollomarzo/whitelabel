@@ -15,6 +15,7 @@
  * `realConformanceGh` from gh.ts. The harness holds ONLY the fixture-scoped PAT — CF/Zenodo
  * creds stay the fixture repo's own secrets, read back from the fixture run (plan §credentials).
  */
+import { STICKY_PREVIEW } from './preview.js';
 
 /** Label stamped on every PR the harness opens — the robust teardown signal (works for fork
  *  PRs whose head branch the harness does not name). Provisioned on the fixture in C0. */
@@ -54,6 +55,14 @@ export interface ConformanceGh {
   workflowRunsForCommit(repo: string, sha: string): WorkflowRun[];
   /** Check Runs on commit `sha` (the "Journal checks" run check-post posts). */
   checkRunsForCommit(repo: string, sha: string): CheckRunRef[];
+
+  // --- C2: same-repo PR preview --------------------------------------------------------
+  /** Open a same-repo PR off `main` on `branch` with a trivial always-valid content change
+   *  (a MyST comment carrying `marker`), via the Contents API (no clone). Returns the PR
+   *  number and its head sha. */
+  openCertPr(repo: string, branch: string, marker: string): { number: number; headSha: string };
+  /** Comment bodies on PR #n (to find the sticky preview comment). */
+  listIssueComments(repo: string, prNumber: number): string[];
 }
 
 export interface WorkflowRun {
@@ -178,6 +187,17 @@ export function pagesUrlFor(repo: string): string {
 export interface CertifyInput {
   repo: string;
   tag: string; // engine version V under test
+  runId?: string; // namespaces the cert-<runId> preview branch; defaults to a timestamp
+}
+
+/** The preview sticky's stable marker (preview.ts owns the identifier; keep in sync). */
+const PREVIEW_STICKY_MARK = `<!-- oak-sticky: ${STICKY_PREVIEW} -->`;
+
+/** Pull the Cloudflare `*.pages.dev` URL out of a preview sticky comment (null if it degraded
+ *  to an artifact-link comment, i.e. no live preview to probe). */
+function extractPreviewUrl(commentBody: string): string | null {
+  const m = commentBody.match(/https:\/\/[^\s)]*pages\.dev[^\s)]*/);
+  return m ? m[0] : null;
 }
 
 /**
@@ -190,6 +210,8 @@ export interface CertifyInput {
 export async function cmdConformanceCertify(input: CertifyInput, deps: ConformanceDeps): Promise<Outcome> {
   const { gh, log, sleep, probe, installEngine } = deps;
   const { repo, tag } = input;
+  const runId = input.runId ?? String(Date.now());
+  let phase = 'push-main';
   try {
     // 1. Clean baseline (idempotent teardown of any prior run's ephemeral state).
     await cmdConformanceReset({ repo }, { gh, log });
@@ -250,10 +272,53 @@ export async function cmdConformanceCertify(input: CertifyInput, deps: Conforman
     );
 
     log(`push→main CERTIFIED for ${tag}`);
-    return { exitCode: 0, result: { status: 'ok', tag, path: 'push-main', repo, prNumber, mergeSha, pagesUrl } };
+
+    // ---- Phase: same-repo PR preview (Cloudflare deploy + sticky comment) ---------------
+    phase = 'preview-same-repo';
+    const branch = `${CERT_BRANCH_PREFIX}${runId}`;
+    const previewPr = gh.openCertPr(repo, branch, runId);
+    gh.labelPr(repo, previewPr.number, CONFORMANCE_LABEL);
+    log(`same-repo preview PR #${previewPr.number} (${branch})`);
+
+    // Stage 1: Paper CI build on the PR (secretless by design — the untrusted build job).
+    await pollUntil(
+      `Paper CI (PR #${previewPr.number} build)`,
+      () => {
+        const ci = gh.workflowRunsForCommit(repo, previewPr.headSha).find((r) => r.name === 'Paper CI' && r.event === 'pull_request');
+        if (!ci || ci.status !== 'completed') return null;
+        if (ci.conclusion !== 'success') throw new Error(`Paper CI (PR) concluded ${ci.conclusion} — ${ci.url}`);
+        return ci;
+      },
+      { sleep, log },
+    );
+
+    // Stage 2: the preview sticky comment, posted from base context (workflow_run) — its very
+    // presence proves the fork-safe build→deploy split ran end to end.
+    const previewBody = await pollUntil(
+      `preview sticky comment on PR #${previewPr.number}`,
+      () => gh.listIssueComments(repo, previewPr.number).find((b) => b.includes(PREVIEW_STICKY_MARK)) ?? null,
+      { sleep, log },
+    );
+
+    // The preview actually SERVES 200 (not just that a comment was posted).
+    const previewUrl = extractPreviewUrl(previewBody);
+    if (!previewUrl) throw new Error('preview comment posted but carries no Cloudflare URL — degraded to artifact (fixture CF secrets missing?)');
+    const previewStatus = await probe(previewUrl);
+    if (previewStatus !== 200) throw new Error(`preview ${previewUrl} returned ${previewStatus}, expected 200`);
+    log(`preview 200: ${previewUrl}`);
+
+    // Close this observation-only PR + delete its branch (reset also handles it on a crash).
+    gh.closePr(repo, previewPr.number);
+    gh.deleteBranch(repo, branch);
+    log(`same-repo preview CERTIFIED for ${tag}`);
+
+    return {
+      exitCode: 0,
+      result: { status: 'ok', tag, repo, paths: ['push-main', 'preview-same-repo'], prNumber, mergeSha, pagesUrl, previewPr: previewPr.number, previewUrl },
+    };
   } catch (err) {
     const failure = err instanceof Error ? err.message : String(err);
-    log(`push→main FAILED for ${tag}: ${failure}`);
-    return { exitCode: 1, result: { status: 'failed', tag, path: 'push-main', repo, failure } };
+    log(`certify FAILED for ${tag} at ${phase}: ${failure}`);
+    return { exitCode: 1, result: { status: 'failed', tag, path: phase, repo, failure } };
   }
 }

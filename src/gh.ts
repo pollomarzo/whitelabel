@@ -502,4 +502,39 @@ export const realConformanceGh: ConformanceGh = {
     const out = gh(['api', `repos/${repo}/commits/${sha}/check-runs`, '--jq', '[.check_runs[] | {name, conclusion}]']);
     return out ? (JSON.parse(out) as import('./conformance.js').CheckRunRef[]) : [];
   },
+  openCertPr(repo, branch, marker) {
+    // Branch off main, then a trivial always-valid content change (a MyST `%` comment appended
+    // to index.md) via the Contents API — no clone, so no git-credential dependency in CI.
+    const mainSha = gh(['api', `repos/${repo}/git/ref/heads/main`, '--jq', '.object.sha']);
+    gh(['api', '-X', 'POST', `repos/${repo}/git/refs`, '-f', `ref=refs/heads/${branch}`, '-f', `sha=${mainSha}`]);
+
+    const meta = JSON.parse(gh(['api', `repos/${repo}/contents/index.md?ref=${branch}`, '--jq', '{content: .content, sha: .sha}'])) as {
+      content: string;
+      sha: string;
+    };
+    const current = Buffer.from(meta.content, 'base64').toString('utf8'); // GitHub wraps base64 in \n; Buffer ignores them
+    const updated = Buffer.from(`${current}\n% conformance ${marker}\n`, 'utf8').toString('base64');
+    gh([
+      'api', '-X', 'PUT', `repos/${repo}/contents/index.md`,
+      '-f', `message=conformance preview probe ${marker}`,
+      '-f', `content=${updated}`,
+      '-f', `sha=${meta.sha}`,
+      '-f', `branch=${branch}`,
+    ]);
+
+    const url = gh([
+      'pr', 'create', '--repo', repo, '--base', 'main', '--head', branch,
+      '--title', `conformance preview ${marker}`,
+      '--body', 'Automated conformance preview probe — opened and closed by the harness.',
+    ]);
+    const number = Number(url.split('/').pop());
+    const headSha = gh(['api', `repos/${repo}/git/ref/heads/${branch}`, '--jq', '.object.sha']);
+    return { number, headSha };
+  },
+  listIssueComments(repo, prNumber) {
+    // A cert PR won't approach one page of comments, so no --paginate (which would concatenate
+    // per-page JSON arrays into invalid JSON).
+    const out = gh(['api', `repos/${repo}/issues/${prNumber}/comments`, '--jq', '[.[].body]']);
+    return out ? (JSON.parse(out) as string[]) : [];
+  },
 };

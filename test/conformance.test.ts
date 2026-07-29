@@ -119,22 +119,30 @@ describe('cmdConformanceReset', () => {
  * ------------------------------------------------------------------------ */
 
 const TAG = 'v0.0.0-dev.9';
-const SUCCESS_CI: WorkflowRun[] = [{ name: 'Paper CI', status: 'completed', conclusion: 'success', url: 'run-url', event: 'push' }];
+// Both events so push→main (push) and the PR build (pull_request) each find a green Paper CI.
+const SUCCESS_CI: WorkflowRun[] = [
+  { name: 'Paper CI', status: 'completed', conclusion: 'success', url: 'run-url', event: 'push' },
+  { name: 'Paper CI', status: 'completed', conclusion: 'success', url: 'pr-run-url', event: 'pull_request' },
+];
 const SUCCESS_CHECK: CheckRunRef[] = [{ name: 'Journal checks', conclusion: 'success' }];
+const PREVIEW_COMMENT = '<!-- oak-sticky: oak-preview -->\n**Preview deployed** 🚀\n\nhttps://cert-x.oaktree-sapling-test.pages.dev\n';
 
 /** Full seam for certify. Reset methods are inert (a certify run resets a clean fixture in
- *  tests); the C1 methods are driven by `over`. Records label/merge calls for assertions. */
+ *  tests); the C1/C2 methods are driven by `over`. Records label/merge/close calls. */
 function fakeCertGh(over: {
   workflowRuns?: (sha: string) => WorkflowRun[];
   checkRuns?: (sha: string) => CheckRunRef[];
-} = {}): ConformanceGh & { labeled: [number, string][]; merged: number[] } {
+  comments?: (pr: number) => string[];
+} = {}): ConformanceGh & { labeled: [number, string][]; merged: number[]; closed: number[] } {
   const labeled: [number, string][] = [];
   const merged: number[] = [];
+  const closed: number[] = [];
   return {
     labeled,
     merged,
+    closed,
     listOpenPrs: () => [],
-    closePr: () => {},
+    closePr: (_r, n) => closed.push(n),
     listBranches: () => [],
     deleteBranch: () => {},
     listTags: () => [],
@@ -147,6 +155,8 @@ function fakeCertGh(over: {
     },
     workflowRunsForCommit: (_r, sha) => (over.workflowRuns ?? (() => SUCCESS_CI))(sha),
     checkRunsForCommit: (_r, sha) => (over.checkRuns ?? (() => SUCCESS_CHECK))(sha),
+    openCertPr: (_r, _b, _m) => ({ number: 21, headSha: 'preview-head-sha' }),
+    listIssueComments: (_r, pr) => (over.comments ?? (() => [PREVIEW_COMMENT]))(pr),
   };
 }
 
@@ -162,21 +172,24 @@ const certDeps = (
 });
 
 describe('cmdConformanceCertify', () => {
-  it('installs V, labels + merges the PR, and CERTIFIES a green push→main', async () => {
+  it('CERTIFIES push→main and the same-repo preview end to end', async () => {
     const gh = fakeCertGh();
-    const out = await cmdConformanceCertify({ repo: REPO, tag: TAG }, certDeps(gh));
+    const out = await cmdConformanceCertify({ repo: REPO, tag: TAG, runId: '42' }, certDeps(gh));
 
     expect(out.exitCode).toBe(0);
     expect(out.result).toMatchObject({
       status: 'ok',
-      path: 'push-main',
+      paths: ['push-main', 'preview-same-repo'],
       tag: TAG,
       prNumber: 7,
       mergeSha: 'merge-sha',
       pagesUrl: pagesUrlFor(REPO),
+      previewPr: 21,
+      previewUrl: 'https://cert-x.oaktree-sapling-test.pages.dev',
     });
-    expect(gh.labeled).toEqual([[7, CONFORMANCE_LABEL]]);
-    expect(gh.merged).toEqual([7]); // the merge is the push→main trigger
+    expect(gh.labeled).toEqual([[7, CONFORMANCE_LABEL], [21, CONFORMANCE_LABEL]]);
+    expect(gh.merged).toEqual([7]); // only the upgrade PR is merged (push→main trigger)
+    expect(gh.closed).toEqual([21]); // the observation-only preview PR is closed, not merged
   });
 
   it('fails without merging when the fixture is already at V (no upgrade PR)', async () => {
@@ -202,8 +215,32 @@ describe('cmdConformanceCertify', () => {
 
   it('fails the cert when Pages does not serve 200 (green-but-empty guard)', async () => {
     const gh = fakeCertGh();
-    const out = await cmdConformanceCertify({ repo: REPO, tag: TAG }, certDeps(gh, { probe: async () => 404 }));
+    // Only the /fixture-paper-repo/ Pages URL should 404; the pages.dev preview stays 200.
+    const out = await cmdConformanceCertify(
+      { repo: REPO, tag: TAG },
+      certDeps(gh, { probe: async (url) => (url === pagesUrlFor(REPO) ? 404 : 200) }),
+    );
     expect(out.exitCode).toBe(1);
+    expect(out.result).toMatchObject({ status: 'failed', path: 'push-main' });
     expect(out.result.failure).toContain('404');
+  });
+
+  it('fails at the preview phase when the sticky degraded to an artifact link (no pages.dev URL)', async () => {
+    const gh = fakeCertGh({ comments: () => ['<!-- oak-sticky: oak-preview -->\n**Preview build ready** 📦\nartifact link, no live preview'] });
+    const out = await cmdConformanceCertify({ repo: REPO, tag: TAG }, certDeps(gh));
+    expect(out.exitCode).toBe(1);
+    expect(out.result).toMatchObject({ status: 'failed', path: 'preview-same-repo' });
+    expect(gh.merged).toEqual([7]); // push→main still happened; preview is the failing phase
+  });
+
+  it('fails at the preview phase when the preview URL does not serve 200', async () => {
+    const gh = fakeCertGh();
+    const out = await cmdConformanceCertify(
+      { repo: REPO, tag: TAG },
+      certDeps(gh, { probe: async (url) => (url.includes('pages.dev') ? 503 : 200) }),
+    );
+    expect(out.exitCode).toBe(1);
+    expect(out.result).toMatchObject({ status: 'failed', path: 'preview-same-repo' });
+    expect(out.result.failure).toContain('503');
   });
 });
