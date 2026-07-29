@@ -16,6 +16,7 @@
  * creds stay the fixture repo's own secrets, read back from the fixture run (plan §credentials).
  */
 import { STICKY_PREVIEW } from './preview.js';
+import { RESERVED_BUNDLE_NAMES } from './zenodo.js';
 
 /** Label stamped on every PR the harness opens — the robust teardown signal (works for fork
  *  PRs whose head branch the harness does not name). Provisioned on the fixture in C0. */
@@ -63,9 +64,26 @@ export interface ConformanceGh {
   openCertPr(repo: string, branch: string, marker: string): { number: number; headSha: string };
   /** Comment bodies on PR #n (to find the sticky preview comment). */
   listIssueComments(repo: string, prNumber: number): string[];
+
+  // --- C3: deposit chain (publish/release half) ----------------------------------------
+  /** The committed `project.doi` from the fixture's `myst.yml` on the default branch, or null
+   *  if unset — the C3 precondition (the fixture must carry a sandbox DOI). */
+  committedDoi(repo: string): string | null;
+  /** The default branch (`main`) HEAD sha — the ref the throwaway cert tag points at. */
+  defaultBranchSha(repo: string): string;
+  /** Create a lightweight tag `tag` → `sha` (the `v*` push that triggers publish.yml). */
+  pushTag(repo: string, tag: string, sha: string): void;
+  /** Approve the pending `environment` deployment on run `runId` (the required-reviewer gate).
+   *  Tolerates an empty/already-approved pending list. */
+  approveDeployment(repo: string, runId: number, environment: string): void;
+  /** Asset names on the GH Release for `tag` (`[]` when the release doesn't exist yet). */
+  releaseAssets(repo: string, tag: string): string[];
+  /** Delete the GH Release for `tag` (and, via cleanup, the tag); tolerates absence. */
+  deleteRelease(repo: string, tag: string): void;
 }
 
 export interface WorkflowRun {
+  id: number; // the run id — needed to approve/poll a *specific* run (C3)
   name: string;
   status: string; // queued | in_progress | completed
   conclusion: string | null; // success | failure | … (null until completed)
@@ -130,6 +148,9 @@ export async function cmdConformanceReset(input: ResetInput, deps: ResetDeps): P
 
   const deletedTags: string[] = [];
   for (const tag of gh.listTags(repo, CERT_TAG_MARKER)) {
+    // A crashed C3 run leaves a GH Release on the cert tag — clean it too. `deleteRelease`'s
+    // `--cleanup-tag` also removes the tag, so the following `deleteTag` is a tolerated no-op.
+    gh.deleteRelease(repo, tag);
     gh.deleteTag(repo, tag);
     deletedTags.push(tag);
     log(`deleted tag ${tag}`);
@@ -312,9 +333,97 @@ export async function cmdConformanceCertify(input: CertifyInput, deps: Conforman
     gh.deleteBranch(repo, branch);
     log(`same-repo preview CERTIFIED for ${tag}`);
 
+    // ---- Phase: deposit chain (the publish/release half) --------------------------------
+    // C3 certifies publish.yml → `oak release`: the tag push, the required-reviewer gate, and
+    // the 5-file deposit bundle landing on the tag's GitHub Release ([R24]). It does NOT test
+    // prepare-from-scratch — the fixture already carries a committed sandbox DOI and cmdPrepare
+    // refuses when one is set (per-run DOI mutation is explicitly deferred). The harness holds
+    // no Zenodo token, so it asserts the deposit token-free via the Release assets (same bytes).
+    phase = 'deposit';
+
+    // 1. Precondition: a committed *sandbox* DOI (10.5072/…) on the fixture's myst.yml.
+    const doi = gh.committedDoi(repo);
+    if (!doi || !doi.startsWith('10.5072/')) {
+      throw new Error(
+        `C3 needs a committed sandbox DOI on the fixture (found ${doi ?? 'none'}); ` +
+          `prepare-from-scratch coverage is deferred.`,
+      );
+    }
+    log(`fixture sandbox DOI: ${doi}`);
+
+    // 2. Push a throwaway `v0.0.0-cert-<runId>` tag at main HEAD — a clean `v*` publish trigger
+    //    (reset deletes `*-cert-*` tags + their Releases, so a crashed run is cleaned next time).
+    const depositTag = `v0.0.0${CERT_TAG_MARKER}${runId}`;
+    const tagSha = gh.defaultBranchSha(repo);
+    gh.pushTag(repo, depositTag, tagSha);
+    log(`pushed cert tag ${depositTag} → ${tagSha}`);
+
+    // 3. Find the publish run for that tag, approve its zenodo-publish deployment gate, then
+    //    wait for it to conclude success.
+    const publishRun = await pollUntil(
+      `Publish Zenodo deposit run for ${depositTag}`,
+      () => {
+        const run = gh
+          .workflowRunsForCommit(repo, tagSha)
+          .find((r) => r.name === 'Publish Zenodo deposit' && r.event === 'push');
+        if (!run) return null;
+        if (run.status === 'completed') {
+          // Concluded before we could approve (no gate, or a failure) — decide now.
+          if (run.conclusion !== 'success') throw new Error(`Publish Zenodo deposit concluded ${run.conclusion} — ${run.url}`);
+          return run;
+        }
+        if (run.status !== 'waiting') return null; // queued/in_progress — keep waiting for the gate
+        return run;
+      },
+      { sleep, log },
+    );
+    if (publishRun.status === 'waiting') {
+      gh.approveDeployment(repo, publishRun.id, 'zenodo-publish');
+      log(`approved zenodo-publish deployment for run ${publishRun.id}`);
+    }
+    await pollUntil(
+      `Publish Zenodo deposit success for ${depositTag}`,
+      () => {
+        const run = gh.workflowRunsForCommit(repo, tagSha).find((r) => r.id === publishRun.id);
+        if (!run || run.status !== 'completed') return null;
+        if (run.conclusion !== 'success') throw new Error(`Publish Zenodo deposit concluded ${run.conclusion} — ${run.url}`);
+        return run;
+      },
+      { sleep, log },
+    );
+
+    // 4. The deposit bundle (the exact deposited bytes) landed on the tag's GH Release — assert
+    //    all five reserved files are present. This is the token-free deposit assertion ([R24]).
+    const releaseAssets = gh.releaseAssets(repo, depositTag);
+    const missing = RESERVED_BUNDLE_NAMES.filter((n) => !releaseAssets.includes(n));
+    if (missing.length) {
+      throw new Error(
+        `GH Release ${depositTag} is missing deposit asset(s): ${missing.join(', ')} ` +
+          `(found: ${releaseAssets.join(', ') || 'none'})`,
+      );
+    }
+    log(`deposit bundle on Release ${depositTag}: ${releaseAssets.join(', ')}`);
+
+    // 5. Cleanup on success: drop the cert Release (and, via cleanup, its tag).
+    gh.deleteRelease(repo, depositTag);
+    gh.deleteTag(repo, depositTag); // tolerated no-op if the Release cleanup already removed it
+    log(`deposit CERTIFIED for ${tag}`);
+
     return {
       exitCode: 0,
-      result: { status: 'ok', tag, repo, paths: ['push-main', 'preview-same-repo'], prNumber, mergeSha, pagesUrl, previewPr: previewPr.number, previewUrl },
+      result: {
+        status: 'ok',
+        tag,
+        repo,
+        paths: ['push-main', 'preview-same-repo', 'deposit'],
+        prNumber,
+        mergeSha,
+        pagesUrl,
+        previewPr: previewPr.number,
+        previewUrl,
+        depositTag,
+        releaseAssets,
+      },
     };
   } catch (err) {
     const failure = err instanceof Error ? err.message : String(err);

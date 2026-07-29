@@ -44,8 +44,9 @@ const ORCID_RE = /^\d{4}-\d{4}-\d{4}-\d{3}[\dX]$/;
 /** Extra document part appended to the Zenodo description (e.g. shared authorship). */
 const ZENODO_EXTRA_PART = 'zenodo_extra_description';
 
-/** The engine's four fixed deposit files; a `deposit/` file may not collide with them ([R28]). */
-const RESERVED_BUNDLE_NAMES = ['paper.pdf', 'source.zip', 'myst.yml', 'publication-provenance.json', 'engine.zip'];
+/** The engine's five fixed deposit files; a `deposit/` file may not collide with them ([R28]).
+ *  Exported so the conformance harness (C3) can assert the GH Release carries exactly these. */
+export const RESERVED_BUNDLE_NAMES = ['paper.pdf', 'source.zip', 'myst.yml', 'publication-provenance.json', 'engine.zip'];
 
 export function apiBase(sandbox: boolean): string {
   return sandbox ? ZENODO_SANDBOX : ZENODO_PROD;
