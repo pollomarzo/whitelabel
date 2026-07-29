@@ -479,4 +479,27 @@ export const realConformanceGh: ConformanceGh = {
   deleteTag(repo, tag) {
     ghOk(['api', '-X', 'DELETE', `repos/${repo}/git/refs/tags/${tag}`]);
   },
+  labelPr(repo, prNumber, label) {
+    gh(['pr', 'edit', String(prNumber), '--repo', repo, '--add-label', label]);
+  },
+  prHeadSha(repo, prNumber) {
+    return gh(['pr', 'view', String(prNumber), '--repo', repo, '--json', 'headRefOid', '--jq', '.headRefOid']);
+  },
+  mergePr(repo, prNumber) {
+    gh(['pr', 'merge', String(prNumber), '--repo', repo, '--merge', '--delete-branch']);
+    return gh(['pr', 'view', String(prNumber), '--repo', repo, '--json', 'mergeCommit', '--jq', '.mergeCommit.oid']);
+  },
+  workflowRunsForCommit(repo, sha) {
+    const out = gh([
+      'api',
+      `repos/${repo}/actions/runs?head_sha=${sha}`,
+      '--jq',
+      '[.workflow_runs[] | {name, status, conclusion, url: .html_url, event}]',
+    ]);
+    return out ? (JSON.parse(out) as import('./conformance.js').WorkflowRun[]) : [];
+  },
+  checkRunsForCommit(repo, sha) {
+    const out = gh(['api', `repos/${repo}/commits/${sha}/check-runs`, '--jq', '[.check_runs[] | {name, conclusion}]']);
+    return out ? (JSON.parse(out) as import('./conformance.js').CheckRunRef[]) : [];
+  },
 };

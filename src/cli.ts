@@ -612,7 +612,48 @@ async function cmdConformance(argv: string[]): Promise<number> {
     return out.exitCode;
   }
 
-  process.stderr.write('oak conformance: usage: oak conformance reset --repo <owner/name>\n');
+  if (sub === 'certify') {
+    const repo = flag(rest, 'repo');
+    const tag = flag(rest, 'tag');
+    if (!repo || !tag) {
+      process.stderr.write('oak conformance certify: --repo <owner/name> and --tag <vX.Y.Z> are required\n');
+      return 2;
+    }
+    const upgrade = await import('./upgrade.js');
+    const out = await conformance.cmdConformanceCertify(
+      { repo, tag },
+      {
+        ...deps,
+        sleep: (ms) => new Promise<void>((r) => setTimeout(r, ms)),
+        probe: async (url) => {
+          try {
+            return (await fetch(url)).status;
+          } catch {
+            return 0;
+          }
+        },
+        // Dogfood the migration path in-process: `oak upgrade --both` against a fresh clone.
+        installEngine: async (r, t) => {
+          const up = await upgrade.cmdUpgrade(
+            { repoRoot: gh.tempClone(r), to: t, mode: 'both' },
+            {
+              resolveTarget: gh.latestEngineRelease,
+              materializeTemplate: gh.materializeTemplate,
+              pr: gh.realUpgradePr,
+              log: deps.log,
+              confirm: async () => true,
+            },
+          );
+          const prUrl = (up.result.pr as string | null) ?? null;
+          return { upToDate: Boolean(up.result.up_to_date), prUrl, prNumber: prUrl ? Number(prUrl.split('/').pop()) : null };
+        },
+      },
+    );
+    emit(out.result);
+    return out.exitCode;
+  }
+
+  process.stderr.write('oak conformance: usage:\n  oak conformance reset   --repo <owner/name>\n  oak conformance certify --repo <owner/name> --tag <vX.Y.Z>\n');
   return 2;
 }
 
@@ -648,7 +689,8 @@ async function main(argv: string[]): Promise<number> {
       `  oak bootstrap journal --repo <owner/name> (--external | --co-located) [--name <name>] [--edition <id>]\n` +
       `                        [--engine-version <tag>] [--owner <@user|@org/team>] [--no-require-checks] [--yes]\n` +
       `  oak upgrade (--repo <owner/name> | --paper <dir>) [--to <tag>] [--version-only|--files-only|--both] [--yes]\n` +
-      `  oak conformance reset --repo <owner/name>\n`,
+      `  oak conformance reset   --repo <owner/name>\n` +
+      `  oak conformance certify --repo <owner/name> --tag <vX.Y.Z>\n`,
   );
   return 2;
 }

@@ -42,12 +42,47 @@ export interface ConformanceGh {
   listTags(repo: string, marker: string): string[];
   /** Delete a tag by name; tolerates an already-absent ref. */
   deleteTag(repo: string, tag: string): void;
+
+  // --- C1: install-V + push→main -------------------------------------------------------
+  /** Add `label` to PR #n (so reset/teardown can find it). */
+  labelPr(repo: string, prNumber: number, label: string): void;
+  /** The PR's HEAD commit sha — the ref the merge-gating Check Run is posted on. */
+  prHeadSha(repo: string, prNumber: number): string;
+  /** Merge PR #n (delete its branch) and return the resulting merge-commit sha. */
+  mergePr(repo: string, prNumber: number): string;
+  /** Workflow runs whose head commit is `sha` (Paper CI / Journal checks …). */
+  workflowRunsForCommit(repo: string, sha: string): WorkflowRun[];
+  /** Check Runs on commit `sha` (the "Journal checks" run check-post posts). */
+  checkRunsForCommit(repo: string, sha: string): CheckRunRef[];
+}
+
+export interface WorkflowRun {
+  name: string;
+  status: string; // queued | in_progress | completed
+  conclusion: string | null; // success | failure | … (null until completed)
+  url: string;
+  event: string; // push | pull_request | …
+}
+
+export interface CheckRunRef {
+  name: string;
+  conclusion: string | null; // null while still running
 }
 
 export interface ConformanceDeps {
   gh: ConformanceGh;
   log(msg: string): void;
+  /** Await `ms` between polls (injected so tests run without real waits). */
+  sleep(ms: number): Promise<void>;
+  /** HTTP status of a GET to `url` (0 on network error) — the Pages-serves assertion. */
+  probe(url: string): Promise<number>;
+  /** Install engine `tag` into `repo` via `oak upgrade --both` (dogfoods the migration path).
+   *  Returns the opened PR, or `upToDate` when the pin already equals `tag`. */
+  installEngine(repo: string, tag: string): Promise<{ upToDate: boolean; prNumber: number | null; prUrl: string | null }>;
 }
+
+/** reset needs only the teardown seam — kept narrow so its callers stay light. */
+export type ResetDeps = Pick<ConformanceDeps, 'gh' | 'log'>;
 
 export interface Outcome {
   exitCode: number;
@@ -66,7 +101,7 @@ export interface ResetInput {
  * denied), then delete `cert-*` branches, then `*-cert-*` tags. Every step is idempotent —
  * an absent target is skipped, not an error.
  */
-export async function cmdConformanceReset(input: ResetInput, deps: ConformanceDeps): Promise<Outcome> {
+export async function cmdConformanceReset(input: ResetInput, deps: ResetDeps): Promise<Outcome> {
   const { gh, log } = deps;
   const { repo } = input;
 
@@ -98,4 +133,127 @@ export async function cmdConformanceReset(input: ResetInput, deps: ConformanceDe
     exitCode: 0,
     result: { status: 'ok', repo, closedPrs, deletedBranches, deletedTags, changed },
   };
+}
+
+/* ==========================================================================================
+ * C1 — install V + certify the push→main path
+ * ======================================================================================== */
+
+/** Poll bounds for waiting on real runs. A push→main Paper CI + Pages deploy is minutes; be
+ *  generous (retry/fault-attribution is a later slice, C4). Tests inject a no-op `sleep`. */
+const POLL = { tries: 80, intervalMs: 15_000 };
+
+/**
+ * Call `attempt` until it returns a value (ready), rethrowing whatever it throws (a definitive
+ * failure — e.g. a concluded-but-failed run); `null` means "keep waiting". Throws on timeout.
+ */
+async function pollUntil<T>(
+  label: string,
+  attempt: () => T | null,
+  deps: { sleep(ms: number): Promise<void>; log(msg: string): void },
+  opts: { tries: number; intervalMs: number } = POLL,
+): Promise<T> {
+  for (let i = 0; i < opts.tries; i++) {
+    const ready = attempt();
+    if (ready !== null) return ready;
+    if (i < opts.tries - 1) await deps.sleep(opts.intervalMs);
+  }
+  throw new Error(`timed out waiting for ${label} (${opts.tries}×${opts.intervalMs}ms)`);
+}
+
+/** null = still pending; the ref when it concluded success; throws when it concluded !success. */
+function checkOutcome(runs: CheckRunRef[], name: string): CheckRunRef | null {
+  const cr = runs.find((c) => c.name === name);
+  if (!cr || cr.conclusion === null) return null;
+  if (cr.conclusion !== 'success') throw new Error(`${name} Check Run concluded ${cr.conclusion}`);
+  return cr;
+}
+
+/** Project-Pages URL for a fixture repo (owner.github.io/name/). */
+export function pagesUrlFor(repo: string): string {
+  const [owner, name] = repo.split('/');
+  return `https://${owner}.github.io/${name}/`;
+}
+
+export interface CertifyInput {
+  repo: string;
+  tag: string; // engine version V under test
+}
+
+/**
+ * Certify the **push→main** path for engine version V: install V via the dogfooded migration
+ * PR, let the fixture's required "Journal checks" gate the merge (which also exercises the PR
+ * check→check-post path), then assert — at the *part* level, not just run conclusions — that
+ * Paper CI (build + Pages) is green, Pages actually serves 200, and the "Journal checks" Check
+ * Run was posted on main. C2 (PR previews + sticky), C3 (deposit), C4 (verdict) append here.
+ */
+export async function cmdConformanceCertify(input: CertifyInput, deps: ConformanceDeps): Promise<Outcome> {
+  const { gh, log, sleep, probe, installEngine } = deps;
+  const { repo, tag } = input;
+  try {
+    // 1. Clean baseline (idempotent teardown of any prior run's ephemeral state).
+    await cmdConformanceReset({ repo }, { gh, log });
+
+    // 2. Install V by dogfooding the migration path (not a raw copy — the re-copy is under test).
+    const up = await installEngine(repo, tag);
+    if (up.upToDate || up.prNumber === null) {
+      return {
+        exitCode: 1,
+        result: {
+          status: 'failed',
+          tag,
+          path: 'install',
+          failure: `no upgrade PR — the fixture pin already equals ${tag}. Cut a fresh dev tag so push→main has a change to certify.`,
+        },
+      };
+    }
+    const prNumber = up.prNumber;
+    gh.labelPr(repo, prNumber, CONFORMANCE_LABEL);
+    log(`upgrade PR #${prNumber}: ${up.prUrl}`);
+
+    // 3. Wait for the required "Journal checks" to pass on the PR — the merge gate, and the
+    //    prerequisite that exercises the PR check→check-post path for free.
+    const prSha = gh.prHeadSha(repo, prNumber);
+    await pollUntil(
+      `PR #${prNumber} Journal checks`,
+      () => checkOutcome(gh.checkRunsForCommit(repo, prSha), 'Journal checks'),
+      { sleep, log },
+    );
+
+    // 4. Merge → the push→main event under test.
+    const mergeSha = gh.mergePr(repo, prNumber);
+    log(`merged PR #${prNumber} → ${mergeSha}`);
+
+    // 5. Paper CI (build + deploy-pages) concluded success on the merge commit.
+    await pollUntil(
+      'Paper CI (push→main)',
+      () => {
+        const ci = gh.workflowRunsForCommit(repo, mergeSha).find((r) => r.name === 'Paper CI' && r.event === 'push');
+        if (!ci || ci.status !== 'completed') return null;
+        if (ci.conclusion !== 'success') throw new Error(`Paper CI concluded ${ci.conclusion} — ${ci.url}`);
+        return ci;
+      },
+      { sleep, log },
+    );
+
+    // 6. Pages actually SERVES (the part, not just the deploy job's conclusion — "green-but-empty").
+    const pagesUrl = pagesUrlFor(repo);
+    const status = await probe(pagesUrl);
+    if (status !== 200) throw new Error(`Pages ${pagesUrl} returned ${status}, expected 200`);
+    log(`Pages 200: ${pagesUrl}`);
+
+    // 7. The "Journal checks" Check Run was actually posted on main (check-post ran, not just check).
+    await pollUntil(
+      'Journal checks Check Run (push→main)',
+      () => checkOutcome(gh.checkRunsForCommit(repo, mergeSha), 'Journal checks'),
+      { sleep, log },
+    );
+
+    log(`push→main CERTIFIED for ${tag}`);
+    return { exitCode: 0, result: { status: 'ok', tag, path: 'push-main', repo, prNumber, mergeSha, pagesUrl } };
+  } catch (err) {
+    const failure = err instanceof Error ? err.message : String(err);
+    log(`push→main FAILED for ${tag}: ${failure}`);
+    return { exitCode: 1, result: { status: 'failed', tag, path: 'push-main', repo, failure } };
+  }
 }
