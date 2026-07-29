@@ -13,6 +13,7 @@ import { execFileSync, type StdioOptions } from 'node:child_process';
 import { cpSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { parseDocument } from 'yaml';
 import type { GitContext } from './zenodo.js';
 import type { GhPr, PagesDeployer } from './preview.js';
 import type { CheckRun } from './checks.js';
@@ -494,7 +495,7 @@ export const realConformanceGh: ConformanceGh = {
       'api',
       `repos/${repo}/actions/runs?head_sha=${sha}`,
       '--jq',
-      '[.workflow_runs[] | {name, status, conclusion, url: .html_url, event}]',
+      '[.workflow_runs[] | {id, name, status, conclusion, url: .html_url, event}]',
     ]);
     return out ? (JSON.parse(out) as import('./conformance.js').WorkflowRun[]) : [];
   },
@@ -536,5 +537,62 @@ export const realConformanceGh: ConformanceGh = {
     // per-page JSON arrays into invalid JSON).
     const out = gh(['api', `repos/${repo}/issues/${prNumber}/comments`, '--jq', '[.[].body]']);
     return out ? (JSON.parse(out) as string[]) : [];
+  },
+  committedDoi(repo) {
+    // Read myst.yml off the default branch via the Contents API (base64), then YAML-parse it.
+    let content: string;
+    try {
+      content = gh(['api', `repos/${repo}/contents/myst.yml`, '--jq', '.content'], { quiet: true });
+    } catch {
+      return null; // no myst.yml / no read access
+    }
+    if (!content) return null;
+    const text = Buffer.from(content, 'base64').toString('utf8'); // GitHub wraps base64 in \n; Buffer ignores them
+    const doi = parseDocument(text).getIn(['project', 'doi']);
+    return doi != null ? String(doi) : null;
+  },
+  defaultBranchSha(repo) {
+    return gh(['api', `repos/${repo}/git/ref/heads/main`, '--jq', '.object.sha']);
+  },
+  pushTag(repo, tag, sha) {
+    gh(['api', '-X', 'POST', `repos/${repo}/git/refs`, '-f', `ref=refs/tags/${tag}`, '-f', `sha=${sha}`]);
+  },
+  approveDeployment(repo, runId, environment) {
+    // GET the pending deployments, pick the environment id matching `environment`, then POST the
+    // approval. A missing/empty pending list (already approved, or no gate) is a tolerated no-op.
+    let envId: string;
+    try {
+      envId = gh(
+        [
+          'api',
+          `repos/${repo}/actions/runs/${runId}/pending_deployments`,
+          '--jq',
+          `[.[] | select(.environment.name=="${environment}") | .environment.id] | first // empty`,
+        ],
+        { quiet: true },
+      );
+    } catch {
+      return;
+    }
+    if (!envId) return;
+    gh([
+      'api', '-X', 'POST', `repos/${repo}/actions/runs/${runId}/pending_deployments`,
+      '-F', `environment_ids[]=${envId}`,
+      '-f', 'state=approved',
+      '-f', 'comment=conformance harness auto-approve',
+    ]);
+  },
+  releaseAssets(repo, tag) {
+    // `gh release view` errors when the release doesn't exist yet — treat that as no assets.
+    try {
+      const out = gh(['release', 'view', tag, '-R', repo, '--json', 'assets', '--jq', '[.assets[].name]'], { quiet: true });
+      return out ? (JSON.parse(out) as string[]) : [];
+    } catch {
+      return [];
+    }
+  },
+  deleteRelease(repo, tag) {
+    // `--cleanup-tag` also removes the underlying tag. Tolerant: an absent release is a no-op.
+    ghOk(['release', 'delete', tag, '-R', repo, '-y', '--cleanup-tag']);
   },
 };
