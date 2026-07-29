@@ -11,6 +11,7 @@ import {
   CONFORMANCE_LABEL,
   CERT_BRANCH_PREFIX,
   CERT_TAG_MARKER,
+  CERT_DEPOSIT_TAG,
   type ConformanceGh,
   type ConformanceDeps,
   type WorkflowRun,
@@ -108,6 +109,13 @@ describe('cmdConformanceReset', () => {
 
     const second = await cmdConformanceReset({ repo: REPO }, silentDeps(gh));
     expect(second.result).toMatchObject({ closedPrs: [], deletedBranches: [], deletedTags: [], changed: 0 });
+  });
+
+  it('cleans a stranded reserved deposit tag (no -cert- marker) and leaves real release tags', async () => {
+    const gh = fakeGh({ tags: [CERT_DEPOSIT_TAG, 'v0.0.1', 'v0.0.2'] });
+    const out = await cmdConformanceReset({ repo: REPO }, silentDeps(gh));
+    expect(out.result).toMatchObject({ deletedTags: [CERT_DEPOSIT_TAG], changed: 1 });
+    expect(gh.tags).toEqual(['v0.0.1', 'v0.0.2']);
   });
 
   it('reset on an already-clean fixture is a no-op', async () => {
@@ -231,15 +239,15 @@ describe('cmdConformanceCertify', () => {
       pagesUrl: pagesUrlFor(REPO),
       previewPr: 21,
       previewUrl: 'https://cert-x.oaktree-sapling-test.pages.dev',
-      depositTag: `v0.0.0${CERT_TAG_MARKER}42`,
+      depositTag: CERT_DEPOSIT_TAG,
       releaseAssets: RESERVED_BUNDLE_NAMES,
     });
     expect(gh.labeled).toEqual([[7, CONFORMANCE_LABEL], [21, CONFORMANCE_LABEL]]);
     expect(gh.merged).toEqual([7]); // only the upgrade PR is merged (push→main trigger)
     expect(gh.closed).toEqual([21]); // the observation-only preview PR is closed, not merged
-    expect(gh.pushedTags).toEqual([[`v0.0.0${CERT_TAG_MARKER}42`, 'main-sha']]);
+    expect(gh.pushedTags).toEqual([[CERT_DEPOSIT_TAG, 'main-sha']]); // reserved clean-semver tag
     expect(gh.approvals).toEqual([[3, 'zenodo-publish']]); // approved the waiting deployment gate
-    expect(gh.deletedReleases).toEqual([`v0.0.0${CERT_TAG_MARKER}42`]); // cert Release cleaned up
+    expect(gh.deletedReleases).toContain(CERT_DEPOSIT_TAG); // pre-push idempotency + post-success cleanup
   });
 
   it('fails without merging when the fixture is already at V (no upgrade PR)', async () => {
@@ -334,6 +342,6 @@ describe('cmdConformanceCertify', () => {
     expect(out.exitCode).toBe(1);
     expect(out.result).toMatchObject({ status: 'failed', path: 'deposit' });
     expect(out.result.failure).toContain('Publish Zenodo deposit');
-    expect(gh.deletedReleases).toEqual([]); // never reached cleanup
+    expect(gh.deletedReleases).toEqual([CERT_DEPOSIT_TAG]); // only the pre-push cleanup ran (failed before post-success cleanup)
   });
 });

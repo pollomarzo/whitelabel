@@ -25,10 +25,15 @@ export const CONFORMANCE_LABEL = 'conformance';
 /** Prefix for the ephemeral base-repo branches a cert run creates. */
 export const CERT_BRANCH_PREFIX = 'cert-';
 
-/** Substring marking a throwaway cert tag, e.g. `v0.0.0-cert-<run-id>`. A `-` marker (not the
- *  semver `+build` form) keeps the tag a clean git ref and a valid `v*` trigger for the
- *  fixture's publish.yml. */
+/** Substring marking a throwaway cert *branch*-side tag (reset sweeps `*-cert-*`). NOT usable
+ *  for the deposit tag — `oak release` requires a clean `vX.Y.Z` (see `CERT_DEPOSIT_TAG`). */
 export const CERT_TAG_MARKER = '-cert-';
+
+/** The C3 deposit tag. `oak release` rejects anything but `/^v\d+\.\d+\.\d+$/`, so it can't
+ *  carry the `-cert-` marker; a reserved throwaway version (won't collide with the fixture's
+ *  real `v0.0.1`/`v0.0.2`) is pushed, published, asserted, then deleted. Reused every run —
+ *  the deposit draft is keyed by github/id, not the tag, so the version label is immaterial. */
+export const CERT_DEPOSIT_TAG = 'v0.0.0';
 
 /** The injectable GitHub seam. Every method acts on `repo` = a fixture `owner/name`. */
 export interface ConformanceGh {
@@ -146,8 +151,12 @@ export async function cmdConformanceReset(input: ResetInput, deps: ResetDeps): P
     log(`deleted branch ${branch}`);
   }
 
+  // Cert tags: the `*-cert-*` branch-side markers plus the reserved deposit tag (which carries
+  // no marker). `listTags` is a substring match, so `v0.0.0` also catches any `v0.0.0-cert-*`
+  // leftover from the pre-fix tag scheme — the Set dedups the overlap.
+  const certTags = new Set([...gh.listTags(repo, CERT_TAG_MARKER), ...gh.listTags(repo, CERT_DEPOSIT_TAG)]);
   const deletedTags: string[] = [];
-  for (const tag of gh.listTags(repo, CERT_TAG_MARKER)) {
+  for (const tag of certTags) {
     // A crashed C3 run leaves a GH Release on the cert tag — clean it too. `deleteRelease`'s
     // `--cleanup-tag` also removes the tag, so the following `deleteTag` is a tolerated no-op.
     gh.deleteRelease(repo, tag);
@@ -351,12 +360,14 @@ export async function cmdConformanceCertify(input: CertifyInput, deps: Conforman
     }
     log(`fixture sandbox DOI: ${doi}`);
 
-    // 2. Push a throwaway `v0.0.0-cert-<runId>` tag at main HEAD — a clean `v*` publish trigger
-    //    (reset deletes `*-cert-*` tags + their Releases, so a crashed run is cleaned next time).
-    const depositTag = `v0.0.0${CERT_TAG_MARKER}${runId}`;
+    // 2. Push the reserved deposit tag at main HEAD — a clean `vX.Y.Z` `oak release` accepts.
+    //    Delete any stale one first (a prior crash), so the push + `gh release create` are clean.
+    const depositTag = CERT_DEPOSIT_TAG;
+    gh.deleteRelease(repo, depositTag); // --cleanup-tag also drops the tag; tolerant of absence
+    gh.deleteTag(repo, depositTag); // belt-and-suspenders if a bare tag (no Release) lingered
     const tagSha = gh.defaultBranchSha(repo);
     gh.pushTag(repo, depositTag, tagSha);
-    log(`pushed cert tag ${depositTag} → ${tagSha}`);
+    log(`pushed deposit tag ${depositTag} → ${tagSha}`);
 
     // 3. Find the publish run for that tag, approve its zenodo-publish deployment gate, then
     //    wait for it to conclude success.
