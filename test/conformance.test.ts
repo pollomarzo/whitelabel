@@ -159,6 +159,10 @@ function fakeCertGh(over: {
   approvals: [number, string][];
   deletedReleases: string[];
   resetSweeps: number;
+  sweptForkBranches: string[];
+  openedForkPr: [string, string][];
+  deletedForkBranches: string[];
+  approvedRuns: number[];
 } {
   const labeled: [number, string][] = [];
   const merged: number[] = [];
@@ -166,6 +170,10 @@ function fakeCertGh(over: {
   const pushedTags: [string, string][] = [];
   const approvals: [number, string][] = [];
   const deletedReleases: string[] = [];
+  const sweptForkBranches: string[] = [];
+  const openedForkPr: [string, string][] = []; // [forkRepo, branch]
+  const deletedForkBranches: string[] = [];
+  const approvedRuns: number[] = [];
   let resetSweeps = 0; // reset() calls listOpenPrs first — count sweeps to prove teardown ran
   let publishPolls = 0;
   const defaultWorkflowRuns = (sha: string): WorkflowRun[] => {
@@ -190,6 +198,10 @@ function fakeCertGh(over: {
     pushedTags,
     approvals,
     deletedReleases,
+    sweptForkBranches,
+    openedForkPr,
+    deletedForkBranches,
+    approvedRuns,
     get resetSweeps() {
       return resetSweeps;
     },
@@ -218,18 +230,31 @@ function fakeCertGh(over: {
     approveDeployment: (_r, runId, env) => approvals.push([runId, env]),
     releaseAssets: (_r, tag) => (over.releaseAssets ?? (() => [...RESERVED_BUNDLE_NAMES]))(tag),
     deleteRelease: (_r, tag) => deletedReleases.push(tag),
+    sweepForkBranches: (forkRepo, _tok, _prefix) => {
+      sweptForkBranches.push(forkRepo);
+      return [];
+    },
+    openForkPr: (_base, forkRepo, _tok, branch, _tag, _marker) => {
+      openedForkPr.push([forkRepo, branch]);
+      return { number: 31, headSha: 'fork-head-sha' };
+    },
+    deleteForkBranch: (_forkRepo, _tok, branch) => deletedForkBranches.push(branch),
+    approveWorkflowRun: (_r, runId) => approvedRuns.push(runId),
   };
 }
 
+const FORK = { repo: 'second/fixture-paper-repo', token: 'fork-tok' };
+
 const certDeps = (
   gh: ConformanceGh,
-  over: Partial<Pick<ConformanceDeps, 'probe' | 'installEngine'>> = {},
+  over: Partial<Pick<ConformanceDeps, 'probe' | 'installEngine' | 'fork'>> = {},
 ): ConformanceDeps => ({
   gh,
   log: () => {},
   sleep: async () => {}, // no real waits in tests
   probe: over.probe ?? (async () => 200),
   installEngine: over.installEngine ?? (async () => ({ upToDate: false, prNumber: 7, prUrl: 'https://github.com/me/fixture-paper-repo/pull/7' })),
+  fork: 'fork' in over ? over.fork : null,
 });
 
 describe('cmdConformanceCertify', () => {
@@ -256,6 +281,65 @@ describe('cmdConformanceCertify', () => {
     expect(gh.pushedTags).toEqual([[CERT_DEPOSIT_TAG, 'main-sha']]); // reserved clean-semver tag
     expect(gh.approvals).toEqual([[3, 'zenodo-publish']]); // approved the waiting deployment gate
     expect(gh.deletedReleases).toContain(CERT_DEPOSIT_TAG); // pre-push idempotency + post-success cleanup
+    // The optional fork phase is skipped without a fork — three paths, no fork methods touched.
+    expect((out.result.paths as string[]).length).toBe(3);
+    expect(out.result).not.toHaveProperty('forkPr');
+    expect(gh.openedForkPr).toEqual([]);
+    expect(gh.sweptForkBranches).toEqual([]);
+    expect(gh.approvedRuns).toEqual([]);
+    expect(gh.deletedForkBranches).toEqual([]);
+  });
+
+  it('CERTIFIES the fork-PR preview path when a fork is configured', async () => {
+    const gh = fakeCertGh();
+    const out = await cmdConformanceCertify({ repo: REPO, tag: TAG, runId: '42' }, certDeps(gh, { fork: FORK }));
+
+    expect(out.exitCode).toBe(0);
+    expect(out.result).toMatchObject({
+      status: 'ok',
+      paths: ['push-main', 'preview-same-repo', 'deposit', 'preview-fork'],
+      forkPr: 31,
+      forkPreviewUrl: 'https://cert-x.oaktree-sapling-test.pages.dev',
+    });
+    expect(gh.sweptForkBranches).toEqual([FORK.repo]);
+    expect(gh.openedForkPr).toEqual([[FORK.repo, `${CERT_BRANCH_PREFIX}42`]]);
+    expect(gh.approvedRuns).toEqual([2]); // the fork PR's Paper CI run id (SUCCESS_CI pull_request)
+    expect(gh.labeled).toContainEqual([31, CONFORMANCE_LABEL]);
+    expect(gh.closed).toContain(31); // the fork PR is closed on the base repo (primary token)
+    expect(gh.deletedForkBranches).toEqual([`${CERT_BRANCH_PREFIX}42`]);
+  });
+
+  it('fails at the fork phase when the fork preview degraded to an artifact link', async () => {
+    // Only the FORK PR (#31) degrades; the same-repo preview PR (#21) must still succeed first.
+    const gh = fakeCertGh({
+      comments: (pr) =>
+        pr === 31
+          ? ['<!-- oak-sticky: oak-preview -->\n**Preview build ready** 📦\nartifact link, no live preview']
+          : [PREVIEW_COMMENT],
+    });
+    const out = await cmdConformanceCertify({ repo: REPO, tag: TAG, runId: '42' }, certDeps(gh, { fork: FORK }));
+    expect(out.exitCode).toBe(1);
+    expect(out.result).toMatchObject({ status: 'failed', path: 'preview-fork' });
+    expect(gh.closed).toContain(21); // same-repo preview certified (closed) before the fork phase
+  });
+
+  it('fails at the fork phase when the fork PR Paper CI concludes failure', async () => {
+    const gh = fakeCertGh({
+      workflowRuns: (sha) => {
+        if (sha === 'fork-head-sha') {
+          return [{ id: 5, name: 'Paper CI', status: 'completed', conclusion: 'failure', url: 'bad-fork-run', event: 'pull_request' }];
+        }
+        const runs: WorkflowRun[] = [...SUCCESS_CI];
+        if (sha === 'main-sha') {
+          runs.push({ id: 3, name: 'Publish Zenodo deposit', event: 'push', url: 'publish-run-url', status: 'completed', conclusion: 'success' });
+        }
+        return runs;
+      },
+    });
+    const out = await cmdConformanceCertify({ repo: REPO, tag: TAG, runId: '42' }, certDeps(gh, { fork: FORK }));
+    expect(out.exitCode).toBe(1);
+    expect(out.result).toMatchObject({ status: 'failed', path: 'preview-fork' });
+    expect(out.result.failure).toContain('fork Paper CI');
   });
 
   it('fails without merging when the fixture is already at V (no upgrade PR)', async () => {

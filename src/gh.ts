@@ -60,6 +60,29 @@ function ghOk(args: string[]): boolean {
   }
 }
 
+/** `gh` run under a DIFFERENT token (the fork account's PAT) — same shape as `gh()`, but the
+ *  child sees `GH_TOKEN=token`. The conformance fork phase owns a second-account fork; base-repo
+ *  ops keep using `gh()` (the ambient primary token), fork-repo ops use `ghAs(forkToken, …)`. */
+function ghAs(token: string, args: string[], opts: { input?: string; cwd?: string; quiet?: boolean } = {}): string {
+  return execFileSync('gh', args, {
+    encoding: 'utf8',
+    input: opts.input,
+    cwd: opts.cwd,
+    stdio: stdio(opts.quiet),
+    env: { ...process.env, GH_TOKEN: token },
+  }).trim();
+}
+
+/** Tolerant `ghAs` — the fork-token twin of `ghOk` (an already-absent ref DELETE is a no-op). */
+function ghOkAs(token: string, args: string[]): boolean {
+  try {
+    execFileSync('gh', args, { stdio: 'ignore', env: { ...process.env, GH_TOKEN: token } });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Commit-as-bot identity flags (a CI runner has no git identity — see openDoiPr). */
 const BOT_ID = [
   '-c', 'user.name=github-actions[bot]',
@@ -594,5 +617,62 @@ export const realConformanceGh: ConformanceGh = {
   deleteRelease(repo, tag) {
     // `--cleanup-tag` also removes the underlying tag. Tolerant: an absent release is a no-op.
     ghOk(['release', 'delete', tag, '-R', repo, '-y', '--cleanup-tag']);
+  },
+
+  // --- fork-PR preview path (optional, lab-tier) ---------------------------------------
+  sweepForkBranches(forkRepo, forkToken, prefix) {
+    // Idempotency: clear stale cert branches on the fork left by a crashed run (mirrors the
+    // base-repo listBranches/deleteBranch sweep, but on the fork under the fork token).
+    const out = ghAs(forkToken, ['api', `repos/${forkRepo}/git/matching-refs/heads/${prefix}`, '--jq', '.[].ref']);
+    const branches = out ? out.split('\n').map((r) => r.replace(/^refs\/heads\//, '')) : [];
+    for (const branch of branches) {
+      ghOkAs(forkToken, ['api', '-X', 'DELETE', `repos/${forkRepo}/git/refs/heads/${branch}`]);
+    }
+    return branches;
+  },
+  openForkPr(baseRepo, forkRepo, forkToken, branch, tag, marker) {
+    // On the FORK (fork token): branch off its default branch, then bump the engine pin to V so
+    // the fork PR builds under V — that pin change is also the non-empty content diff. All via
+    // the Contents API (no clone → no git-credential dependency for the fork token).
+    const forkOwner = forkRepo.split('/')[0];
+    const defaultBranch = ghAs(forkToken, ['api', `repos/${forkRepo}`, '--jq', '.default_branch']);
+    const headSha = ghAs(forkToken, ['api', `repos/${forkRepo}/git/ref/heads/${defaultBranch}`, '--jq', '.object.sha']);
+    ghAs(forkToken, ['api', '-X', 'POST', `repos/${forkRepo}/git/refs`, '-f', `ref=refs/heads/${branch}`, '-f', `sha=${headSha}`]);
+
+    const meta = JSON.parse(
+      ghAs(forkToken, ['api', `repos/${forkRepo}/contents/myst.yml?ref=${branch}`, '--jq', '{content: .content, sha: .sha}']),
+    ) as { content: string; sha: string };
+    const doc = parseDocument(Buffer.from(meta.content, 'base64').toString('utf8')); // GitHub wraps base64 in \n; Buffer ignores them
+    doc.setIn(['project', 'options', 'oaktree-sapling', 'version'], tag);
+    const updated = Buffer.from(String(doc), 'utf8').toString('base64');
+    ghAs(forkToken, [
+      'api', '-X', 'PUT', `repos/${forkRepo}/contents/myst.yml`,
+      '-f', `message=conformance fork preview ${marker} (pin engine ${tag})`,
+      '-f', `content=${updated}`,
+      '-f', `sha=${meta.sha}`,
+      '-f', `branch=${branch}`,
+    ]);
+
+    // Open the cross-fork PR on the BASE repo with the PRIMARY token — `--head owner:branch`
+    // targets the fork's head branch.
+    const url = gh([
+      'pr', 'create', '--repo', baseRepo, '--base', 'main', '--head', `${forkOwner}:${branch}`,
+      '--title', `conformance fork preview ${marker}`,
+      '--body', 'Automated conformance fork-PR preview probe — opened and closed by the harness.',
+    ]);
+    const number = Number(url.split('/').pop());
+    // Re-read the fork branch head sha post-commit (the PUT advanced it).
+    const postSha = ghAs(forkToken, ['api', `repos/${forkRepo}/git/ref/heads/${branch}`, '--jq', '.object.sha']);
+    return { number, headSha: postSha };
+  },
+  deleteForkBranch(forkRepo, forkToken, branch) {
+    ghOkAs(forkToken, ['api', '-X', 'DELETE', `repos/${forkRepo}/git/refs/heads/${branch}`]);
+  },
+  approveWorkflowRun(repo, runId) {
+    // The fork-PR first-time-contributor gate is on the BASE repo, so approve with the PRIMARY
+    // token. TOLERANT: a no-op error when approval isn't required. NOTE: whether fork runs need
+    // approval every time (vs. only the first) is UNCERTAIN — the tolerant approve covers both,
+    // and live-testing will settle it.
+    ghOk(['api', '-X', 'POST', `repos/${repo}/actions/runs/${runId}/approve`]);
   },
 };
