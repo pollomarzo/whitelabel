@@ -1,14 +1,14 @@
 # conformance — release certification of the paper CI (plan-paper-ci-conformance.md).
 #
 # Drives the standing fixtures against an engine version V and asserts every shim path green
-# (build/Pages, journal checks, fork-safe preview, deposit chain, self-bump). Deliberately NOT
-# a required status check and NOT per-commit: it is a release/nightly gate (many real runs +
-# workflow_run latency + external round-trips ≈ 15–40 min). Advisory for now; a promotion gate
-# on a green cert is a later milestone (plan C5).
-#
-# Slice C0: only the `reset` job exists — idempotent teardown of a cert run's ephemeral state
-# (cert-* branches/PRs, *-cert-* tags) so runs are repeatable. The build/PR/deposit jobs (C1+)
-# land on top of this skeleton.
+# (build/Pages, journal checks, fork-safe preview, deposit chain). Deliberately advisory — NOT a
+# required status check, NOT per-commit: a release gate (real runs + workflow_run latency +
+# external round-trips). Two triggers:
+#   • workflow_dispatch — manual, pick a tag (or only-reset).
+#   • workflow_run (POST-CUT HOOK) — after `cut-engine-release` completes, certify the just-cut
+#     (latest) release automatically ("release ⟺ certified"). If the `conformance` env still has
+#     a required reviewer the auto-run just waits for one click; drop it for fully hands-off.
+# The promotion gate on a green cert is deferred (impl [R78] / C5).
 name: conformance
 
 on:
@@ -21,6 +21,9 @@ on:
         description: "Run just the teardown of prior cert state, then stop (ignore tag)."
         type: boolean
         default: false
+  workflow_run:
+    workflows: ["cut-engine-release"]
+    types: [completed]
 
 # The harness holds ONLY the fixture-scoped PAT (CONFORMANCE_PAT); CF/Zenodo creds stay the
 # fixture repo's own secrets, read back from the fixture run. The ambient GITHUB_TOKEN cannot
@@ -35,6 +38,8 @@ concurrency:
 jobs:
   certify:
     runs-on: ubuntu-latest
+    # Skip the post-cut auto-trigger when the cut itself failed — nothing valid to certify.
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     # A cert run is a deliberate act: the PAT lives behind a required-reviewer environment
     # (personal-account interim home; org-shared secrets come with the open-scholar-nexus move).
     environment: conformance
@@ -54,16 +59,33 @@ jobs:
       # review IS the harness), so build it before invoking `oak conformance`.
       - run: npm run bundle
 
-      # With a `tag` and not only-reset: certify push→main + preview + deposit (`certify` resets
-      # first and tears down after). Else: just reset. The certify exit code (0=CERTIFIED,
+      # Resolve what to certify: the dispatch input, or — on the post-cut hook — the just-cut
+      # (latest) release. `only_reset` is dispatch-only. Both surface as string outputs.
+      - name: Resolve tag + mode
+        id: r
+        env:
+          GH_TOKEN: ${{ github.token }} # engine repo is public; read releases with the ambient token
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_run" ]; then
+            tag=$(gh release list -R "$GITHUB_REPOSITORY" --limit 1 --json tagName --jq '.[0].tagName')
+            echo "post-cut hook: certifying latest release $tag"
+            echo "tag=$tag" >> "$GITHUB_OUTPUT"
+            echo "only_reset=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+            echo "only_reset=${{ inputs.only-reset }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      # With a `tag` and not only-reset: certify push→main + preview + deposit + fork (`certify`
+      # resets first and tears down after). Else: just reset. The certify exit code (0=CERTIFIED,
       # 1=FAILED, 2=INCONCLUSIVE) is stashed for the outcome step below.
       - name: Certify (or reset)
         id: cert
         env:
           GH_TOKEN: ${{ secrets.CONFORMANCE_PAT }}
           FIXTURE: ${{ vars.CONFORMANCE_FIXTURE_REPO }}
-          TAG: ${{ inputs.tag }}
-          ONLY_RESET: ${{ inputs.only-reset }}
+          TAG: ${{ steps.r.outputs.tag }}
+          ONLY_RESET: ${{ steps.r.outputs.only_reset }}
           # Optional fork-PR preview phase — the second-account fork + its own PAT. When either is
           # unset (not yet provisioned) the flag is empty and the phase self-skips, so certs keep
           # working. The fork phase drives the fork via `gh api` under this PAT (not git), so it
@@ -86,20 +108,19 @@ jobs:
       # Persist the tag-keyed cert record on the engine release (the C5 promotion-gate seam). Uses
       # the ambient token — the fixture-scoped PAT can't write the engine repo.
       - name: Record cert verdict on the engine release
-        if: ${{ inputs.tag != '' && inputs.only-reset != true && hashFiles('cert.json') != '' }}
+        if: ${{ steps.r.outputs.tag != '' && steps.r.outputs.only_reset != 'true' && hashFiles('cert.json') != '' }}
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "${{ inputs.tag }}" cert.json --clobber
+        run: gh release upload "${{ steps.r.outputs.tag }}" cert.json --clobber
 
       # A cert FAILURE (1) reddens the run; an INCONCLUSIVE (2, third-party outage) does NOT —
       # "red must mean us". The verdict lives in the record + logs either way.
       - name: Reflect cert outcome
-        if: ${{ inputs.tag != '' && inputs.only-reset != true }}
+        if: ${{ steps.r.outputs.tag != '' && steps.r.outputs.only_reset != 'true' }}
         env:
           CODE: ${{ steps.cert.outputs.code }}
         run: |
           echo "cert exit code: ${CODE:-<none>}"
           [ "$CODE" = "1" ] && exit 1 || exit 0
 
-  # Remaining (not built): C5 promotion gate reading the cert record attached above. The fork PR
-  # path is built (optional; self-skips until CONFORMANCE_FORK_REPO/PAT are provisioned).
+  # Remaining (not built): C5 promotion gate reading the cert record attached above (deferred).
