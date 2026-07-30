@@ -85,6 +85,28 @@ export interface ConformanceGh {
   releaseAssets(repo: string, tag: string): string[];
   /** Delete the GH Release for `tag` (and, via cleanup, the tag); tolerates absence. */
   deleteRelease(repo: string, tag: string): void;
+
+  // --- fork-PR preview path (optional, lab-tier) ---------------------------------------
+  /** Delete `refs/heads/<prefix>*` on the FORK (fork token) — idempotency for stale cert
+   *  branches a crashed run left behind. Returns the swept branch names. */
+  sweepForkBranches(forkRepo: string, forkToken: string, prefix: string): string[];
+  /** Open a CROSS-fork PR: on the fork (fork token) branch off its default branch and bump the
+   *  engine pin to `tag` (the non-empty diff, and the faithful build-under-V), then `gh pr create`
+   *  on the BASE repo (primary token) with `--head <forkOwner>:<branch>`. Returns the base-repo PR
+   *  number and the fork branch's post-commit head sha. */
+  openForkPr(
+    baseRepo: string,
+    forkRepo: string,
+    forkToken: string,
+    branch: string,
+    tag: string,
+    marker: string,
+  ): { number: number; headSha: string };
+  /** Delete the fork's cert branch (fork token); tolerates an already-absent ref. */
+  deleteForkBranch(forkRepo: string, forkToken: string, branch: string): void;
+  /** Approve a workflow run awaiting the first-time-contributor gate (the gate is on the BASE
+   *  repo, so the PRIMARY token). TOLERANT — a no-op when approval isn't required. */
+  approveWorkflowRun(repo: string, runId: number): void;
 }
 
 export interface WorkflowRun {
@@ -111,6 +133,9 @@ export interface ConformanceDeps {
   /** Install engine `tag` into `repo` via `oak upgrade --both` (dogfoods the migration path).
    *  Returns the opened PR, or `upToDate` when the pin already equals `tag`. */
   installEngine(repo: string, tag: string): Promise<{ upToDate: boolean; prNumber: number | null; prUrl: string | null }>;
+  /** The second-account fork (repo + its own PAT) for the optional fork-PR preview phase, or null
+   *  when unconfigured — the phase then self-skips so certs keep working pre-provisioning. */
+  fork?: { repo: string; token: string } | null;
 }
 
 /** reset needs only the teardown seam — kept narrow so its callers stay light. */
@@ -275,10 +300,13 @@ function extractPreviewUrl(commentBody: string): string | null {
  * Run was posted on main. C2 (PR previews + sticky), C3 (deposit), C4 (verdict) append here.
  */
 export async function cmdConformanceCertify(input: CertifyInput, deps: ConformanceDeps): Promise<Outcome> {
-  const { gh, log, sleep, probe, installEngine } = deps;
+  const { gh, log, sleep, probe, installEngine, fork } = deps;
   const { repo, tag } = input;
   const runId = input.runId ?? String(Date.now());
   let phase = 'push-main';
+  // The certified paths, built up as each phase passes (the fork phase pushes its own).
+  const paths: string[] = ['push-main', 'preview-same-repo', 'deposit'];
+  let forkResult: Record<string, unknown> = {};
   try {
     // 1. Clean baseline (idempotent teardown of any prior run's ephemeral state).
     await cmdConformanceReset({ repo }, { gh, log });
@@ -455,14 +483,68 @@ export async function cmdConformanceCertify(input: CertifyInput, deps: Conforman
     gh.deleteTag(repo, depositTag); // tolerated no-op if the Release cleanup already removed it
     log(`deposit CERTIFIED for ${tag}`);
 
-    log(`engine ${tag}: paper-CI CERTIFIED (push-main, preview, deposit)`);
+    // ---- Phase: fork-PR preview (optional, lab-tier) ------------------------------------
+    // The flagship cross-repository case: the PR head is on a SECOND-account fork, so Stage-1
+    // build is secretless (untrusted context) and Stage-2 preview deploys from BASE context. Runs
+    // ONLY when a fork is configured; otherwise it is skipped (not a failure) so certs keep
+    // working before provisioning. Fork-repo ops use the fork token; base-repo ops the primary.
+    if (fork) {
+      phase = 'preview-fork';
+      gh.sweepForkBranches(fork.repo, fork.token, CERT_BRANCH_PREFIX); // idempotency
+      const forkBranch = `${CERT_BRANCH_PREFIX}${runId}`;
+      const forkPr = gh.openForkPr(repo, fork.repo, fork.token, forkBranch, tag, runId);
+      gh.labelPr(repo, forkPr.number, CONFORMANCE_LABEL);
+      log(`fork PR #${forkPr.number} from ${fork.repo}:${forkBranch}`);
+
+      // The fork PR's Paper CI run may sit in action_required (awaiting the first-time-contributor
+      // gate) — find it, then approve (tolerant: no-op if not gated).
+      const forkRun = await pollUntil(
+        `fork PR #${forkPr.number} Paper CI run`,
+        () => gh.workflowRunsForCommit(repo, forkPr.headSha).find((r) => r.name === 'Paper CI' && r.event === 'pull_request') ?? null,
+        { sleep, log },
+      );
+      gh.approveWorkflowRun(repo, forkRun.id);
+
+      // Stage 1: the secretless build concludes success.
+      await pollUntil(
+        `fork Paper CI (secretless Stage-1) #${forkPr.number}`,
+        () => {
+          const r = gh.workflowRunsForCommit(repo, forkPr.headSha).find((x) => x.name === 'Paper CI' && x.event === 'pull_request');
+          if (!r || r.status !== 'completed') return null;
+          if (r.conclusion !== 'success') throw new Error(`fork Paper CI concluded ${r.conclusion} — ${r.url}`);
+          return r;
+        },
+        { sleep, log },
+      );
+
+      // Stage 2: the base-context preview sticky + a live 200.
+      const forkBody = await pollUntil(
+        `fork preview sticky on PR #${forkPr.number}`,
+        () => gh.listIssueComments(repo, forkPr.number).find((b) => b.includes(PREVIEW_STICKY_MARK)) ?? null,
+        { sleep, log },
+      );
+      const forkPreviewUrl = extractPreviewUrl(forkBody);
+      if (!forkPreviewUrl) throw new Error('fork preview comment carries no Cloudflare URL — degraded to artifact?');
+      await assertServes200({ probe, sleep }, forkPreviewUrl, 'fork preview');
+      log(`fork preview 200: ${forkPreviewUrl}`);
+
+      gh.closePr(repo, forkPr.number); // base repo (primary token)
+      gh.deleteForkBranch(fork.repo, fork.token, forkBranch); // fork repo (fork token)
+      log(`fork preview CERTIFIED for ${tag}`);
+      paths.push('preview-fork');
+      forkResult = { forkPr: forkPr.number, forkPreviewUrl };
+    } else {
+      log('fork preview phase SKIPPED (no fork configured — set CONFORMANCE_FORK_REPO/PAT to enable)');
+    }
+
+    log(`engine ${tag}: paper-CI CERTIFIED (${paths.join(', ')})`);
     return {
       exitCode: 0,
       result: {
         status: 'ok',
         tag,
         repo,
-        paths: ['push-main', 'preview-same-repo', 'deposit'],
+        paths,
         prNumber,
         mergeSha,
         pagesUrl,
@@ -470,6 +552,7 @@ export async function cmdConformanceCertify(input: CertifyInput, deps: Conforman
         previewUrl,
         depositTag,
         releaseAssets,
+        ...forkResult,
       },
     };
   } catch (err) {

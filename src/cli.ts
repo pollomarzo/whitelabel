@@ -620,10 +620,15 @@ async function cmdConformance(argv: string[]): Promise<number> {
       return 2;
     }
     const upgrade = await import('./upgrade.js');
+    // Optional fork-PR preview phase: enabled only when a fork repo + its PAT are both present
+    // (otherwise the phase self-skips, so certs keep working before the fork is provisioned).
+    const forkRepo = flag(rest, 'fork-repo') ?? process.env.CONFORMANCE_FORK_REPO;
+    const forkToken = process.env.CONFORMANCE_FORK_PAT;
     const out = await conformance.cmdConformanceCertify(
       { repo, tag, runId: flag(rest, 'run-id') },
       {
         ...deps,
+        fork: forkRepo && forkToken ? { repo: forkRepo, token: forkToken } : null,
         sleep: (ms) => new Promise<void>((r) => setTimeout(r, ms)),
         probe: async (url) => {
           try {
@@ -661,7 +666,7 @@ async function cmdConformance(argv: string[]): Promise<number> {
   process.stderr.write(
     'oak conformance: usage:\n' +
       '  oak conformance reset   --repo <owner/name>\n' +
-      '  oak conformance certify --repo <owner/name> --tag <vX.Y.Z> [--run-id <id>] [--record <path>]\n',
+      '  oak conformance certify --repo <owner/name> --tag <vX.Y.Z> [--run-id <id>] [--fork-repo <owner/name>] [--record <path>]\n',
   );
   return 2;
 }
@@ -699,7 +704,7 @@ async function main(argv: string[]): Promise<number> {
       `                        [--engine-version <tag>] [--owner <@user|@org/team>] [--no-require-checks] [--yes]\n` +
       `  oak upgrade (--repo <owner/name> | --paper <dir>) [--to <tag>] [--version-only|--files-only|--both] [--yes]\n` +
       `  oak conformance reset   --repo <owner/name>\n` +
-      `  oak conformance certify --repo <owner/name> --tag <vX.Y.Z>\n`,
+      `  oak conformance certify --repo <owner/name> --tag <vX.Y.Z> [--fork-repo <owner/name>]\n`,
   );
   return 2;
 }

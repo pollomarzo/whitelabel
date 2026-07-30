@@ -64,6 +64,12 @@ jobs:
           FIXTURE: ${{ vars.CONFORMANCE_FIXTURE_REPO }}
           TAG: ${{ inputs.tag }}
           ONLY_RESET: ${{ inputs.only-reset }}
+          # Optional fork-PR preview phase — the second-account fork + its own PAT. When either is
+          # unset (not yet provisioned) the flag is empty and the phase self-skips, so certs keep
+          # working. The fork phase drives the fork via `gh api` under this PAT (not git), so it
+          # needs no git-credential setup of its own.
+          FORK_REPO: ${{ vars.CONFORMANCE_FORK_REPO }}
+          CONFORMANCE_FORK_PAT: ${{ secrets.CONFORMANCE_FORK_PAT }}
         run: |
           # `oak upgrade --repo` clones the fixture and `git push`es a branch; a bare-GH_TOKEN
           # runner has no git credential helper, so teach git to use the PAT for github.com.
@@ -73,7 +79,7 @@ jobs:
             exit 0
           fi
           set +e
-          node dist/cli.cjs conformance certify --repo "$FIXTURE" --tag "$TAG" --run-id "${{ github.run_id }}" --record cert.json
+          node dist/cli.cjs conformance certify --repo "$FIXTURE" --tag "$TAG" --run-id "${{ github.run_id }}" --fork-repo "$FORK_REPO" --record cert.json
           echo "code=$?" >> "$GITHUB_OUTPUT"
           set -e
 
@@ -95,5 +101,5 @@ jobs:
           echo "cert exit code: ${CODE:-<none>}"
           [ "$CODE" = "1" ] && exit 1 || exit 0
 
-  # Remaining (not built): fork PR path (2nd-account fork + token), C5 promotion gate reading the
-  # cert record attached above.
+  # Remaining (not built): C5 promotion gate reading the cert record attached above. The fork PR
+  # path is built (optional; self-skips until CONFORMANCE_FORK_REPO/PAT are provisioned).
