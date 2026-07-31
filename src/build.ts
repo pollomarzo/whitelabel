@@ -64,7 +64,6 @@ export interface RunBuildInput {
   instanceRoot: string | null;
   engineRepo: string;
   baseUrl: string;
-  buildKind?: 'paper' | 'site';
   assetOverrides?: ComposeInput['assetOverrides'];
   /** Defaults to a full build (HTML + exports). HTML-only is useful until the pinned
    *  typst-template release zip exists (exports would 404 fetching it). */
@@ -85,7 +84,6 @@ export async function runBuild(input: RunBuildInput): Promise<RunBuildResult> {
     instanceRoot,
     engineRepo,
     baseUrl,
-    buildKind = 'paper',
     assetOverrides,
     buildOpts = { all: true, html: true },
     edge,
@@ -105,7 +103,7 @@ export async function runBuild(input: RunBuildInput): Promise<RunBuildResult> {
   // deterministic; the engine layers stay `extends:`. Deriving by `extends:`-ing the author's
   // myst.yml instead would demote it to a racing sibling ([R72]) and make author-overrides-venue
   // precedence non-deterministic.
-  const { extendsChain } = extendsChainFor({ engineRoot, instanceRoot, edition, buildKind });
+  const { extendsChain } = extendsChainFor({ engineRoot, instanceRoot, edition });
   setExtends(doc, extendsChain);
   writeDerivedDoc(derivedPath, doc);
 
@@ -154,7 +152,6 @@ export async function runBuild(input: RunBuildInput): Promise<RunBuildResult> {
     engineVersion,
     edition,
     baseUrl,
-    buildKind,
     assetOverrides,
     brandAssets,
     tenantTypstTemplate,

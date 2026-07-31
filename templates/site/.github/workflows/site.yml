@@ -1,0 +1,73 @@
+name: Journal site
+
+# Builds + deploys the journal site to GitHub Pages. Plain MyST — no engine, no shim, no
+# secrets ([S1]). The editorial PR that adds a registry entry lands in THIS repo, so it is
+# also the deploy trigger: publish → visible, one act, one repo ([S8]).
+#
+# Actions are pinned by full commit SHA at a close-to-latest major ([R75]) — the same SHAs
+# the frozen paper shim uses.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build-deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.d.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+      # Resolves where Pages actually serves this repo. `base_path` is `/<repo>` for a project
+      # site and EMPTY for a user/org site or a custom domain — which is exactly MyST's
+      # BASE_URL contract. Without it MyST emits root-absolute asset URLs (`/build/…`) and
+      # every image, stylesheet and script 404s on the subpath this tier deploys to. Asking
+      # GitHub rather than hardcoding `/<repo>` is what keeps the vanity-URL routes working.
+      - id: pages
+        uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5.0.0
+      # Installs BOTH MyST and the gallery plugin's own dependency (js-yaml), which are
+      # pinned together in package.json — the one place this site's versions live.
+      #
+      # The install is not optional: MyST downloads a remote plugin into `_build/cache/`
+      # and imports it FROM THERE, so the plugin's bare imports resolve upward from this
+      # repo's node_modules. A package fetched by `npx` lands outside that resolution path.
+      - run: npm install --no-audit --no-fund
+      # `--strict` is LOAD-BEARING, not hygiene. Without it `myst build` logs errors and
+      # exits 0 (`cli/options.ts:98-102`), and a remote plugin that fails to load degrades
+      # QUIETLY: the page would deploy with `paper-cards` as an unknown directive — no
+      # gallery at all — over a perfectly good previous deploy. Only `--strict` catches that.
+      # `--strict` catches errors raised while BUILDING a page (a bad DOI, a missing image).
+      # It does NOT catch a plugin that never loaded: myst logs "Unknown plugin" and
+      # "unknown directive: paper-cards", then exits 0 — and the gallery-less page deploys
+      # over a perfectly good one. Verified live, not assumed ([R80]). So we also require a
+      # POSITIVE signal: myst prints the plugin's own name when it loads, and that name is
+      # ours, not a myst log format we don't control.
+      - name: Build (and prove the gallery plugin loaded)
+        env:
+          BASE_URL: ${{ steps.pages.outputs.base_path }}
+        run: |
+          set -o pipefail
+          npx myst build --html --strict 2>&1 | tee /tmp/myst-build.log
+          if ! grep -q "Paper Gallery.*loaded" /tmp/myst-build.log; then
+            echo "::error::the gallery plugin did not load — check the pinned plugin URL in myst.yml (a bad tag 404s silently)"
+            exit 1
+          fi
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: _build/html
+      - id: d
+        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0

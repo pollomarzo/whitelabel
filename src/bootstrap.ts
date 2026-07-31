@@ -33,6 +33,7 @@ import {
 } from 'node:fs';
 import { join, dirname, posix } from 'node:path';
 import { readDoc, writeDoc } from './yaml-io.js';
+import { themeZipUrl } from './assets.js';
 
 /* --------------------------------------------------------------------------
  * Answers + template rendering (pure)
@@ -56,19 +57,41 @@ export interface TemplateAnswers {
 const RENDER_PINS = posix.join('.github', 'actions', 'engine', 'pins.yml');
 const RENDER_CODEOWNERS = 'CODEOWNERS';
 const RENDER_MYST = 'myst.yml';
+const RENDER_SITE_INDEX = posix.join('pages', 'index.md');
+const RENDER_SITE_PKG = 'package.json';
 /** Top-level template entries that are engine-side docs, never stamped into a tenant repo.
  *  Applies to both templates (each ships its own README). Not a role-partition list — the
  *  paper/instance split is now structural (separate source trees), so this is only the
  *  README carve-out, guarded by the disjointness invariant (test/template.test.ts). */
 const EXCLUDE_FROM_STAMP = new Set(['README.md']);
 
-/** The two template source roots under the engine checkout. Named + one-liners so resolution
- *  is testable rather than inlined at call sites. */
+/** The three template source roots under the engine checkout. Named + one-liners so
+ *  resolution is testable rather than inlined at call sites. */
 export function paperTemplateRoot(engineRoot: string): string {
   return join(engineRoot, 'templates', 'paper');
 }
 export function instanceTemplateRoot(engineRoot: string): string {
   return join(engineRoot, 'templates', 'instance');
+}
+export function siteTemplateRoot(engineRoot: string): string {
+  return join(engineRoot, 'templates', 'site');
+}
+
+/**
+ * The engine's own `myst-cli` range, copied VERBATIM into the site scaffold's
+ * `package.json` as its `mystmd` dependency ([R80]). No parsing, no normalizing: the site should render with
+ * roughly the myst the engine bundles, so the gallery plugin and the theme behave the same
+ * in both builds. This is hygiene, not correctness — the site is not the reproducibility
+ * anchor (the Zenodo deposit is, design §7), so a caret range is enough and a
+ * resolved-version pin would be false precision.
+ */
+export function engineMystRange(engineRoot: string): string {
+  const pkg = JSON.parse(readFileSync(join(engineRoot, 'package.json'), 'utf8')) as {
+    dependencies?: Record<string, string>;
+  };
+  const range = pkg.dependencies?.['myst-cli'];
+  if (!range) throw new Error('bootstrap: engine package.json declares no myst-cli dependency');
+  return range;
 }
 
 /** Every path under `dir`, recursive + relative (posix separators), files only. */
@@ -166,6 +189,79 @@ export function renderInstanceTemplate(instanceRoot: string, destRoot: string, a
       continue;
     } else {
       copyFileBytes(join(instanceRoot, rel), join(destRoot, rel));
+    }
+    written.push(rel);
+  }
+  return written.sort();
+}
+
+/** The engine tag's raw URL for the gallery plugin. It must be REMOTE because it is code —
+ *  a `.mjs` body cannot be stamped into YAML, and vendoring a copy is the copy-rot the
+ *  engine exists to kill. Pinned to the tag, so the site takes engine updates only when the
+ *  tenant bumps it. */
+export function galleryPluginUrl(engineRepo: string, engineVersion: string): string {
+  return `https://raw.githubusercontent.com/${engineRepo}/${engineVersion}/plugins/gallery.mjs`;
+}
+
+/** The journal site's Pages URL for `owner/repo` — a PROJECT site, hence the subpath ([S8]). */
+export function siteUrlFor(repo: string): string {
+  const [owner, name] = repo.split('/');
+  return `https://${owner}.github.io/${name}/`;
+}
+
+/**
+ * Render the journal-site scaffold (`templates/site/`) into `destRoot`. Unioned with the
+ * instance-config scaffold for `--external`: [S8]'s variant A′ makes the site and the
+ * instance-config ONE repo, so the registry PR that adds a paper is also the deploy trigger.
+ *
+ * ONE-SHOT — the tenant owns every byte of this outright ([S3]). It is not frozen, not
+ * covered by `oak upgrade`, and the engine re-reads none of it. Exactly FOUR values are
+ * rendered; everything else is byte-copied:
+ *
+ *   1. the gallery plugin URL (engine repo + tag),
+ *   2. `site.template` from `themeZipUrl()` — rendered FROM the constant, not duplicated,
+ *      so there is nothing for a drift test to catch,
+ *   3. the journal name (myst.yml `project.title` + the `pages/index.md` heading),
+ *   4. the `myst-cli` range, into the scaffold's `package.json` — where `js-yaml` is pinned
+ *      too, so the site has ONE dependency list. The workflow just runs `npm install` +
+ *      `npx myst`, and is byte-copied. (An earlier shape pinned MyST via `npx -y mystmd@…`
+ *      in the workflow, which meant two pinning mechanisms and two installs for one site;
+ *      `npx -y` was already fetching MyST on every run, so consolidating removed an install
+ *      rather than adding one.)
+ *
+ * No `project.id` (myst doesn't require one, and the engine's id machinery is paper-only),
+ * no edition rename, no file-path rewriting.
+ */
+export function renderSiteTemplate(
+  siteRoot: string,
+  destRoot: string,
+  answers: TemplateAnswers,
+  mystRange: string,
+): string[] {
+  const journalName = answers.journalName ?? 'CHANGE-ME Journal';
+  const written: string[] = [];
+  for (const rel of listFiles(siteRoot)) {
+    if (EXCLUDE_FROM_STAMP.has(rel.split('/')[0]!)) continue;
+    if (rel === RENDER_MYST) {
+      const doc = readDoc(join(siteRoot, rel));
+      doc.setIn(['project', 'title'], journalName);
+      doc.setIn(
+        ['project', 'plugins', 0],
+        galleryPluginUrl(answers.engineRepo, answers.version),
+      );
+      doc.setIn(['site', 'template'], themeZipUrl());
+      writeRel(destRoot, rel, doc.toString());
+    } else if (rel === RENDER_SITE_INDEX || rel === RENDER_SITE_PKG) {
+      // Markdown and package.json: substituted textually, because reformatting either
+      // through a structured writer would be a worse trade than a literal token swap.
+      const src = readFileSync(join(siteRoot, rel), 'utf8');
+      writeRel(
+        destRoot,
+        rel,
+        src.replaceAll('{{journal_name}}', journalName).replaceAll('{{myst_version}}', mystRange),
+      );
+    } else {
+      copyRel(siteRoot, destRoot, rel);
     }
     written.push(rel);
   }
@@ -337,6 +433,10 @@ export interface BootstrapDeps {
   paperTemplateRoot: string;
   /** `templates/instance/` of the engine checkout — the instance-config scaffold. */
   instanceTemplateRoot: string;
+  /** `templates/site/` of the engine checkout — the journal-site scaffold ([R80]). */
+  siteTemplateRoot: string;
+  /** The engine's own `myst-cli` range, stamped into the site workflow ({@link engineMystRange}). */
+  mystRange: string;
   log(msg: string): void;
   /** Print the plan + gate execution. Tests pass `() => true`; the CLI enforces --yes/TTY. */
   confirm(plan: string[]): Promise<boolean>;
@@ -572,6 +672,13 @@ export interface BootstrapJournalInput {
   owner?: string;
   authedUser: string;
   requireChecks: boolean; // add "Journal checks" to protect-main required checks (default true)
+  /** `--external` only: also stamp the journal site + enable Pages. Default true;
+   *  `--no-site` opts out for a tenant who wants a config repo with no website (the
+   *  design keeps the site optional, §2). Passing `site: false` with `--co-located` is a
+   *  usage ERROR, not a no-op: that tier never gets a site (repo=journal's index is the
+   *  deferred `assemble()` work, [S7]), so a flag that reads as "turn the site off" would
+   *  be silently meaningless — and silently meaningless flags teach the wrong model. */
+  site?: boolean;
   secrets: SecretInputs;
 }
 
@@ -579,6 +686,19 @@ export async function cmdBootstrapJournal(input: BootstrapJournalInput, deps: Bo
   const { prov, log } = deps;
   const { repo } = input;
   const external = input.tier === 'external';
+  if (!external && input.site === false) {
+    return {
+      exitCode: 2,
+      result: {
+        status: 'error',
+        repo,
+        error:
+          '--no-site is only meaningful with --external: the co-located tier never stamps a ' +
+          'journal site (an index over many papers in one repo is separate, unbuilt work).',
+      },
+    };
+  }
+  const withSite = external && input.site !== false;
   const owner = resolveOwner(input, prov);
 
   const answers: TemplateAnswers = {
@@ -597,9 +717,13 @@ export async function cmdBootstrapJournal(input: BootstrapJournalInput, deps: Bo
     `bootstrap journal (${input.tier}): ${repo}`,
     repoThere ? '  ✓ repo exists' : `  ○ create repo (public${external ? ', instance-config MUST stay public' : ''})`,
     mainThere ? '  ✓ main seeded' : external
-      ? '  ○ seed main with the instance-config scaffold (no frozen shim)'
+      ? `  ○ seed main with the instance-config scaffold${withSite ? ' + the journal site' : ''} (no frozen shim)`
       : '  ○ seed main with the frozen shim + starter paper + instance-config (co-located)',
-    external ? '  ○ (data-only repo — no rulesets/env)' : '  ○ provisioning: rulesets + Pages + zenodo-publish env + labels',
+    external
+      ? withSite
+        ? `  ○ enable Pages for the journal site (${siteUrlFor(repo)}); no rulesets/env`
+        : '  ○ (--no-site: data-only repo — no site, no rulesets/env)'
+      : '  ○ provisioning: rulesets + Pages + zenodo-publish env + labels',
   ];
   if (!(await deps.confirm(plan))) return { exitCode: 0, result: { status: 'aborted', repo, tier: input.tier } };
 
@@ -622,6 +746,9 @@ export async function cmdBootstrapJournal(input: BootstrapJournalInput, deps: Bo
   const seedDir = deps.workdir();
   if (external) {
     renderInstanceTemplate(deps.instanceTemplateRoot, seedDir, answers);
+    // A′ ([S8]): the site FOLDS into instance-config. The two roots write disjoint paths
+    // (enforced by test/template.test.ts), so the union is a plain back-to-back render.
+    if (withSite) renderSiteTemplate(deps.siteTemplateRoot, seedDir, answers, deps.mystRange);
   } else {
     renderPaperTemplate(deps.paperTemplateRoot, seedDir, answers); // shim + starter paper (instance_repo: .)
     renderInstanceTemplate(deps.instanceTemplateRoot, seedDir, answers); // co-located instance-config
@@ -640,5 +767,44 @@ export async function cmdBootstrapJournal(input: BootstrapJournalInput, deps: Bo
     return { exitCode: 0, result: { status: 'ok', repo, tier: input.tier, actions, secrets_set: set, runbook } };
   }
 
-  return { exitCode: 0, result: { status: 'ok', repo, tier: input.tier, actions } };
+  // --- external -------------------------------------------------------------------
+  // Deliberately NOT provisioned: rulesets / branch protection on instance-config.
+  // Registry upkeep is a manual editorial PR ([S5]) into a repo only editors can write;
+  // adding protection is a tenant policy call, the same stance as `--no-require-checks`
+  // on papers. Named in the runbook, not imposed.
+  const runbook: string[] = [
+    'instance-config is UNPROTECTED by design — registry/brand upkeep is a manual editorial ' +
+      'PR ([S5]). Add branch protection yourself if your journal wants it.',
+  ];
+  if (!withSite) {
+    return { exitCode: 0, result: { status: 'ok', repo, tier: input.tier, actions, runbook } };
+  }
+
+  // Pages, through the same GET-then-act seams the paper path uses (idempotent re-run).
+  if (prov.pagesEnabled(repo)) {
+    actions.pages = 'already enabled';
+    log('  ✓ Pages already enabled');
+  } else {
+    prov.enablePages(repo);
+    actions.pages = 'enabled';
+    log('  ✓ Pages enabled (build_type=workflow)');
+  }
+
+  const siteUrl = siteUrlFor(repo);
+  actions.site = 'stamped';
+  log(`  ✓ journal site stamped — ${siteUrl}`);
+  runbook.push(
+    `The journal site builds from this repo and serves at ${siteUrl} once the first ` +
+      '"Journal site" workflow run finishes. It is YOURS from here — not frozen, not ' +
+      'touched by `oak upgrade`. Three pins to bump by hand: the gallery plugin URL and ' +
+      '`site.template` in myst.yml, and `mystmd` in package.json.',
+    'A failed site build leaves the PREVIOUS deploy serving, so a broken registry entry ' +
+      'never takes the journal down — fix the entry and push again.',
+  );
+  for (const line of runbook) log(`  → ${line}`);
+
+  return {
+    exitCode: 0,
+    result: { status: 'ok', repo, tier: input.tier, actions, site_url: siteUrl, runbook },
+  };
 }

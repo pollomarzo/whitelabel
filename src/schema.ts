@@ -151,6 +151,14 @@ export const RegistryEntry = z
     location: PaperLocation,
     /** Concept DOI; absent until the paper is deposited. */
     doi: z.string().optional(),
+    /**
+     * Where the paper is PUBLISHED, when it isn't where we'd guess. The gallery
+     * (`plugins/gallery.mjs`) otherwise derives `https://<owner>.github.io/<name>` from
+     * `location.repo`; set this for a custom domain or non-Pages hosting. Optional and
+     * additive (dec. 24) — the registry stays a thin pointer list ([S4]), so display
+     * metadata (title, keywords) is still fetched per paper, never cached here.
+     */
+    site_url: z.string().optional(),
     edition: z.string().min(1),
   })
   .loose();

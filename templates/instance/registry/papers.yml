@@ -2,4 +2,19 @@
 # `id` is the deposit/dedup key (myst-native project.id); `slug` is the URL/thumbnail path;
 # `location` is {repo, path} where the paper lives. Additive-only (dec. 24). Empty until the
 # first paper is registered.
+#
+# Registration is a MANUAL editorial PR ([S5]) — and since the journal site lives in this
+# same repo, that PR is also what redeploys the gallery. The registry stays a thin POINTER
+# list: the gallery fetches each paper's title, keywords and thumbnail from the paper repo
+# itself, so nothing here needs updating when a paper's title changes.
+#
+# - id:       j-2026-example
+#   slug:     example
+#   location: { repo: owner/example-paper, path: . }
+#   edition:  edition
+#   doi:      10.5281/zenodo.1234567     # optional; shown on the card once deposited
+#   site_url: https://journal.example.org/example
+#             # optional. Where the paper is PUBLISHED, when it isn't where we'd guess.
+#             # Omitted → derived as https://<owner>.github.io/<repo-name> from
+#             # location.repo. Set it for a custom domain or non-Pages hosting.
 []

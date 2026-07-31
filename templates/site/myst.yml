@@ -1,0 +1,32 @@
+version: 1
+
+# The JOURNAL SITE — the page a reader lands on ([S1]/[S8]). It is a plain MyST project
+# living in this instance-config repo: `myst build --html`, no engine, no `oak`. This file
+# and `plugins/gallery.mjs` are the only bytes the engine owns here; everything else in the
+# site scaffold is yours to rewrite. `oak upgrade` does not touch it.
+#
+# THREE PINS live in this repo, all stamped once at bootstrap and all bumped by hand:
+#   1. the gallery plugin URL below (the engine tag),
+#   2. `site.template` below (the theme release this engine version pins),
+#   3. `mystmd` in package.json — beside `js-yaml`, which the gallery plugin imports.
+#      Both live there so this site has ONE dependency list; the workflow just installs it.
+
+extends:
+  # Your journal's brand, right here in this repo. A LOCAL path: no network, no cache
+  # staleness, and a single-entry chain has no siblings to race ([R72]).
+  - ./brand/brand.yml
+
+project:
+  title: CHANGE-ME Journal
+  plugins:
+    # The `paper-cards` directive, pinned to the engine tag this repo was bootstrapped with.
+    # Bump the tag to take engine updates. It must be remote because it is CODE — a `.mjs`
+    # body cannot be stamped into YAML, and vendoring a copy is exactly the copy-rot the
+    # engine exists to kill.
+    - STAMPED-AT-BOOTSTRAP
+  toc:
+    - file: pages/index.md
+
+site:
+  # The myst-theme fork release this engine version pins (design §7).
+  template: STAMPED-AT-BOOTSTRAP
