@@ -139,7 +139,7 @@ export interface ResolvedProject {
 export interface ComposeInput {
   /** Absolute/relative path to the paper project root (holds myst.yml). */
   paperRoot: string;
-  /** Path to the checked-out engine root (holds paper-base.yml / nexus-base.yml). */
+  /** Path to the checked-out engine root (holds paper-base.yml). */
   engineRoot: string;
   /** Path to instance-config (cloned sibling or the repo root); null = --no-instance. */
   instanceRoot: string | null;
@@ -152,8 +152,6 @@ export interface ComposeInput {
   edition: string;
   /** '/<repo>' in CI (Pages subpath) or '' locally / for previews (design §12a). */
   baseUrl: string;
-  /** 'paper' (default) extends paper-base; 'site' extends nexus-base (website, slice 4). */
-  buildKind?: 'paper' | 'site';
   /** Override the version-matched asset URLs. Defaults resolve to the engine tag's
    *  release zips (which only exist once a tag is cut); dev/CI-from-checkout and tests
    *  pass local paths, and `siteTemplate: null` omits the override so myst uses its
@@ -211,18 +209,19 @@ export interface ComposeResult {
 
 /** The extends chain (local paths) — a pure function of the LAYOUT, independent of the
  *  resolved config. The two-pass build (§12a, [R52]) needs the chain BEFORE it can
- *  resolve, so this is split out from compose(). Returns warnings for --no-instance. */
+ *  resolve, so this is split out from compose(). Returns warnings for --no-instance.
+ *
+ *  There is exactly one kind of engine build: a PAPER. The journal site is a plain myst
+ *  project in the instance-config repo with its own single-entry chain ([S1]/[S8], [R80])
+ *  — `oak` never runs there, so the engine has no second chain shape to assemble. */
 export function extendsChainFor(input: {
   engineRoot: string;
   instanceRoot: string | null;
   edition: string;
-  buildKind?: 'paper' | 'site';
 }): { extendsChain: string[]; warnings: string[] } {
-  const { engineRoot, instanceRoot, edition, buildKind = 'paper' } = input;
+  const { engineRoot, instanceRoot, edition } = input;
   const warnings: string[] = [];
-  const base =
-    buildKind === 'site' ? `${engineRoot}/nexus-base.yml` : `${engineRoot}/paper-base.yml`;
-  const extendsChain: string[] = [base];
+  const extendsChain: string[] = [`${engineRoot}/paper-base.yml`];
   if (instanceRoot === null) {
     warnings.push(
       '--no-instance: building unbranded (no edition/brand). Not CI-faithful; ' +
@@ -244,7 +243,6 @@ export function compose(input: ComposeInput): ComposeResult {
     engineVersion,
     edition,
     baseUrl,
-    buildKind = 'paper',
     assetOverrides = {},
   } = input;
 
@@ -260,12 +258,7 @@ export function compose(input: ComposeInput): ComposeResult {
     );
   }
 
-  const { extendsChain, warnings } = extendsChainFor({
-    engineRoot,
-    instanceRoot,
-    edition,
-    buildKind,
-  });
+  const { extendsChain, warnings } = extendsChainFor({ engineRoot, instanceRoot, edition });
 
   // --- ownOverride: engine overrides merged into the paper's OWN config ([R52]) -----
   const ownOverride: OwnOverride = {};

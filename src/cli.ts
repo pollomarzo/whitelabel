@@ -493,6 +493,8 @@ async function cmdBootstrap(argv: string[]): Promise<number> {
   const bootstrap = await import('./bootstrap.js');
   const paperTemplateRoot = bootstrap.paperTemplateRoot(engineRoot());
   const instanceTemplateRoot = bootstrap.instanceTemplateRoot(engineRoot());
+  const siteTemplateRoot = bootstrap.siteTemplateRoot(engineRoot());
+  const mystRange = bootstrap.engineMystRange(engineRoot());
 
   const repo = flag(rest, 'repo');
   if (!repo) {
@@ -509,7 +511,7 @@ async function cmdBootstrap(argv: string[]): Promise<number> {
       return 2;
     }
   }
-  const deps = { prov: gh.realProvisioner, paperTemplateRoot, instanceTemplateRoot, log: (m: string) => process.stderr.write(m + '\n'), confirm: makeConfirm(rest), workdir: workdir('oak-bootstrap-') };
+  const deps = { prov: gh.realProvisioner, paperTemplateRoot, instanceTemplateRoot, siteTemplateRoot, mystRange, log: (m: string) => process.stderr.write(m + '\n'), confirm: makeConfirm(rest), workdir: workdir('oak-bootstrap-') };
 
   if (sub === 'paper') {
     const out = await bootstrap.cmdBootstrapPaper(
@@ -551,6 +553,7 @@ async function cmdBootstrap(argv: string[]): Promise<number> {
         owner: flag(rest, 'owner'),
         authedUser: gh.authedUser(),
         requireChecks: !has(rest, 'no-require-checks'),
+        site: !has(rest, 'no-site'),
         secrets: secretsFrom(rest),
       },
       deps,
@@ -704,7 +707,7 @@ async function main(argv: string[]): Promise<number> {
       `  oak bootstrap paper   --repo <owner/name> [--from <author-url> [--source-ref <ref>]] [--instance <owner/config>]\n` +
       `                        [--edition <id>] [--engine-version <tag>] [--owner <@user|@org/team>] [--private] [--no-require-checks] [--yes]\n` +
       `  oak bootstrap journal --repo <owner/name> (--external | --co-located) [--name <name>] [--edition <id>]\n` +
-      `                        [--engine-version <tag>] [--owner <@user|@org/team>] [--no-require-checks] [--yes]\n` +
+      `                        [--engine-version <tag>] [--owner <@user|@org/team>] [--no-require-checks] [--no-site] [--yes]\n` +
       `  oak upgrade (--repo <owner/name> | --paper <dir>) [--to <tag>] [--version-only|--files-only|--both] [--yes]\n` +
       `  oak conformance reset   --repo <owner/name>\n` +
       `  oak conformance certify --repo <owner/name> --tag <vX.Y.Z> [--fork-repo <owner/name>]\n`,

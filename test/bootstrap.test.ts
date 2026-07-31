@@ -3,16 +3,21 @@
  * provisioning seams (no gh/git). Proves: pins.yml/CODEOWNERS/myst.yml render + byte-copy of
  * the rest; the new-model ingest restoring the whole editor-side `.github/`; idempotent
  * GET-then-act; secrets set-if-provided else a printed runbook; org-team vs personal bypass;
- * and the journal external (no shim, public) vs co-located (shim + starter paper) tiers.
+ * and the journal external (instance-config ⊎ the journal site, public) vs co-located
+ * (shim + starter paper, no site) tiers.
  */
 import { describe, it, expect } from 'vitest';
 import { mkdtempSync, readFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseDocument } from 'yaml';
+import { themeZipUrl } from '../src/assets.js';
 import {
   renderPaperTemplate,
   renderInstanceTemplate,
+  renderSiteTemplate,
+  galleryPluginUrl,
+  engineMystRange,
   buildReviewTree,
   cmdBootstrapPaper,
   cmdBootstrapJournal,
@@ -24,6 +29,8 @@ import {
 
 const PAPER_ROOT = 'templates/paper';
 const INSTANCE_ROOT = 'templates/instance';
+const SITE_ROOT = 'templates/site';
+const MYST_RANGE = '^9.9.9';
 const tmp = (p = 'oak-bs-') => mkdtempSync(join(tmpdir(), p));
 
 const answers = (over: Partial<TemplateAnswers> = {}): TemplateAnswers => ({
@@ -86,6 +93,54 @@ describe('renderInstanceTemplate', () => {
     expect(existsSync(join(dest, 'editions/edition.yml'))).toBe(false);
     expect(existsSync(join(dest, 'brand/logo.svg'))).toBe(true);
     expect(existsSync(join(dest, 'registry/papers.yml'))).toBe(true);
+  });
+});
+
+describe('renderSiteTemplate', () => {
+  it('stamps the four rendered values and byte-copies the rest', () => {
+    const dest = tmp();
+    const written = renderSiteTemplate(SITE_ROOT, dest, answers(), MYST_RANGE);
+
+    const myst = parseDocument(readFileSync(join(dest, 'myst.yml'), 'utf8'));
+    expect(myst.getIn(['project', 'title'])).toBe('Test Journal');
+    // Rendered FROM the constant, not duplicated — so there is no drift to test for.
+    expect(myst.getIn(['site', 'template'])).toBe(themeZipUrl());
+    expect(myst.getIn(['project', 'plugins', 0])).toBe(galleryPluginUrl('me/engine', 'v1.2.3'));
+    // The brand stays a LOCAL single-entry extends chain (no siblings to race, [R72]).
+    expect(myst.get('extends')?.toJSON()).toEqual(['./brand/brand.yml']);
+
+    const index = readFileSync(join(dest, 'pages/index.md'), 'utf8');
+    expect(index).toContain('# Test Journal');
+    expect(index).not.toContain('{{');
+
+    const wf = readFileSync(join(dest, '.github/workflows/site.yml'), 'utf8');
+    expect(wf).toContain(`mystmd@${MYST_RANGE}`);
+    // --strict is the ONLY thing that catches a remote plugin that failed to load.
+    expect(wf).toContain('--strict');
+
+    expect(readFileSync(join(dest, '.gitignore'), 'utf8')).toBe(
+      readFileSync(join(SITE_ROOT, '.gitignore'), 'utf8'),
+    );
+    expect(existsSync(join(dest, 'README.md'))).toBe(false); // one repo, one README
+    expect(written).toContain('package.json'); // the plugin's js-yaml, resolvable from the repo
+  });
+
+  it('the stamped plugin URL is pinned to the engine TAG, not a branch', () => {
+    const dest = tmp();
+    renderSiteTemplate(SITE_ROOT, dest, answers({ version: 'v2.0.0' }), MYST_RANGE);
+    const myst = parseDocument(readFileSync(join(dest, 'myst.yml'), 'utf8'));
+    expect(myst.getIn(['project', 'plugins', 0])).toBe(
+      'https://raw.githubusercontent.com/me/engine/v2.0.0/plugins/gallery.mjs',
+    );
+  });
+});
+
+describe('engineMystRange', () => {
+  it('copies the engine package.json myst-cli range VERBATIM (no parsing/normalizing)', () => {
+    const pkg = JSON.parse(readFileSync('package.json', 'utf8')) as {
+      dependencies: Record<string, string>;
+    };
+    expect(engineMystRange('.')).toBe(pkg.dependencies['myst-cli']);
   });
 });
 
@@ -161,7 +216,7 @@ function fakeProv(state: FakeState = {}) {
 }
 
 function deps(prov: Provisioner): BootstrapDeps {
-  return { prov, paperTemplateRoot: PAPER_ROOT, instanceTemplateRoot: INSTANCE_ROOT, log: () => {}, confirm: async () => true, workdir: () => tmp('oak-seed-') };
+  return { prov, paperTemplateRoot: PAPER_ROOT, instanceTemplateRoot: INSTANCE_ROOT, siteTemplateRoot: SITE_ROOT, mystRange: MYST_RANGE, log: () => {}, confirm: async () => true, workdir: () => tmp('oak-seed-') };
 }
 
 const paperInput = (over: Record<string, unknown> = {}) => ({
@@ -270,16 +325,66 @@ describe('cmdBootstrapPaper', () => {
  * ------------------------------------------------------------------------ */
 
 describe('cmdBootstrapJournal', () => {
-  it('--external: public repo, instance scaffold, no rulesets/env', async () => {
+  /** Journal bootstrap with a workdir we can inspect afterwards. */
+  const journalDeps = (prov: Provisioner, seedDirs: string[]) => {
+    const d = deps(prov);
+    d.workdir = () => {
+      const dir = tmp('oak-seed-');
+      seedDirs.push(dir);
+      return dir;
+    };
+    return d;
+  };
+
+  it('--external: public repo, instance scaffold ⊎ the journal site, Pages, no rulesets/env', async () => {
     const { prov, calls } = fakeProv();
+    const seedDirs: string[] = [];
     const out = await cmdBootstrapJournal(
       { repo: 'me/config', tier: 'external', name: 'J', edition: 'ed-2026', engineVersion: 'v1', engineRepo: 'me/engine', authedUser: 'alice', secrets: {} },
-      deps(prov),
+      journalDeps(prov, seedDirs),
     );
     expect((calls.createRepo[0] as { o: { private: boolean } }).o.private).toBe(false);
     expect(calls.seedBranch).toHaveLength(1);
-    expect(calls.createRuleset).toHaveLength(0); // data-only repo
+    expect(calls.createRuleset).toHaveLength(0); // still no rulesets: registry upkeep is [S5]
+    expect(calls.enablePages).toHaveLength(1); // ...but the site needs Pages
     expect(out.result.tier).toBe('external');
+    expect(out.result.site_url).toBe('https://me.github.io/config/');
+
+    // The union: instance-config data AND the site, in one repo (A′).
+    const seed = seedDirs[0]!;
+    expect(existsSync(join(seed, 'journal.yml'))).toBe(true);
+    expect(existsSync(join(seed, 'registry/papers.yml'))).toBe(true);
+    expect(existsSync(join(seed, 'myst.yml'))).toBe(true);
+    expect(existsSync(join(seed, 'pages/index.md'))).toBe(true);
+    expect(existsSync(join(seed, '.github/workflows/site.yml'))).toBe(true);
+    const myst = parseDocument(readFileSync(join(seed, 'myst.yml'), 'utf8'));
+    expect(myst.getIn(['site', 'template'])).toBe(themeZipUrl());
+    expect(myst.getIn(['project', 'plugins', 0])).toBe(galleryPluginUrl('me/engine', 'v1'));
+    expect(myst.getIn(['project', 'title'])).toBe('J');
+  });
+
+  it('--external --no-site: neither the site files nor Pages', async () => {
+    const { prov, calls } = fakeProv();
+    const seedDirs: string[] = [];
+    const out = await cmdBootstrapJournal(
+      { repo: 'me/config', tier: 'external', name: 'J', edition: 'ed-2026', engineVersion: 'v1', engineRepo: 'me/engine', authedUser: 'alice', site: false, secrets: {} },
+      journalDeps(prov, seedDirs),
+    );
+    expect(calls.enablePages ?? []).toHaveLength(0);
+    expect(out.result.site_url).toBeUndefined();
+    const seed = seedDirs[0]!;
+    expect(existsSync(join(seed, 'journal.yml'))).toBe(true);
+    expect(existsSync(join(seed, 'myst.yml'))).toBe(false);
+    expect(existsSync(join(seed, '.github'))).toBe(false);
+  });
+
+  it('--external re-run does not re-enable Pages (GET-then-act)', async () => {
+    const { prov, calls } = fakeProv({ repos: new Set(['me/config']), branches: new Set(['me/config/main']), pages: new Set(['me/config']) });
+    await cmdBootstrapJournal(
+      { repo: 'me/config', tier: 'external', edition: 'ed-2026', engineVersion: 'v1', engineRepo: 'me/engine', authedUser: 'alice', secrets: {} },
+      deps(prov),
+    );
+    expect(calls.enablePages ?? []).toHaveLength(0);
   });
 
   it('--external re-run forces a private repo back to public', async () => {
@@ -313,5 +418,12 @@ describe('cmdBootstrapJournal', () => {
     expect(existsSync(join(seed, 'journal.yml'))).toBe(true);
     const pins = parseDocument(readFileSync(join(seed, '.github/actions/engine/pins.yml'), 'utf8'));
     expect(pins.get('instance_repo')).toBe('.');
+    // ...and byte-unchanged by the site work: repo=journal's index is the deferred
+    // `assemble()` work ([S7]), so this tier must NOT acquire a site.
+    expect(existsSync(join(seed, 'pages/index.md'))).toBe(false);
+    expect(existsSync(join(seed, '.github/workflows/site.yml'))).toBe(false);
+    expect(existsSync(join(seed, 'package.json'))).toBe(false);
+    const myst = parseDocument(readFileSync(join(seed, 'myst.yml'), 'utf8'));
+    expect(myst.getIn(['project', 'options', 'oaktree-sapling', 'version'])).toBe('v9'); // the PAPER starter
   });
 });

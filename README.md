@@ -24,7 +24,7 @@ Since then `oak conformance` certifies the paper CI on every release cut ([R78])
 
 ## Status — slices 0–5 (every verb built)
 
-Done and green (`npm test` → **215 passing**, `npm run typecheck` clean; the integration
+Done and green (`npm test` → **240 passing**, `npm run typecheck` clean; the integration
 test renders a real PDF through the bundled CLI):
 
 | File | Slice role |
@@ -42,8 +42,21 @@ test renders a real PDF through the bundled CLI):
 | `templates/typst/` | the engine's generic typst template (seeded from lapreprint-typst; used by path for offline PDF — design dec. 2). |
 | `test/fixture-*`, `test/integration.test.ts` | the release-safety canary (design §12 step 0). |
 
-`paper-base.yml` / `nexus-base.yml` are the engine-owned data compose wires in;
-`ci/run.sh` is the ~5-line shim dispatcher.
+`paper-base.yml` is the engine-owned data compose wires in; `ci/run.sh` is the ~5-line shim
+dispatcher.
+
+**`plugins/gallery.mjs`** is the one engine artifact that is *not* engine TypeScript: the
+journal site's `paper-cards` directive, which myst loads at runtime by tag-pinned raw URL
+(`project.plugins:` accepts remote `.mjs`). It never enters `dist/cli.cjs`, so `myst.ts`
+stays the only importer of myst-cli. Its unit tests import the `.mjs` directly
+(`test/gallery.test.ts`).
+
+**`templates/site/`** is the third template root: the journal site scaffold, unioned with
+`templates/instance/` by `oak bootstrap journal --external` ([R80], [S8] variant A′). The
+site is a **plain myst build in the instance-config repo** — `oak` never runs there — so the
+engine has no site build kind and no `nexus-base.yml`; the theme pin is stamped into the
+scaffold's `myst.yml` at bootstrap instead of served from a frozen file. It is one-shot: the
+tenant owns it outright and `oak upgrade` does not touch it.
 
 ## Building locally / testing with a local template
 
@@ -121,6 +134,11 @@ certifying all four paper-CI trigger classes on every release cut ([R78]).
 
 The frontier is rollout and deferred decisions, not verbs:
 
+- **Live-verify the journal site** ([R80]) — built and local-green, but never run on a real
+  runner. Owed: a green `site.yml` on the standing fixture instance-config, a card that
+  renders with title + thumbnail + DOI, and **two negative cases that must go red** (a
+  registry entry pointing at a nonexistent repo; a deliberately wrong plugin tag, which only
+  `--strict` catches).
 - **The real rollout** — stand up the public instance (`oak bootstrap journal --external`) and
   migrate-vs-archive the 12 real 2026 papers, including a codemod stripping the boilerplate venue
   `template:` URLs those papers carry ([R79]).

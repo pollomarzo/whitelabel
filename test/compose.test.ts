@@ -50,11 +50,6 @@ describe('compose — extends chain', () => {
     expect(r.extendsChain).toEqual([`${ENGINE}/paper-base.yml`]);
     expect(r.warnings.join(' ')).toMatch(/no-instance/);
   });
-
-  it("site build extends nexus-base instead of paper-base", () => {
-    const r = compose(base({ buildKind: 'site' }));
-    expect(r.extendsChain[0]).toBe(`${ENGINE}/nexus-base.yml`);
-  });
 });
 
 describe('compose — asset overrides on own config (finding 2 / [R5], [R52])', () => {
