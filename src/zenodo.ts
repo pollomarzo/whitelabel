@@ -30,8 +30,10 @@
  * HTML build's JSON artifacts on disk (keeping myst.ts the only myst-cli importer).
  */
 import { readFileSync, writeFileSync, existsSync, mkdirSync, rmSync, copyFileSync, readdirSync, statSync } from 'node:fs';
-import { join, resolve, basename } from 'node:path';
-import { readDoc, writeDoc } from './yaml-io.js';
+import { join, resolve, basename, relative, isAbsolute } from 'node:path';
+import { createHash } from 'node:crypto';
+import AdmZip from 'adm-zip';
+import { readDoc, writeDoc, DERIVED_CONFIG_FILE } from './yaml-io.js';
 import { JournalConfig, type ZenodoConfig } from './schema.js';
 
 export const ZENODO_PROD = 'https://zenodo.org/api';
@@ -47,6 +49,12 @@ const ZENODO_EXTRA_PART = 'zenodo_extra_description';
 /** The engine's five fixed deposit files; a `deposit/` file may not collide with them ([R28]).
  *  Exported so the conformance harness (C3) can assert the GH Release carries exactly these. */
 export const RESERVED_BUNDLE_NAMES = ['paper.pdf', 'source.zip', 'myst.yml', 'publication-provenance.json', 'engine.zip'];
+
+/** The CONDITIONAL sixth file: the resolved typst template's bytes, added only when the
+ *  template is not already inside `engine.zip` ([R76] — a tenant's or an author's). It is
+ *  reserved against `deposit/` collisions but deliberately NOT in RESERVED_BUNDLE_NAMES,
+ *  which is the always-present set the conformance harness asserts. */
+export const TEMPLATE_BUNDLE_NAME = 'template.zip';
 
 export function apiBase(sandbox: boolean): string {
   return sandbox ? ZENODO_SANDBOX : ZENODO_PROD;
@@ -435,6 +443,114 @@ export interface BundleProvenance {
   typst_version: string | null;
 }
 
+/* --------------------------------------------------------------------------
+ * Resolved typst template → deposit bytes ([R76]/[R66])
+ * ------------------------------------------------------------------------ */
+
+export class TemplateArchiveError extends Error {}
+
+/**
+ * The typst template the build actually used, read from the DERIVED config compose stamped
+ * (`myst.oak.yml`, which the build leaves beside `myst.yml` — [R71]). Reading the stamped
+ * value rather than re-running the precedence chain is deliberate: the deposit must archive
+ * what was rendered, not what would be rendered now.
+ *
+ * Falls back to the author's `myst.yml` when there is no derived config (a deposit run
+ * against a tree that was never built here), and to null when neither declares one — which
+ * means the engine's own default, already inside `engine.zip`.
+ */
+export function readStampedTemplate(paperRoot: string): string | null {
+  for (const file of [DERIVED_CONFIG_FILE, 'myst.yml']) {
+    const path = join(paperRoot, file);
+    if (!existsSync(path)) continue;
+    const exports = readDoc(path).getIn(['project', 'exports']) as
+      | { toJSON?: () => unknown }
+      | undefined;
+    const list = (exports?.toJSON?.() ?? exports) as Array<Record<string, unknown>> | undefined;
+    if (!Array.isArray(list)) continue;
+    const typst = list.find((e) => e['format'] === 'typst' || e['id'] === 'typst-pdf');
+    const template = typst?.['template'];
+    if (typeof template === 'string' && template) return template;
+  }
+  return null;
+}
+
+/**
+ * Where myst materialized a template reference on disk — a mirror of `myst-templates`'
+ * `resolveInputs` (`download.js:71-103`), which is a pure, documented mapping we can restate
+ * in ten lines rather than import (myst.ts stays the sole myst-cli importer, and this module
+ * deliberately holds no myst dependency).
+ *
+ * Local path → used in place; URL → `_build/templates/<kind>/<sha256(url)>`; bare name →
+ * `_build/templates/<kind>/<namespace>/<name>`. So every source form ends up as a concrete
+ * directory, which is what makes ONE bundler rule cover all three ([R74] rule 2).
+ */
+export function resolveTemplateDir(template: string, paperRoot: string): string {
+  const buildTemplates = join(paperRoot, '_build', 'templates');
+
+  // Local: a directory, or a path to the template.yml / .typ inside one.
+  //
+  // Probed against the PAPER ROOT, not this process's cwd. myst's `resolveInputs` probes
+  // `existsSync(template)` relative to cwd, and myst.ts chdirs into the paper root for the
+  // build — so the paper root is the directory an author's relative `./my-template` was
+  // resolved against when the PDF was rendered. The deposit runs from wherever `oak` was
+  // invoked, so probing cwd here would miss a perfectly valid local template, fall through
+  // to the name branch, and refuse a deposit that was actually fine.
+  const local = isAbsolute(template) ? template : join(paperRoot, template);
+  if (existsSync(local)) {
+    if (statSync(local).isDirectory()) return local;
+    return resolve(local, '..');
+  }
+
+  if (/^[a-zA-Z][\w+.-]*:\/\//.test(template)) {
+    return join(buildTemplates, 'typst', createHash('sha256').update(template).digest('hex'));
+  }
+
+  // A name, in one of myst's three shapes: `x` → typst/myst/x, `a/b` → typst/a/b,
+  // `typst/a/b` → itself.
+  const parts = template.split('/');
+  const normalized =
+    parts.length === 1
+      ? ['typst', 'myst', ...parts]
+      : parts.length === 2
+        ? ['typst', ...parts]
+        : parts;
+  return join(buildTemplates, ...normalized);
+}
+
+/**
+ * The template directory this deposit must archive, or null when there is nothing to add.
+ *
+ * Null in exactly one case: the resolved template lives inside the engine checkout, whose
+ * `git archive` is already `engine.zip`. That keeps every engine-template deposit
+ * byte-identical to before this feature and leaves `RESERVED_BUNDLE_NAMES` (what the
+ * conformance harness asserts) untouched.
+ *
+ * Otherwise the bytes MUST be archived: a tenant's or an author's template rides in no other
+ * artifact, so without this the DOI'd PDF quietly stops being reproducible (§7 / [R66]) —
+ * which is why unlocatable bytes are a hard error rather than a warning. This is the real
+ * cost of template precedence, and the reason it cannot ship half-built.
+ */
+export function templateArchiveDir(paperRoot: string, engineRoot: string): string | null {
+  const template = readStampedTemplate(paperRoot);
+  if (!template) return null;
+
+  const dir = resolveTemplateDir(template, paperRoot);
+  const rel = relative(resolve(engineRoot), resolve(dir));
+  const insideEngine = rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
+  if (insideEngine) return null;
+
+  if (!existsSync(dir)) {
+    throw new TemplateArchiveError(
+      `typst template "${template}" resolves to "${dir}", which does not exist, so the ` +
+        `deposit cannot archive the template it rendered with. A non-engine template rides ` +
+        `in no other deposit artifact — publishing without it would give a DOI'd PDF that ` +
+        `cannot be reproduced. Run the build in this working tree before depositing.`,
+    );
+  }
+  return dir;
+}
+
 /**
  * Assemble the deposit bundle: the five fixed engine files plus every file in the paper's
  * `deposit/` folder, uploaded verbatim ([R28]). A `deposit/` file whose name collides with
@@ -445,6 +561,12 @@ export interface BundleProvenance {
  * because bin/typst + dist/cli.cjs + templates/typst/ are committed at the
  * engine tag leaf, this one archive carries the whole toolchain-minus-node, making the deposit
  * self-contained for re-rendering the PDF (linux-x86_64 + node + the deposit, nothing fetched).
+ *
+ * Plus a CONDITIONAL sixth file, `template.zip` ([R76]): when the rendered typst template is
+ * NOT the engine's own — a tenant's or an author's, local or remote — it rides in no other
+ * artifact, so its resolved bytes are archived here. Self-containment was previously an
+ * accident of the template happening to sit inside what `engine.zip` already captured; with
+ * template precedence it becomes an explicit rule. See {@link templateArchiveDir}.
  */
 export async function buildBundle(
   out: string,
@@ -458,13 +580,18 @@ export async function buildBundle(
   const extras = existsSync(depositDir)
     ? readdirSync(depositDir).filter((n) => statSync(join(depositDir, n)).isFile())
     : [];
-  const collisions = extras.filter((n) => RESERVED_BUNDLE_NAMES.includes(n));
+  const reserved = [...RESERVED_BUNDLE_NAMES, TEMPLATE_BUNDLE_NAME];
+  const collisions = extras.filter((n) => reserved.includes(n));
   if (collisions.length) {
     throw new BundleCollisionError(
       `deposit/ file(s) collide with engine-reserved names: ${collisions.join(', ')}. ` +
-        `Rename them — ${RESERVED_BUNDLE_NAMES.join(', ')} are added by the engine.`,
+        `Rename them — ${reserved.join(', ')} are added by the engine.`,
     );
   }
+
+  // Resolve BEFORE writing anything: an unarchivable non-engine template must abort the
+  // deposit, not leave a half-built bundle behind.
+  const templateDir = templateArchiveDir(repoRoot, engineRoot);
 
   if (existsSync(out)) rmSync(out, { recursive: true, force: true });
   mkdirSync(out, { recursive: true });
@@ -474,6 +601,11 @@ export async function buildBundle(
   await git.gitArchive(engineRoot, resolve(join(out, 'engine.zip')));
   const mystSrc = join(repoRoot, 'myst.yml');
   if (existsSync(mystSrc)) copyFileSync(mystSrc, join(out, 'myst.yml'));
+  if (templateDir) {
+    const zip = new AdmZip();
+    zip.addLocalFolder(templateDir);
+    zip.writeZip(join(out, TEMPLATE_BUNDLE_NAME));
+  }
   writeFileSync(join(out, 'publication-provenance.json'), JSON.stringify(provenance, null, 2) + '\n');
   for (const n of extras) copyFileSync(join(depositDir, n), join(out, n));
 

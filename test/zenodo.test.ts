@@ -9,6 +9,8 @@ import { describe, it, expect } from 'vitest';
 import { mkdtempSync, writeFileSync, mkdirSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createHash } from 'node:crypto';
+import AdmZip from 'adm-zip';
 import { parseDocument } from 'yaml';
 import {
   ZenodoApi,
@@ -18,6 +20,10 @@ import {
   cmdPrepare,
   cmdPublish,
   BundleCollisionError,
+  TemplateArchiveError,
+  RESERVED_BUNDLE_NAMES,
+  readStampedTemplate,
+  resolveTemplateDir,
   type ZenodoTransport,
   type TransportResponse,
   type GitContext,
@@ -227,6 +233,162 @@ describe('buildBundle', () => {
     await expect(buildBundle(join(root, '_bundle'), join(root, 'paper.pdf'), root, root, prov, fakeGit)).rejects.toBeInstanceOf(
       BundleCollisionError,
     );
+  });
+
+  it('reserves template.zip against deposit/ collisions too', async () => {
+    const root = paperWithDeposit({ 'template.zip': 'oops' });
+    await expect(
+      buildBundle(join(root, '_bundle'), join(root, 'paper.pdf'), root, root, prov, fakeGit),
+    ).rejects.toBeInstanceOf(BundleCollisionError);
+  });
+
+  /* ---- the resolved template's bytes ([R76]/[R66]) ---------------------- */
+
+  /** A paper root beside a SEPARATE engine checkout, so "is this template already inside
+   *  engine.zip?" is a real question rather than an artifact of the test layout. */
+  function paperAndEngine(): { paper: string; engine: string; tmp: string } {
+    const tmp = mkdtempSync(join(tmpdir(), 'oak-tmpl-'));
+    const paper = join(tmp, 'paper');
+    const engine = join(tmp, 'engine');
+    mkdirSync(paper);
+    mkdirSync(join(engine, 'templates', 'typst'), { recursive: true });
+    writeFileSync(join(engine, 'templates', 'typst', 'template.yml'), 'kind: typst');
+    writeFileSync(join(paper, 'paper.pdf'), '%PDF-fake');
+    writeFileSync(join(paper, 'myst.yml'), 'project: {}');
+    return { paper, engine, tmp };
+  }
+  /** What `oak build` leaves behind: the derived config carrying compose's resolved value. */
+  function stamp(paper: string, template: string): void {
+    writeFileSync(
+      join(paper, 'myst.oak.yml'),
+      `project:\n  exports:\n  - id: typst-pdf\n    format: typst\n    template: ${template}\n`,
+    );
+  }
+  const namesIn = (files: string[]) => files.map((p) => p.split('/').pop());
+
+  it('adds no template.zip when the rendered template lives in the engine checkout', async () => {
+    const { paper, engine } = paperAndEngine();
+    stamp(paper, join(engine, 'templates', 'typst'));
+
+    const files = await buildBundle(join(paper, '_bundle'), join(paper, 'paper.pdf'), paper, engine, prov, fakeGit);
+    expect(namesIn(files)).not.toContain('template.zip');
+    expect(namesIn(files)).toEqual(RESERVED_BUNDLE_NAMES.slice().sort());
+  });
+
+  it('archives a TENANT/AUTHOR local template’s bytes as template.zip', async () => {
+    const { paper, engine, tmp } = paperAndEngine();
+    const tenant = join(tmp, 'instance', 'typst-template');
+    mkdirSync(tenant, { recursive: true });
+    writeFileSync(join(tenant, 'template.yml'), 'kind: typst');
+    writeFileSync(join(tenant, 'template.typ'), '#let x = 1');
+    stamp(paper, tenant);
+
+    const out = join(paper, '_bundle');
+    const files = await buildBundle(out, join(paper, 'paper.pdf'), paper, engine, prov, fakeGit);
+    expect(namesIn(files)).toContain('template.zip');
+    const entries = new AdmZip(join(out, 'template.zip')).getEntries().map((e) => e.entryName);
+    expect(entries).toEqual(expect.arrayContaining(['template.yml', 'template.typ']));
+  });
+
+  it("archives an author's RELATIVE template, resolved against the paper root", async () => {
+    // Caught by a real end-to-end run, not by construction: myst resolves an author's
+    // `./my-template` against the build cwd (the paper root), but the deposit runs from
+    // wherever `oak` was invoked — probing cwd here refused a perfectly valid deposit.
+    const { paper, engine } = paperAndEngine();
+    mkdirSync(join(paper, 'my-template'));
+    writeFileSync(join(paper, 'my-template', 'template.yml'), 'kind: typst');
+    stamp(paper, './my-template');
+
+    const out = join(paper, '_bundle');
+    const files = await buildBundle(out, join(paper, 'paper.pdf'), paper, engine, prov, fakeGit);
+    expect(namesIn(files)).toContain('template.zip');
+    expect(new AdmZip(join(out, 'template.zip')).getEntries().map((e) => e.entryName)).toContain(
+      'template.yml',
+    );
+  });
+
+  it('archives a REMOTE template from where myst materialized it', async () => {
+    const { paper, engine } = paperAndEngine();
+    const url = 'https://github.com/o/r/releases/download/v1.2.3/typst-template.zip';
+    const materialized = join(
+      paper, '_build', 'templates', 'typst',
+      createHash('sha256').update(url).digest('hex'),
+    );
+    mkdirSync(materialized, { recursive: true });
+    writeFileSync(join(materialized, 'template.yml'), 'kind: typst');
+    stamp(paper, url);
+
+    const out = join(paper, '_bundle');
+    const files = await buildBundle(out, join(paper, 'paper.pdf'), paper, engine, prov, fakeGit);
+    expect(namesIn(files)).toContain('template.zip');
+    expect(new AdmZip(join(out, 'template.zip')).getEntries().map((e) => e.entryName)).toContain(
+      'template.yml',
+    );
+  });
+
+  it('REFUSES to deposit when a non-engine template’s bytes cannot be found', async () => {
+    const { paper, engine } = paperAndEngine();
+    stamp(paper, 'https://example.org/t.zip'); // never materialized — nothing was built here
+
+    // A DOI'd PDF nobody can re-render is worse than a failed deposit.
+    await expect(
+      buildBundle(join(paper, '_bundle'), join(paper, 'paper.pdf'), paper, engine, prov, fakeGit),
+    ).rejects.toBeInstanceOf(TemplateArchiveError);
+  });
+});
+
+describe('readStampedTemplate / resolveTemplateDir ([R76])', () => {
+  it('reads what the build actually rendered with (the derived config), not the author input', () => {
+    const root = mkdtempSync(join(tmpdir(), 'oak-stamp-'));
+    writeFileSync(
+      join(root, 'myst.yml'),
+      'project:\n  exports:\n  - id: typst-pdf\n    format: typst\n    template: ./author\n',
+    );
+    writeFileSync(
+      join(root, 'myst.oak.yml'),
+      'project:\n  exports:\n  - id: typst-pdf\n    format: typst\n    template: /resolved/by/compose\n',
+    );
+    expect(readStampedTemplate(root)).toBe('/resolved/by/compose');
+  });
+
+  it('falls back to the author config when nothing was built here', () => {
+    const root = mkdtempSync(join(tmpdir(), 'oak-stamp-'));
+    writeFileSync(
+      join(root, 'myst.yml'),
+      'project:\n  exports:\n  - id: typst-pdf\n    format: typst\n    template: ./author\n',
+    );
+    expect(readStampedTemplate(root)).toBe('./author');
+  });
+
+  it('is null when no typst export declares a template', () => {
+    const root = mkdtempSync(join(tmpdir(), 'oak-stamp-'));
+    writeFileSync(join(root, 'myst.yml'), 'project:\n  exports:\n  - id: typst-pdf\n    format: typst\n');
+    expect(readStampedTemplate(root)).toBeNull();
+  });
+
+  describe('resolveTemplateDir mirrors myst-templates resolveInputs', () => {
+    const paper = '/paper';
+    it('uses a local directory in place', () => {
+      const dir = mkdtempSync(join(tmpdir(), 'oak-dir-'));
+      expect(resolveTemplateDir(dir, paper)).toBe(dir);
+    });
+    it('climbs to the directory when pointed at the template.yml', () => {
+      const dir = mkdtempSync(join(tmpdir(), 'oak-dir-'));
+      writeFileSync(join(dir, 'template.yml'), 'kind: typst');
+      expect(resolveTemplateDir(join(dir, 'template.yml'), paper)).toBe(dir);
+    });
+    it('hashes a URL into _build/templates/typst/<sha256>', () => {
+      const url = 'https://example.org/t.zip';
+      expect(resolveTemplateDir(url, paper)).toBe(
+        join(paper, '_build', 'templates', 'typst', createHash('sha256').update(url).digest('hex')),
+      );
+    });
+    it('expands the three name shapes', () => {
+      const t = (n: string) => resolveTemplateDir(n, paper);
+      expect(t('lapreprint-typst')).toBe(join(paper, '_build/templates/typst/myst/lapreprint-typst'));
+      expect(t('acme/mine')).toBe(join(paper, '_build/templates/typst/acme/mine'));
+      expect(t('typst/acme/mine')).toBe(join(paper, '_build/templates/typst/acme/mine'));
+    });
   });
 });
 

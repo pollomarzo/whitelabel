@@ -66,6 +66,36 @@ export function isBrandAssetUrl(value: string): boolean {
   return /^[a-zA-Z][\w+.-]*:\/\//.test(value); // a scheme://… URL (fine for HTML, NOT typst)
 }
 
+/**
+ * Is a tenant-declared `typst_template:` an INSTANCE-RELATIVE PATH (vs a myst template
+ * NAME or a URL)? myst's `template:` accepts all three ([R74] source policy), and a bare
+ * string is genuinely ambiguous — `lapreprint-typst` is a valid myst NAME, and it is also
+ * a valid relative directory name. The brand-asset predicate can't be reused: it treats
+ * every non-URL, non-absolute string as a path, which would silently rewrite a name into
+ * `<instanceRoot>/lapreprint-typst` and then 404.
+ *
+ * So the rule is EXPLICIT rather than filesystem-sniffed: **only `./` and `../` mean "a
+ * path in my instance-config"**. Everything else — bare names, absolute paths, URLs — is
+ * handed to myst verbatim. One string always means one thing, independent of what happens
+ * to exist on disk (the alternative, probing the filesystem the way myst's own
+ * `resolveInputs` does, makes a typo'd path silently become a template-name lookup).
+ *
+ * `oak validate` warns when a bare value shadows a real instance-config directory, so the
+ * one case where a tenant would guess wrong is loud rather than mysterious.
+ */
+export function isInstanceRelativeTemplate(value: string): boolean {
+  return /^\.\.?\//.test(value);
+}
+
+/** Resolve a tenant-declared template value against the instance-config root (where
+ *  `journal.yml` lives — NOT `<instanceRoot>/brand`, which is where the brand-asset
+ *  helper rebases). Only `./`/`../` values are rewritten; see
+ *  {@link isInstanceRelativeTemplate}. Exported so `oak validate` checks the same path
+ *  compose will emit (the [R62] discipline). */
+export function resolveTenantTemplate(instanceRoot: string, value: string): string {
+  return isInstanceRelativeTemplate(value) ? join(instanceRoot, value) : value;
+}
+
 function needsAbsolutizing(value: string): boolean {
   if (isAbsolute(value)) return false;
   return !isBrandAssetUrl(value);
@@ -129,10 +159,23 @@ export interface ComposeInput {
    *  pass local paths, and `siteTemplate: null` omits the override so myst uses its
    *  default book-theme (needed until the fork release exists). */
   assetOverrides?: {
+    /** `--typst-template <path>` — the EXPLICIT dev/CI override. Tops the whole precedence
+     *  chain (it is a deliberate "render with this one" instruction, not a default). */
     typstTemplate?: string;
+    /** The engine's own template when it exists as a local directory in the checkout
+     *  (`<engineRoot>/templates/typst`). The BOTTOM of the chain — a default that tenant
+     *  and author both outrank. Absent → the engine tag's release zip URL. */
+    engineTypstTemplate?: string;
     /** string → use it; null → omit site.template (myst default); undefined → release zip. */
     siteTemplate?: string | null;
   };
+  /** The tenant's `typst_template:` exactly as declared in `<instanceRoot>/journal.yml`,
+   *  raw-lifted by the edge (yaml-io) — the [R68] `readBrandAssetOptions` precedent, adopted
+   *  for the same reason. It CANNOT be declared as `exports[].template` in an extends layer:
+   *  a sibling declaring `exports:` races ([R72]) and trips the disjointness guard, so
+   *  paper-base stays the sole `exports:` declarer. Value accepts name | path | URL; a
+   *  `./`-relative one is absolutized against `<instanceRoot>` ({@link resolveTenantTemplate}). */
+  tenantTypstTemplate?: string;
   /** Raw brand asset fields (the {@link BRAND_ASSET_KEYS} subset, per namespace) as
    *  DECLARED in the instance's `brand/brand.yml`, lifted verbatim by the edge (yaml-io).
    *  compose absolutizes any instance-relative value against `<instanceRoot>/brand` so it
@@ -227,10 +270,11 @@ export function compose(input: ComposeInput): ComposeResult {
   // --- ownOverride: engine overrides merged into the paper's OWN config ([R52]) -----
   const ownOverride: OwnOverride = {};
 
-  // Typst export — engine owns `template:` AND `output:` authoritatively (finding 2 / [R5],
-  // TYPST_OUTPUT). Because myst merges exports by id WHOLE-ENTRY (no field merge), the winning
-  // entry must be complete: spread the resolved export (carries the edition's `articles`) and
-  // set both engine-owned fields. Placed in own config so base-wins is deterministic.
+  // Typst export — compose stamps `output:` (engine-owned, TYPST_OUTPUT) and `template:`
+  // (resolved by precedence, [R76] — see below). Because myst merges exports by id
+  // WHOLE-ENTRY (no field merge), the winning entry must be complete: spread the resolved
+  // export (carries the edition's `articles`) and set both stamped fields. Placed in own
+  // config so base-wins is deterministic.
   //
   // Both are set HERE rather than declared in paper-base.yml for the same reason: a paper that
   // overrides the whole entry (a multi-article export, e.g. paper + supplement) would silently
@@ -240,8 +284,42 @@ export function compose(input: ComposeInput): ComposeResult {
     (e) => e['format'] === 'typst' || e['id'] === 'typst-pdf',
   );
   if (typst) {
+    // --- Template precedence ([R76]): author > tenant > engine -----------------------
+    //
+    // compose is the authoritative STAMPER either way (the winning-by-id entry is what it
+    // spreads), so this is a precedence CHOICE about where the VALUE comes from, not a
+    // change of declarer. Whatever is declared is honored — name | path | URL, pinned or
+    // floating; compose never silently drops a declared template, because a silent drop
+    // produces the baffling "why isn't my template applied?". Floating is a validate WARN
+    // (the [R5] hygiene lint), and DOI reproducibility rides the deposit archiving the
+    // RESOLVED bytes (zenodo.ts) — not this precedence chain.
+    //
+    // The author needs no new field and no flag: paper-base and editions never declare
+    // `template:`, so a `template:` surviving onto the resolved export can only be the
+    // author's own, written myst-natively in the deterministic base slot (no [R72] race).
+    const authorTemplate = typeof typst['template'] === 'string' && typst['template']
+      ? (typst['template'] as string)
+      : undefined;
+    const tenantTemplate =
+      input.tenantTypstTemplate && instanceRoot
+        ? resolveTenantTemplate(instanceRoot, input.tenantTypstTemplate)
+        : input.tenantTypstTemplate;
+    const engineTemplate =
+      assetOverrides.engineTypstTemplate ?? typstTemplateUrl(engineRepo, engineVersion);
     const template =
-      assetOverrides.typstTemplate ?? typstTemplateUrl(engineRepo, engineVersion);
+      assetOverrides.typstTemplate ?? authorTemplate ?? tenantTemplate ?? engineTemplate;
+
+    // The trust surface (and the whole reason an author override is allowed at all): a paper
+    // reskinning away from journal identity must be REVIEWABLE in the PR — never forbidden
+    // (that is the tenant's call, not the engine's), never silent. `oak validate` reports the
+    // same thing as a finding, which is what actually lands on the PR.
+    if (authorTemplate && tenantTemplate && !assetOverrides.typstTemplate) {
+      warnings.push(
+        `author template overrides the journal's: this paper declares its own typst ` +
+          `template ("${authorTemplate}") in place of the journal's ("${input.tenantTypstTemplate}").`,
+      );
+    }
+
     ownOverride.project = { exports: [{ ...typst, template, output: TYPST_OUTPUT }] };
   } else {
     warnings.push(

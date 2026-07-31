@@ -9,11 +9,24 @@ tenant-editable data that `compose()` wires into the MyST `extends:` chain; the 
 
 | File | Role |
 |---|---|
-| `journal.yml` | journal identity + defaults: `name`, `url`, preview provider, `zenodo:` community/blurb ([R19], [R27]) |
+| `journal.yml` | journal identity + defaults: `name`, `url`, preview provider, `zenodo:` community/blurb ([R19], [R27]), optional `typst_template:` ([R76]) |
 | `editions/<edition>.yml` | per-edition MyST config (venue, funding); selected per paper by `options.oaktree-sapling.edition` |
 | `brand/brand.yml` | colors, footer, nav — the venue's visual identity, extended into every paper build |
 | `brand/logo.svg` | the brand logo (a real file typst/theme load by path; the watermark rides here too) |
 | `registry/papers.yml` | the paper registry `[{slug, location, doi, edition}]` — the gallery's source (§9 shape) |
+
+## Shipping your own typst template (optional)
+
+The engine's template is already brandable by parameter (watermark, colors), so most
+journals need nothing here. If yours does, set `typst_template:` in `journal.yml` — a myst
+template `name`, a `path`, or a `URL`. Precedence is **author > journal > engine**: a paper
+may override it with its own `exports[].template`, which is allowed and applied, with `oak
+validate` flagging it on the PR so the divergence from journal identity gets reviewed.
+
+Two things worth knowing: only `./`- and `../`-prefixed values are paths relative to this
+directory (a bare `typst-template` is a template *name*, even if a directory of that name
+sits next to `journal.yml`); and a non-engine template's resolved bytes are archived into
+every Zenodo deposit (`template.zip`), so DOI'd PDFs stay reproducible whatever the source.
 
 ## The two journal tiers
 

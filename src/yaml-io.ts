@@ -90,6 +90,21 @@ export function readBrandAssetOptions(
   };
 }
 
+/** Raw read of the tenant's `typst_template:` from `<instanceRoot>/journal.yml` — the
+ *  journal's own typst template ([R76]), which compose puts between the author's and the
+ *  engine's. Same raw-lift shape as {@link readBrandAssetOptions} and for the same reason,
+ *  but from `journal.yml` rather than `brand.yml`: `journal.yml` is engine-read DATA that
+ *  never enters myst's extends merge, so the key costs nothing. (`brand.yml` IS a myst
+ *  config layer — myst's `validateObjectKeys` accepts only version/site/project/extend and
+ *  warns about anything else, so a template key there would emit a myst warning on every
+ *  build and read like a myst key that does nothing.) Absent file/key → undefined. */
+export function readTenantTypstTemplate(instanceRoot: string): string | undefined {
+  const journalPath = join(instanceRoot, 'journal.yml');
+  if (!existsSync(journalPath)) return undefined;
+  const value = parseDocument(readFileSync(journalPath, 'utf8')).get('typst_template');
+  return typeof value === 'string' && value ? value : undefined;
+}
+
 /** Pass 1: set the `extends:` chain (replaces any existing — the new-model committed
  *  paper carries none, but a migrating paper may still have URL pins we overwrite). */
 export function setExtends(doc: Document, chain: string[]): void {

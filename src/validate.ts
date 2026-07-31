@@ -13,7 +13,6 @@
  * (for registry-self exclusion) and passes it in, so validate stays pure/testable.
  */
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { parse } from 'yaml';
 import {
   JournalConfig,
@@ -22,7 +21,12 @@ import {
   checkIdUniqueness,
   type IdCheckResult,
 } from './schema.js';
-import { resolveBrandAssetPath, isBrandAssetUrl } from './compose.js';
+import { isAbsolute, join } from 'node:path';
+import {
+  resolveBrandAssetPath,
+  isBrandAssetUrl,
+  isInstanceRelativeTemplate,
+} from './compose.js';
 import { readBrandAssetOptions } from './yaml-io.js';
 import {
   runChecks,
@@ -142,6 +146,102 @@ export function checkBrandWatermark(
     : { ok: false, severity: 'warn', message: `brand typst watermark "${logo}" does not resolve to a file` };
 }
 
+/* ---- typst template hygiene ([R76]) -------------------------------------- */
+
+/**
+ * Does a template reference FLOAT — i.e. name a moving target whose bytes can change
+ * without the reference changing? The [R5] hygiene lint, and the *only* place floating is
+ * handled: it is never an error and never a runtime drop.
+ *
+ * Correcting a conflation worth naming: floating is not the same as REMOTE. A pinned
+ * tag/release URL is remote and perfectly reproducible; a branch URL is the problem. And
+ * DOI reproducibility does not actually rest on this check at all — the deposit archives
+ * the RESOLVED template bytes (zenodo.ts), so a floating source still yields a reproducible
+ * PDF. What floating costs you is the *living site* quietly re-rendering differently one
+ * day, which is worth a warning and not worth a block (a floating template during template
+ * development is entirely legitimate).
+ *
+ * Conservative by design: warn only on recognizably-floating forms, so a tenant hosting
+ * `https://example.org/templates/mine-v1.zip` is not nagged about a pin we cannot see.
+ */
+export function isFloatingTemplate(value: string): boolean {
+  if (isBrandAssetUrl(value)) {
+    const [url, ref] = value.split('#');
+    if (/\/refs\/heads\//.test(url!)) return true;
+    if (/\/archive\/(main|master|HEAD|develop)\.(zip|tar\.gz)$/.test(url!)) return true;
+    // A `.git` URL is floating unless it carries a pinned-looking ref (a sha or a version tag).
+    if (/\.git$/.test(url!)) return !(ref && /^([0-9a-f]{7,40}|v?\d)/.test(ref));
+    return false;
+  }
+  // A local path is bytes — committed and review-gated, not a moving pointer.
+  if (isAbsolute(value) || isInstanceRelativeTemplate(value)) return false;
+  // A bare myst template NAME resolves against the live template API: by-name = floating
+  // (design §7). Reproducible PDFs still ride the deposit archive.
+  return true;
+}
+
+/**
+ * The typst-template findings, computed from the two layers a paper can see: the AUTHOR's
+ * own `exports[].template` and the TENANT's `journal.yml: typst_template`. (The engine's
+ * default needs no check — a local checkout is bytes, and its release-zip fallback is
+ * pinned to the engine tag by construction.)
+ *
+ * The override finding is the feature's whole trust surface. compose warns too, but a build
+ * log is not review: this is what puts "this paper reskins itself away from the journal" in
+ * the Check Run and the sticky PR comment, where an editor decides. Deliberately a WARN —
+ * whether to allow it is the tenant's editorial call, not the engine's.
+ */
+export function checkTemplates(
+  input: { instanceRoot: string | null; authorTemplate?: string; tenantTemplate?: string },
+  probes: FsProbes,
+): NamedFinding[] {
+  const { instanceRoot, authorTemplate, tenantTemplate } = input;
+  const out: NamedFinding[] = [];
+  const warn = (check: string, message: string) =>
+    out.push({ check, severity: 'warn', message, klass: 'config' });
+
+  if (authorTemplate && tenantTemplate) {
+    warn(
+      'template-override',
+      `this paper declares its own typst template ("${authorTemplate}"), overriding the ` +
+        `journal's ("${tenantTemplate}"). Allowed and applied — flagged so the change from ` +
+        `journal identity is a deliberate, reviewed choice.`,
+    );
+  }
+
+  for (const [layer, value] of [
+    ['author', authorTemplate],
+    ['journal', tenantTemplate],
+  ] as const) {
+    if (!value || !isFloatingTemplate(value)) continue;
+    warn(
+      'template-floating',
+      `${layer} typst template "${value}" is not pinned — its bytes can change under the ` +
+        `living site without this reference changing. Prefer a tag/release URL or a local ` +
+        `path. (DOI'd PDFs stay reproducible regardless: the deposit archives the resolved ` +
+        `template bytes.)`,
+    );
+  }
+
+  // The path-vs-name ambiguity, made loud. Only `./`/`../` means "a path in my
+  // instance-config" — so a bare `templates/typst` goes to myst as a NAME and 404s against
+  // the template API. That is invisible until the build fails weirdly, UNLESS a directory of
+  // that name is sitting right there, which is exactly when the tenant meant a path.
+  if (tenantTemplate && instanceRoot && !isBrandAssetUrl(tenantTemplate)) {
+    const bare = !isAbsolute(tenantTemplate) && !isInstanceRelativeTemplate(tenantTemplate);
+    if (bare && probes.existsProbe(join(instanceRoot, tenantTemplate))) {
+      warn(
+        'template-name-ambiguous',
+        `journal.yml typst_template "${tenantTemplate}" is being used as a myst template ` +
+          `NAME, but "${tenantTemplate}" also exists in instance-config. If you meant the ` +
+          `directory, write "./${tenantTemplate}" — only ./ and ../ values are treated as paths.`,
+      );
+    }
+  }
+
+  return out;
+}
+
 /* ---- instance-config readers -------------------------------------------- */
 
 function loadJournal(instanceRoot: string | null, probes: FsProbes): JournalConfig {
@@ -248,7 +348,9 @@ export function runLayerA(
   input: {
     paperRoot: string;
     instanceRoot: string | null;
-    project: { id?: string };
+    /** `exports` is read for the author's own typst `template:` ([R76]) — paper-base and
+     *  editions never declare one, so a surviving value can only be the author's. */
+    project: { id?: string; exports?: Array<Record<string, unknown>> };
     repo: string | null;
     /** Engine checkout, for the [R72] extends-layer disjointness check. Omitted → skipped. */
     engineRoot?: string | null;
@@ -299,6 +401,21 @@ export function runLayerA(
   add('brand-favicon', 'brand', checkBrandFavicon({ instanceRoot, favicon: brand.site.favicon }, probes));
   add('brand-watermark', 'brand', checkBrandWatermark({ instanceRoot, logo: brand.project.logo }, probes));
 
+  const typstExport = (project.exports ?? []).find(
+    (e) => e['format'] === 'typst' || e['id'] === 'typst-pdf',
+  );
+  const authorTemplate = typstExport?.['template'];
+  findings.push(
+    ...checkTemplates(
+      {
+        instanceRoot,
+        authorTemplate: typeof authorTemplate === 'string' ? authorTemplate : undefined,
+        tenantTemplate: journal.typst_template,
+      },
+      probes,
+    ),
+  );
+
   return findings;
 }
 
@@ -325,7 +442,10 @@ export async function runValidate(
   opts: { strict?: boolean; repo?: string | null; pathBase?: string } = {},
   probes: FsProbes = realFs,
 ): Promise<ValidateResult> {
-  const project = (await input.edge.loadProject(input.paperRoot)) as { id?: string };
+  const project = (await input.edge.loadProject(input.paperRoot)) as {
+    id?: string;
+    exports?: Array<Record<string, unknown>>;
+  };
   const repo = opts.repo ?? null;
 
   // Layer A — engine invariants

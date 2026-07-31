@@ -111,6 +111,31 @@ describe('runBuild — the two-pass orchestrator ([R52])', () => {
     expect(doc.getIn(['site', 'template'])).toBeUndefined(); // omitted → myst default theme
   });
 
+  it("picks up the journal's typst_template and absolutizes it ([R76])", async () => {
+    const paperRoot = tmpPaper();
+    const instanceRoot = mkdtempSync(join(tmpdir(), 'oak-instance-'));
+    writeFileSync(join(instanceRoot, 'journal.yml'), 'name: J\ntypst_template: ./typst-template\n');
+
+    const { edge } = fakeEdge();
+    const res = await runBuild({
+      paperRoot,
+      engineRoot: '.engine',
+      instanceRoot,
+      engineRepo: 'x/y',
+      baseUrl: '',
+      // the engine's checkout template is present, and must LOSE to the journal's
+      assetOverrides: { engineTypstTemplate: '/engine/templates/typst' },
+      edge,
+    });
+
+    const doc = parseDocument(readFileSync(join(paperRoot, DERIVED_CONFIG_FILE), 'utf8'));
+    expect(doc.getIn(['project', 'exports', 0, 'template'])).toBe(
+      join(instanceRoot, 'typst-template'),
+    );
+    // nothing was overridden, so no override warning
+    expect(res.warnings.join(' ')).not.toMatch(/overrides the journal/);
+  });
+
   it('NEVER writes the author myst.yml — it is byte-identical after a build ([R71])', async () => {
     const paperRoot = tmpPaper();
     const authorPath = join(paperRoot, 'myst.yml');

@@ -1,13 +1,16 @@
 import { describe, it, expect } from 'vitest';
 import { fileURLToPath } from 'node:url';
 import { parseDocument } from 'yaml';
-import { readFileSync } from 'node:fs';
+import { readFileSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
   readDoc,
   setExtends,
   applyOwnOverride,
   readEngineCoordinateRaw,
   readBrandAssetOptions,
+  readTenantTypstTemplate,
 } from '../src/yaml-io.js';
 
 const fixturePaper = fileURLToPath(new URL('./fixture-paper/myst.yml', import.meta.url));
@@ -97,5 +100,29 @@ describe('readBrandAssetOptions ([R62])', () => {
 
   it('returns empty maps when the instance has no brand.yml', () => {
     expect(readBrandAssetOptions('/no/such/instance')).toEqual({ site: {}, project: {} });
+  });
+});
+
+describe('readTenantTypstTemplate ([R76])', () => {
+  /** A throwaway instance-config; the shared fixture deliberately declares NO tenant
+   *  template, so the fixture builds keep rendering with the engine's. */
+  function instanceWithJournal(body: string): string {
+    const root = mkdtempSync(join(tmpdir(), 'oak-journal-'));
+    writeFileSync(join(root, 'journal.yml'), body);
+    return root;
+  }
+
+  it('lifts the journal.yml value raw — never through the extends merge', () => {
+    const root = instanceWithJournal('name: J\ntypst_template: ./typst-template\n');
+    expect(readTenantTypstTemplate(root)).toBe('./typst-template');
+  });
+
+  it('returns undefined when the journal declares none (the common case)', () => {
+    expect(readTenantTypstTemplate(instanceWithJournal('name: J\n'))).toBeUndefined();
+    expect(readTenantTypstTemplate(fixtureInstance)).toBeUndefined();
+  });
+
+  it('returns undefined when there is no journal.yml at all', () => {
+    expect(readTenantTypstTemplate('/no/such/instance')).toBeUndefined();
   });
 });
