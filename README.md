@@ -16,14 +16,15 @@ true Release assets don't, [R57]). The repo *name* is one of three independent r
 package/bin are unchanged ([R58]).
 
 **Live-validated 2026-07-12** — the full shim ran on a real runner; [R18] closed ([R58]–[R64]).
-See `../testing.md` + `../interim-fixtures/PROVISIONING.md`.
+Since then `oak conformance` certifies the paper CI on every release cut ([R78]).
 
-See `../design.md` (what/why), `../implementation.md` (how), `../existing-implementation.md`
-(the port sources).
+> **`[R#]` tags** throughout this repo reference the design ledger (`implementation.md`), which is
+> maintained **separately and is not part of this repository**. They are provenance anchors, not
+> links — nothing here requires the ledger to be at hand. `RELEASING.md` is self-contained.
 
-## Status — slices 0, 1, 2 (pure core + `oak build` end-to-end)
+## Status — slices 0–5 (every verb built)
 
-Done and green (`npm test` → **37 passing**, `npm run typecheck` clean; the integration
+Done and green (`npm test` → **215 passing**, `npm run typecheck` clean; the integration
 test renders a real PDF through the bundled CLI):
 
 | File | Slice role |
@@ -35,7 +36,7 @@ test renders a real PDF through the bundled CLI):
 | `src/yaml-io.ts` | config round-trips (Document API, never sed — [R3]) + `DERIVED_CONFIG_FILE`. The author's `myst.yml` is read-only; writes go to the derived `myst.oak.yml` ([R71]). |
 | `src/build.ts` | **`oak build`**: the two-pass orchestrator ([R52]); myst edge injected for testing. |
 | `src/myst.ts` | the mystmd edge (the one module importing bundled myst-cli — [R51]); sets the current project+site pointers via `findCurrent*AndLoad` so `build` renders HTML ([R59]). |
-| `src/cli.ts` | `oak` entry point; `build` + `deposit`/`release` + `validate` implemented; `deploy-preview`/`notify`/`bootstrap`/`upgrade` stubbed by slice. |
+| `src/cli.ts` | `oak` entry point; every verb implemented (`build`, `validate`, `check-post`, `deposit`, `release`, `deploy-preview`, `notify`, `bootstrap`, `upgrade`, `conformance`) — nothing stubbed. |
 | `src/zenodo.ts` | **`oak deposit`**: the zenodo-deposit.py port (prepare/publish/status); paginated + id-first lookups, `deposit/` bundle, tenant bytes from journal.yml. HTTP + git/gh injected as seams; no myst-cli import. |
 | `src/gh.ts` | git/gh side effects (`GitContext` + DOI PR / release asset / comment / issue), kept out of `zenodo.ts` so the deposit logic stays network-free under test. |
 | `templates/typst/` | the engine's generic typst template (seeded from lapreprint-typst; used by path for offline PDF — design dec. 2). |
@@ -51,9 +52,11 @@ npm run bundle          # esbuild → dist/cli.cjs (CJS, ~12MB — [R51])
 npm run build:fixture    # builds the fixture paper via the in-engine typst template, OFFLINE
 ```
 
-`oak build` auto-detects `templates/typst` (no release zip needed); `--typst-template
-<path>` overrides it, `--no-site-template` uses myst's default theme until the fork
-release exists. The two-pass ([R52]): write `extends:` → `loadConfig` → write the
+`oak build` falls back to `templates/typst` in the checkout (no release zip needed) — the
+**bottom** of the template precedence chain ([R79]): `--typst-template <path>` (explicit) ›
+the author's own `exports[].template` › the journal's `typst_template:` in `journal.yml` ›
+this engine default. `--no-site-template` uses myst's default theme until the fork release
+exists. The two-pass ([R52]): write `extends:` → `loadConfig` → write the
 complete engine typst entry + theme → `build`. **Both writes go to the DERIVED config
 `myst.oak.yml` ([R71])** — the author's `myst.yml` is an input and is never modified.
 myst is pointed at the derived file via `new Session({ configFiles })`; it is gitignored
@@ -72,9 +75,9 @@ workflow) — so `main` stays clean (no pull-after-push), local == CI is byte-id
 (same committed object), and the bundle *replays* on the canonical home move (it's a git
 object, unlike Release assets). A branch/unreleased pin fails loud in the shim (above).
 Testing the pipeline = cut a `vX.Y.Z-dev.N` pre-release (accumulate + prune). Rationale +
-rejected options: `release-delivery-decision.md`.
+rejected options: `RELEASING.md`.
 
-The pinned **typst** binary rides the same tag leaf ([R34]; see `../implementation.md` [R66]):
+The pinned **typst** binary rides the same tag leaf ([R34]/[R66]):
 `cut-engine-release.sh` fetches the linux-x86_64 musl build at the version in `typst.version`,
 renders the canary with it, and commits `bin/typst` alongside `dist/cli.cjs` (`bin/` gitignored
 on `main`). `ci/run.sh` puts `$engine/bin/typst` on PATH, so a checked-out tag renders the PDF
@@ -105,26 +108,31 @@ re-renderable on linux-x86_64 + node with nothing fetched. Locally, keep `typst`
    `--exports-only` since HTML needs a network theme zip ([R60]).
 6. **Instance brand needs a resolvable favicon + absolute asset paths** ([R61]/[R62], live run) —
    a missing site favicon is a *fatal* prerender error; relative `./logo.svg` doesn't resolve
-   through `extends` (resolved vs the paper, not the brand dir). Interim fixture uses URLs; the
-   owed fix is `compose()` absolutizing instance-relative paths (typst watermark needs real paths).
+   through `extends` (resolved vs the paper, not the brand dir). **Fixed** ([R68]): `compose()`
+   absolutizes instance-relative brand assets, and `oak validate` warns on an absent/unresolvable
+   favicon or watermark. (A URL is fine for HTML but not typst, which cannot fetch.)
 
 ## Next
 
-- **✅ Live [R18] validation — DONE (2026-07-12).** The frozen shim + release delivery ([R57])
-  ran on a real runner; both composite-action spikes confirmed, Pages deploy green ([R58]–[R64]).
-  Bugs found+fixed en route: `ci/run.sh` exec bit ([R64a]) + the site-pointer bug ([R59]).
-- **✅ Slice 3 — `zenodo.ts` — DONE (2026-07-12).** Port of zenodo-deposit.py: paginated lookups
-  [R20]/[R35], `deposit/` folder [R28], id-first identity [R7], tenant bytes → journal.yml [R19],
-  version-agnostic prepare (the tag carries the version, at publish). `oak deposit`/`release`
-  unstubbed. **Verified live against the Zenodo sandbox:** prepare→draft, publish→PDF + all bundle
-  files + metadata parity, and id-first reuse across a simulated repo move (the [R7] guarantee).
-- **Frontier now:** `deploy-preview`/`notify` (slice 2-shim) still stubbed; `validate` (slice 4)
-  implemented, its CI workflow wiring deferred.
-  Slice-3 loose ends: geetha's sentinel `id` still unfixed ([R12], blocks id-first in prod); the
-  gh side effects (DOI PR / release asset / issue) are wired but only exercised in CI; pagination
-  is unit-tested only (the sandbox account has <100 depositions).
-- **Deferred here:** `--no-site-template` uses myst's default theme (network); a pinned
-  local/cached theme + the cover-page/summary typst feature port are follow-ups.
+Every slice (0–5) is built and live-proven: the shim on a real runner ([R18]/[R58]–[R64]), the
+Zenodo deposit chain against the sandbox ([R65]/[R67]), preview + notify on real
+Cloudflare/GitHub ([R69]/[R70]), typst + `engine.zip` delivery ([R66]), and `oak conformance`
+certifying all four paper-CI trigger classes on every release cut ([R78]).
+
+The frontier is rollout and deferred decisions, not verbs:
+
+- **The real rollout** — stand up the public instance (`oak bootstrap journal --external`) and
+  migrate-vs-archive the 12 real 2026 papers, including a codemod stripping the boilerplate venue
+  `template:` URLs those papers carry ([R79]).
+- **npm packaging** ([R73]) — `typstTemplateUrl()` still points at a `typst-template.zip` no
+  release cuts; an npm-installed `oak` has no `templates/typst`, so either cut the zip or ship the
+  template in the tarball. Remote templates being first-class ([R79]) makes cutting it coherent.
+- **Layer-B sees the author's config, not the composed one** ([R71]) — arguably wrong, since the
+  composed config is what gets published; deliberately not changed on a refactor because it can
+  flip a merge verdict.
+- **Deferred:** the untested token-exfil / ref-trust path ([R41]); C5, the conformance
+  promotion gate ([R78]); a pinned local/cached theme (today `--no-site-template` falls back to
+  myst's default, which needs the network) and the cover-page/summary typst feature port.
 
 ## Editorial checks (Layer B)
 
