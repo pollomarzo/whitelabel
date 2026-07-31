@@ -8,6 +8,8 @@ import {
   type FsProbes,
   checkLayerDisjointness,
   declaredKeys,
+  isFloatingTemplate,
+  checkTemplates,
 } from '../src/validate.js';
 import type { MystEdge } from '../src/build.js';
 
@@ -82,6 +84,92 @@ describe('checkBrandWatermark ([R62])', () => {
   });
   it('warns when no watermark is declared', () => {
     expect(checkBrandWatermark({ instanceRoot: '/i' }, allTrue).ok).toBe(false);
+  });
+});
+
+describe('isFloatingTemplate ([R76] — the [R5] hygiene lint, not a remoteness lint)', () => {
+  it('treats pinned remote references as fine', () => {
+    expect(isFloatingTemplate('https://github.com/o/r/releases/download/v1.2.3/t.zip')).toBe(false);
+    expect(isFloatingTemplate('https://github.com/o/r/archive/refs/tags/v1.2.3.zip')).toBe(false);
+    expect(isFloatingTemplate('https://github.com/o/r.git#v1.2.3')).toBe(false);
+    expect(isFloatingTemplate('https://github.com/o/r.git#a1b2c3d4e5f6')).toBe(false);
+  });
+
+  it('flags branch-shaped references', () => {
+    expect(isFloatingTemplate('https://github.com/o/isp-lapreprint-typst.git')).toBe(true);
+    expect(isFloatingTemplate('https://github.com/o/r/archive/refs/heads/main.zip')).toBe(true);
+    expect(isFloatingTemplate('https://github.com/o/r/archive/main.zip')).toBe(true);
+    expect(isFloatingTemplate('https://github.com/o/r.git#my-branch')).toBe(true);
+  });
+
+  it('treats local paths as bytes, not pointers', () => {
+    expect(isFloatingTemplate('./typst-template')).toBe(false);
+    expect(isFloatingTemplate('../shared/typst')).toBe(false);
+    expect(isFloatingTemplate('/srv/typst-template')).toBe(false);
+  });
+
+  it('treats a by-name reference as floating (design §7)', () => {
+    expect(isFloatingTemplate('lapreprint-typst')).toBe(true);
+  });
+
+  it('stays quiet on an unrecognized remote URL rather than nagging about a pin it cannot see', () => {
+    expect(isFloatingTemplate('https://example.org/templates/mine-v1.zip')).toBe(false);
+  });
+});
+
+describe('checkTemplates ([R76])', () => {
+  const ids = (f: ReturnType<typeof checkTemplates>) => f.map((x) => x.check);
+
+  it('flags an author template that overrides the journal’s — as a WARN, never an error', () => {
+    const f = checkTemplates(
+      { instanceRoot: '/i', authorTemplate: './mine', tenantTemplate: './journal' },
+      allFalse,
+    );
+    const override = f.find((x) => x.check === 'template-override')!;
+    expect(override.severity).toBe('warn');
+    expect(override.message).toMatch(/overriding the journal's/);
+  });
+
+  it('says nothing when the author declares one and the journal does not', () => {
+    expect(ids(checkTemplates({ instanceRoot: '/i', authorTemplate: './mine' }, allFalse)))
+      .not.toContain('template-override');
+  });
+
+  it('warns on a floating template in EITHER layer (symmetric)', () => {
+    const author = checkTemplates(
+      { instanceRoot: '/i', authorTemplate: 'https://github.com/o/r.git' },
+      allFalse,
+    );
+    expect(author.find((x) => x.check === 'template-floating')!.message).toMatch(/author/);
+    const journal = checkTemplates(
+      { instanceRoot: '/i', tenantTemplate: 'https://github.com/o/r.git' },
+      allFalse,
+    );
+    expect(journal.find((x) => x.check === 'template-floating')!.message).toMatch(/journal/);
+  });
+
+  it('fires both findings at once on a floating author override (different concerns)', () => {
+    const f = checkTemplates(
+      {
+        instanceRoot: '/i',
+        authorTemplate: 'https://github.com/o/r.git',
+        tenantTemplate: './journal',
+      },
+      allFalse,
+    );
+    expect(ids(f)).toEqual(expect.arrayContaining(['template-override', 'template-floating']));
+    expect(f.every((x) => x.severity === 'warn')).toBe(true);
+  });
+
+  it('warns when a bare tenant value shadows a real instance-config directory', () => {
+    const f = checkTemplates({ instanceRoot: '/i', tenantTemplate: 'typst-template' }, allTrue);
+    const amb = f.find((x) => x.check === 'template-name-ambiguous')!;
+    expect(amb.message).toMatch(/write "\.\/typst-template"/);
+  });
+
+  it('does not warn about ambiguity when the value is explicitly ./-relative', () => {
+    const f = checkTemplates({ instanceRoot: '/i', tenantTemplate: './typst-template' }, allTrue);
+    expect(ids(f)).not.toContain('template-name-ambiguous');
   });
 });
 

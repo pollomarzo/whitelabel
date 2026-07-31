@@ -24,6 +24,7 @@ import {
   applyOwnOverride,
   readEngineCoordinateRaw,
   readBrandAssetOptions,
+  readTenantTypstTemplate,
   DERIVED_CONFIG_FILE,
 } from './yaml-io.js';
 
@@ -140,6 +141,9 @@ export async function runBuild(input: RunBuildInput): Promise<RunBuildResult> {
   // so compose absolutizes only brand-declared assets against `<instanceRoot>/brand`.
   const brandAssets = instanceRoot ? readBrandAssetOptions(instanceRoot) : undefined;
 
+  // The tenant's own typst template ([R76]) — same raw-lift discipline, from journal.yml.
+  const tenantTypstTemplate = instanceRoot ? readTenantTypstTemplate(instanceRoot) : undefined;
+
   // --- compose over the resolved config (runs the R36 cross-check) -------------------
   const result = compose({
     paperRoot,
@@ -153,6 +157,7 @@ export async function runBuild(input: RunBuildInput): Promise<RunBuildResult> {
     buildKind,
     assetOverrides,
     brandAssets,
+    tenantTypstTemplate,
   });
 
   // --- Pass 2: apply the engine override to the derived config, then build ----------

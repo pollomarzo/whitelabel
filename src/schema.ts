@@ -110,6 +110,11 @@ export const JournalConfig = z
     id_sentinel: z.string().optional(),
     /** Anchored regex a paper `id:` must match (SciPy-style id-pattern, [R7]). */
     id_pattern: z.string().optional(),
+    /** The journal's own typst template ([R76]) — `name | path | URL`, where only a
+     *  `./`/`../` value is a path relative to the instance-config root. Sits between the
+     *  author's own `exports[].template` (which outranks it, with a warning) and the
+     *  engine's default. Absent → the engine's template, as before. */
+    typst_template: z.string().optional(),
     preview: PreviewConfig.prefault({}),
     zenodo: ZenodoConfig.prefault({}),
     /** Journal-selected editorial checks run by `oak validate` (slice 4 Layer B). */

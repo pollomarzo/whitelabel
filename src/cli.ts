@@ -74,16 +74,19 @@ async function buildPaper(argv: string[]): Promise<{ paperRoot: string; resolved
   const baseUrl = flag(argv, 'base-url') ?? '';
   const engineRepo = flag(argv, 'engine-repo') ?? readEngineRepo(paperRoot);
 
-  // Dev/CI-from-checkout asset resolution: a local typst template in the engine checkout
-  // beats the (not-yet-existent) release zip; `--no-site-template` uses myst's default
-  // theme until the fork release exists (compose siteTemplate: null).
+  // Dev/CI-from-checkout asset resolution. `--typst-template` is the EXPLICIT override and
+  // tops compose's precedence chain; the engine checkout's local `templates/typst` is the
+  // BOTTOM fallback ([R76]) — it beats the (not-yet-existent) release zip but yields to a
+  // tenant's or an author's template, which is the whole point of the chain. (It used to be
+  // forced into the same slot as the explicit flag, i.e. first, which made both overrides
+  // unreachable.) `--no-site-template` uses myst's default theme until the fork release
+  // exists (compose siteTemplate: null).
   const localTypst = join(engineRoot(), 'templates', 'typst');
   const assetOverrides = {
     ...(flag(argv, 'typst-template')
       ? { typstTemplate: resolve(flag(argv, 'typst-template')!) }
-      : existsSync(localTypst)
-        ? { typstTemplate: localTypst }
-        : {}),
+      : {}),
+    ...(existsSync(localTypst) ? { engineTypstTemplate: localTypst } : {}),
     ...(has(argv, 'no-site-template') ? { siteTemplate: null as string | null } : {}),
   };
 
