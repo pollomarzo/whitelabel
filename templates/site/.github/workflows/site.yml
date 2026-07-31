@@ -32,6 +32,13 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '22'
+      # Resolves where Pages actually serves this repo. `base_path` is `/<repo>` for a project
+      # site and EMPTY for a user/org site or a custom domain — which is exactly MyST's
+      # BASE_URL contract. Without it MyST emits root-absolute asset URLs (`/build/…`) and
+      # every image, stylesheet and script 404s on the subpath this tier deploys to. Asking
+      # GitHub rather than hardcoding `/<repo>` is what keeps the vanity-URL routes working.
+      - id: pages
+        uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5.0.0
       # Installs BOTH MyST and the gallery plugin's own dependency (js-yaml), which are
       # pinned together in package.json — the one place this site's versions live.
       #
@@ -44,6 +51,8 @@ jobs:
       # QUIETLY: the page would deploy with `paper-cards` as an unknown directive — no
       # gallery at all — over a perfectly good previous deploy. Only `--strict` catches that.
       - run: npx myst build --html --strict
+        env:
+          BASE_URL: ${{ steps.pages.outputs.base_path }}
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: _build/html

@@ -131,6 +131,10 @@ describe('renderSiteTemplate', () => {
     expect(wf).toContain('npm install');
     // --strict is the ONLY thing that catches a remote plugin that failed to load.
     expect(wf).toContain('--strict');
+    // BASE_URL from configure-pages: this tier deploys to `<owner>.github.io/<repo>/`, and
+    // without it MyST emits root-absolute asset URLs so every image/CSS/JS 404s (found live).
+    expect(wf).toContain('configure-pages');
+    expect(wf).toContain('BASE_URL: ${{ steps.pages.outputs.base_path }}');
 
     expect(readFileSync(join(dest, '.gitignore'), 'utf8')).toBe(
       readFileSync(join(SITE_ROOT, '.gitignore'), 'utf8'),
