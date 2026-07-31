@@ -1,8 +1,9 @@
 {
   "name": "journal-site",
   "private": true,
-  "description": "Runtime dependencies of the journal site's MyST plugins. MyST itself is run via npx from .github/workflows/site.yml.",
+  "description": "The journal site's build toolchain and plugin dependencies. MyST is pinned HERE, not in the workflow, so this file is the one place site versions live.",
   "dependencies": {
-    "js-yaml": "^4.1.0"
+    "js-yaml": "^4.1.0",
+    "mystmd": "{{myst_version}}"
   }
 }

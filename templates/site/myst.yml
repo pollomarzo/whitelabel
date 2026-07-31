@@ -8,7 +8,8 @@ version: 1
 # THREE PINS live in this repo, all stamped once at bootstrap and all bumped by hand:
 #   1. the gallery plugin URL below (the engine tag),
 #   2. `site.template` below (the theme release this engine version pins),
-#   3. `mystmd@…` in .github/workflows/site.yml.
+#   3. `mystmd` in package.json — beside `js-yaml`, which the gallery plugin imports.
+#      Both live there so this site has ONE dependency list; the workflow just installs it.
 
 extends:
   # Your journal's brand, right here in this repo. A LOCAL path: no network, no cache

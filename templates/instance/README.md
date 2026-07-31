@@ -33,10 +33,15 @@ all three by hand:
 |---|---|---|
 | gallery plugin URL | `myst.yml` `project.plugins` | you want a newer engine's gallery |
 | `site.template` (theme zip) | `myst.yml` `site.template` | same — it is the theme that engine version pins |
-| `mystmd@…` | `.github/workflows/site.yml` | you want a newer MyST |
+| `mystmd` | `package.json` | you want a newer MyST |
 
 The plugin URL is remote because it is *code*; the brand is a **local** `./brand/brand.yml`
 extends, so the site needs no network to know what your journal looks like.
+
+`package.json` also declares `js-yaml`, which the gallery plugin imports — and the
+workflow's `npm install` is **not optional**: MyST downloads a remote plugin into
+`_build/cache/` and imports it from there, so the plugin's dependencies must resolve from
+this repo's own `node_modules`. If you add an import to a plugin, add it here too.
 
 **The gallery.** `pages/index.md` carries `:::{paper-cards}` with no options, which lists
 every registered paper in registry file order. When you grow a second edition, add

@@ -58,7 +58,7 @@ const RENDER_PINS = posix.join('.github', 'actions', 'engine', 'pins.yml');
 const RENDER_CODEOWNERS = 'CODEOWNERS';
 const RENDER_MYST = 'myst.yml';
 const RENDER_SITE_INDEX = posix.join('pages', 'index.md');
-const RENDER_SITE_WORKFLOW = posix.join('.github', 'workflows', 'site.yml');
+const RENDER_SITE_PKG = 'package.json';
 /** Top-level template entries that are engine-side docs, never stamped into a tenant repo.
  *  Applies to both templates (each ships its own README). Not a role-partition list — the
  *  paper/instance split is now structural (separate source trees), so this is only the
@@ -222,7 +222,12 @@ export function siteUrlFor(repo: string): string {
  *   2. `site.template` from `themeZipUrl()` — rendered FROM the constant, not duplicated,
  *      so there is nothing for a drift test to catch,
  *   3. the journal name (myst.yml `project.title` + the `pages/index.md` heading),
- *   4. the `myst-cli` range in the workflow.
+ *   4. the `myst-cli` range, into the scaffold's `package.json` — where `js-yaml` is pinned
+ *      too, so the site has ONE dependency list. The workflow just runs `npm install` +
+ *      `npx myst`, and is byte-copied. (An earlier shape pinned MyST via `npx -y mystmd@…`
+ *      in the workflow, which meant two pinning mechanisms and two installs for one site;
+ *      `npx -y` was already fetching MyST on every run, so consolidating removed an install
+ *      rather than adding one.)
  *
  * No `project.id` (myst doesn't require one, and the engine's id machinery is paper-only),
  * no edition rename, no file-path rewriting.
@@ -246,8 +251,8 @@ export function renderSiteTemplate(
       );
       doc.setIn(['site', 'template'], themeZipUrl());
       writeRel(destRoot, rel, doc.toString());
-    } else if (rel === RENDER_SITE_INDEX || rel === RENDER_SITE_WORKFLOW) {
-      // Markdown and a GitHub workflow: substituted textually, because reformatting either
+    } else if (rel === RENDER_SITE_INDEX || rel === RENDER_SITE_PKG) {
+      // Markdown and package.json: substituted textually, because reformatting either
       // through a structured writer would be a worse trade than a literal token swap.
       const src = readFileSync(join(siteRoot, rel), 'utf8');
       writeRel(
@@ -669,8 +674,10 @@ export interface BootstrapJournalInput {
   requireChecks: boolean; // add "Journal checks" to protect-main required checks (default true)
   /** `--external` only: also stamp the journal site + enable Pages. Default true;
    *  `--no-site` opts out for a tenant who wants a config repo with no website (the
-   *  design keeps the site optional, §2). Ignored for `--co-located`: repo=journal's
-   *  index is the deferred `assemble()` work ([S7]), so that tier gets no site. */
+   *  design keeps the site optional, §2). Passing `site: false` with `--co-located` is a
+   *  usage ERROR, not a no-op: that tier never gets a site (repo=journal's index is the
+   *  deferred `assemble()` work, [S7]), so a flag that reads as "turn the site off" would
+   *  be silently meaningless — and silently meaningless flags teach the wrong model. */
   site?: boolean;
   secrets: SecretInputs;
 }
@@ -679,6 +686,18 @@ export async function cmdBootstrapJournal(input: BootstrapJournalInput, deps: Bo
   const { prov, log } = deps;
   const { repo } = input;
   const external = input.tier === 'external';
+  if (!external && input.site === false) {
+    return {
+      exitCode: 2,
+      result: {
+        status: 'error',
+        repo,
+        error:
+          '--no-site is only meaningful with --external: the co-located tier never stamps a ' +
+          'journal site (an index over many papers in one repo is separate, unbuilt work).',
+      },
+    };
+  }
   const withSite = external && input.site !== false;
   const owner = resolveOwner(input, prov);
 

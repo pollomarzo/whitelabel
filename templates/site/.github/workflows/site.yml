@@ -32,16 +32,18 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '22'
-      # The gallery plugin imports js-yaml. MyST downloads a remote plugin into
-      # `_build/cache/` and imports it FROM THERE, so its dependencies must resolve from
-      # this repo's own node_modules — the `npx` install of mystmd below is not on that
-      # resolution path. Hence package.json + this step.
+      # Installs BOTH MyST and the gallery plugin's own dependency (js-yaml), which are
+      # pinned together in package.json — the one place this site's versions live.
+      #
+      # The install is not optional: MyST downloads a remote plugin into `_build/cache/`
+      # and imports it FROM THERE, so the plugin's bare imports resolve upward from this
+      # repo's node_modules. A package fetched by `npx` lands outside that resolution path.
       - run: npm install --no-audit --no-fund
       # `--strict` is LOAD-BEARING, not hygiene. Without it `myst build` logs errors and
       # exits 0 (`cli/options.ts:98-102`), and a remote plugin that fails to load degrades
       # QUIETLY: the page would deploy with `paper-cards` as an unknown directive — no
       # gallery at all — over a perfectly good previous deploy. Only `--strict` catches that.
-      - run: npx -y mystmd@{{myst_version}} build --html --strict
+      - run: npx myst build --html --strict
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: _build/html

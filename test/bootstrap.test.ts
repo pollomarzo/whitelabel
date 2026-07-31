@@ -113,8 +113,22 @@ describe('renderSiteTemplate', () => {
     expect(index).toContain('# Test Journal');
     expect(index).not.toContain('{{');
 
+    // ONE dependency list: MyST is pinned in package.json beside the plugin's js-yaml, so
+    // the workflow needs no version of its own and is byte-copied.
+    const pkg = JSON.parse(readFileSync(join(dest, 'package.json'), 'utf8')) as {
+      dependencies: Record<string, string>;
+    };
+    expect(pkg.dependencies['mystmd']).toBe(MYST_RANGE);
+    expect(pkg.dependencies['js-yaml']).toBeTruthy(); // resolvable from THIS repo's node_modules
+
+    // Byte-copied — no `{{token}}` of ours survives because there are none left to render.
+    // (It DOES contain `${{ … }}`: those are GitHub Actions expressions, not our tokens.)
     const wf = readFileSync(join(dest, '.github/workflows/site.yml'), 'utf8');
-    expect(wf).toContain(`mystmd@${MYST_RANGE}`);
+    expect(wf).toBe(readFileSync(join(SITE_ROOT, '.github/workflows/site.yml'), 'utf8'));
+    expect(wf).not.toContain('mystmd@');
+    // The install is not optional: a remote plugin is imported from _build/cache/, so its
+    // bare imports resolve against this repo's node_modules.
+    expect(wf).toContain('npm install');
     // --strict is the ONLY thing that catches a remote plugin that failed to load.
     expect(wf).toContain('--strict');
 
@@ -122,7 +136,6 @@ describe('renderSiteTemplate', () => {
       readFileSync(join(SITE_ROOT, '.gitignore'), 'utf8'),
     );
     expect(existsSync(join(dest, 'README.md'))).toBe(false); // one repo, one README
-    expect(written).toContain('package.json'); // the plugin's js-yaml, resolvable from the repo
   });
 
   it('the stamped plugin URL is pinned to the engine TAG, not a branch', () => {
@@ -425,5 +438,18 @@ describe('cmdBootstrapJournal', () => {
     expect(existsSync(join(seed, 'package.json'))).toBe(false);
     const myst = parseDocument(readFileSync(join(seed, 'myst.yml'), 'utf8'));
     expect(myst.getIn(['project', 'options', 'oaktree-sapling', 'version'])).toBe('v9'); // the PAPER starter
+  });
+
+  it('--co-located --no-site is a usage ERROR, not a silent no-op', async () => {
+    const { prov } = fakeProv();
+    const out = await cmdBootstrapJournal(
+      { repo: 'me/journal', tier: 'co-located', site: false, name: 'J', edition: 'ed', engineVersion: 'v9', engineRepo: 'me/engine', authedUser: 'alice', requireChecks: true, secrets: {} },
+      journalDeps(prov, []),
+    );
+    // The tier never stamps a site, so a flag reading "turn the site off" must not look
+    // like it did something. Fail with the reason instead.
+    expect(out.exitCode).toBe(2);
+    expect(out.result.status).toBe('error');
+    expect(String(out.result.error)).toContain('--external');
   });
 });
