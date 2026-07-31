@@ -78,8 +78,8 @@ export function siteTemplateRoot(engineRoot: string): string {
 }
 
 /**
- * The engine's own `myst-cli` range, copied VERBATIM into the site workflow's
- * `npx -y mystmd@<range>` ([R80]). No parsing, no normalizing: the site should render with
+ * The engine's own `myst-cli` range, copied VERBATIM into the site scaffold's
+ * `package.json` as its `mystmd` dependency ([R80]). No parsing, no normalizing: the site should render with
  * roughly the myst the engine bundles, so the gallery plugin and the theme behave the same
  * in both builds. This is hygiene, not correctness — the site is not the reproducibility
  * anchor (the Zenodo deposit is, design §7), so a caret range is enough and a
@@ -797,7 +797,7 @@ export async function cmdBootstrapJournal(input: BootstrapJournalInput, deps: Bo
     `The journal site builds from this repo and serves at ${siteUrl} once the first ` +
       '"Journal site" workflow run finishes. It is YOURS from here — not frozen, not ' +
       'touched by `oak upgrade`. Three pins to bump by hand: the gallery plugin URL and ' +
-      '`site.template` in myst.yml, and `mystmd@…` in .github/workflows/site.yml.',
+      '`site.template` in myst.yml, and `mystmd` in package.json.',
     'A failed site build leaves the PREVIOUS deploy serving, so a broken registry entry ' +
       'never takes the journal down — fix the entry and push again.',
   );

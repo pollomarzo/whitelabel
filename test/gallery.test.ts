@@ -111,12 +111,16 @@ describe('cardFrom', () => {
     expect(card.children[2].children[0].value).toBe('neuro | imaging');
   });
 
-  it('renders the DOI — the one display field the registry actually owns', () => {
+  it('renders the DOI as TEXT, never a link (a DOI link becomes a citation)', () => {
     const card = cardFrom(entry({ doi: '10.5281/zenodo.123' }), config());
     expect(kinds(card)).toContain('footer');
-    const link = card.children.at(-1).children[0].children[0];
-    expect(link.url).toBe('https://doi.org/10.5281/zenodo.123');
-    expect(link.children[0].value).toBe('10.5281/zenodo.123');
+    const node = card.children.at(-1).children[0].children[0];
+    expect(node.type).toBe('text');
+    expect(node.value).toBe('DOI: 10.5281/zenodo.123');
+    // Regression guard for the first live run: myst turns any link whose url is a DOI into a
+    // `cite` (dois.ts:239-242), which renders a citation label + a bibliography on the card
+    // and costs a rate-limited doi.org fetch per paper — one bad DOI reddens the journal.
+    expect(JSON.stringify(card)).not.toContain('doi.org');
   });
 
   it('omits keywords and DOI when there are none', () => {

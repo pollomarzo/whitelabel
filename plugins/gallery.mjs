@@ -111,11 +111,6 @@ export function paperUrls(entry) {
   };
 }
 
-/** A DOI as a resolver link, whether the registry stores a bare DOI or a full URL. */
-function doiUrl(doi) {
-  return /^https?:\/\//.test(doi) ? doi : `https://doi.org/${doi}`;
-}
-
 /**
  * One card node, PURE: (registry entry, that paper's fetched myst config) → mdast. Title and
  * keywords come from the paper (the registry stays a thin pointer list, [S4]); the DOI comes
@@ -134,16 +129,18 @@ export function cardFrom(entry, config) {
   if (keywords.length > 0) {
     children.push({ type: 'paragraph', children: [{ type: 'text', value: keywords.join(' | ') }] });
   }
+  // The DOI is TEXT, deliberately not a link. myst converts any `link` whose url is a DOI
+  // into a `cite` node (`myst-cli/transforms/dois.ts:239-242`, no per-node opt-out), which
+  // on a gallery card is wrong twice over: the card would render a citation label plus a
+  // stray bibliography instead of the identifier, and each card would cost a doi.org
+  // metadata fetch per build — rate-limited upstream, and one unreachable DOI fails the
+  // whole journal under `--strict`. Found on the first live run, with a sandbox DOI.
+  // The card itself already links to the paper, whose own page carries a real DOI link.
   if (entry.doi) {
     children.push({
       type: 'footer',
       children: [
-        {
-          type: 'paragraph',
-          children: [
-            { type: 'link', url: doiUrl(entry.doi), children: [{ type: 'text', value: entry.doi }] },
-          ],
-        },
+        { type: 'paragraph', children: [{ type: 'text', value: `DOI: ${entry.doi}` }] },
       ],
     });
   }
