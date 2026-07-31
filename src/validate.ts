@@ -3,8 +3,8 @@
  *
  * Two layers:
  *   A. Engine pre-flight INVARIANTS (pure): id sentinel/pattern/uniqueness ([R12]), the
- *      canonical layout ([R46]/[R50]), and brand favicon/watermark resolvability
- *      ([R61]/[R62]). These are the engine's own contract — not tenant-editorial — and also
+ *      canonical layout ([R46]/[R50]), brand favicon/watermark resolvability
+ *      ([R61]/[R62]) and the paper's thumbnail ([R81]). These are the engine's own contract — not tenant-editorial — and also
  *      run as the mandatory first phase of `oak build` (fail fast, [R21]).
  *   B. Journal-CONFIGURED editorial checks (checks.ts), selected by `journal.yml` `checks:`.
  *
@@ -144,6 +144,43 @@ export function checkBrandWatermark(
   return probes.existsProbe(resolved)
     ? { ok: true }
     : { ok: false, severity: 'warn', message: `brand typst watermark "${logo}" does not resolve to a file` };
+}
+
+/**
+ * Warn on a `project.thumbnail` that names a file which isn't there.
+ *
+ * Pinning `thumbnail:` — which `paper-base.yml` does, so the gallery knows where to look —
+ * DISABLES myst's own fallback: `transformThumbnail` only searches the mdast for a first
+ * content image when the value is *unset* (`transforms/images.ts:543-556`). So a broken path
+ * is worse than no path: `saveImageInStaticFolder` returns null and the paper ships with **no
+ * thumbnail at all**, silently, and its gallery card renders blank.
+ *
+ * A plain existence probe against the paper root is the right test. `thumbnail` is NOT rebased
+ * by `resolveProjectConfigPaths` (`config.ts:389-430` rebases `bibliography`, `index` and
+ * `plugins` only), and myst resolves it against the SOURCE FILE (`getSourceFolder`,
+ * `links.ts:92`) — i.e. `<paperRoot>/index.md`'s folder — not against the extends layer that
+ * declared it. No absolutizing, unlike brand assets ([R62]/[R68]) or `exports[].template` ([R74]).
+ *
+ * Absent → nothing to check: myst's first-image fallback is live again, which is a working
+ * thumbnail, not a missing one. A URL passes — myst downloads it for the HTML build ([R80]).
+ */
+export function checkThumbnail(
+  input: { paperRoot: string; thumbnail?: string },
+  probes: FsProbes,
+): IdCheckResult {
+  const { paperRoot, thumbnail } = input;
+  if (!thumbnail) return { ok: true };
+  if (isBrandAssetUrl(thumbnail)) return { ok: true };
+  return probes.existsProbe(join(paperRoot, thumbnail))
+    ? { ok: true }
+    : {
+        ok: false,
+        severity: 'warn',
+        message:
+          `thumbnail "${thumbnail}" does not resolve to a file under the paper root — the ` +
+          `paper will ship with NO thumbnail (a declared thumbnail disables myst's ` +
+          `first-image fallback) and its gallery card renders blank`,
+      };
 }
 
 /* ---- typst template hygiene ([R76]) -------------------------------------- */
@@ -350,7 +387,7 @@ export function runLayerA(
     instanceRoot: string | null;
     /** `exports` is read for the author's own typst `template:` ([R76]) — paper-base and
      *  editions never declare one, so a surviving value can only be the author's. */
-    project: { id?: string; exports?: Array<Record<string, unknown>> };
+    project: { id?: string; exports?: Array<Record<string, unknown>>; thumbnail?: string };
     repo: string | null;
     /** Engine checkout, for the [R72] extends-layer disjointness check. Omitted → skipped. */
     engineRoot?: string | null;
@@ -382,6 +419,13 @@ export function runLayerA(
   for (const r of checkLayout(paperRoot, probes)) {
     findings.push({ check: 'layout', severity: r.severity, message: r.message, klass: 'structural' });
   }
+
+  // A missing thumbnail is `structural` (it is the paper's own layout, not brand or identity)
+  // but only a WARN, so it never blocks the build — only `error` + `structural` does. A
+  // mid-draft paper that hasn't made one yet should still render; the thumbnail becomes
+  // mandatory at REGISTRATION, where a *registered* paper without one hard-fails the journal
+  // site build under `--strict` ([R80]) with an editor in the loop.
+  add('thumbnail', 'structural', checkThumbnail({ paperRoot, thumbnail: project.thumbnail }, probes));
 
   // [R72]: the three extends layers must own disjoint keys, or precedence is a race.
   if (engineRoot && instanceRoot && edition) {
@@ -445,6 +489,7 @@ export async function runValidate(
   const project = (await input.edge.loadProject(input.paperRoot)) as {
     id?: string;
     exports?: Array<Record<string, unknown>>;
+    thumbnail?: string;
   };
   const repo = opts.repo ?? null;
 

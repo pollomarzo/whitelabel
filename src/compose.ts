@@ -134,6 +134,10 @@ export interface ResolvedProject {
   title?: string;
   options?: Record<string, unknown>;
   exports?: Array<Record<string, unknown>>;
+  /** The gallery card's image. Pinned by `paper-base.yml`; validated (never rewritten) by
+   *  `oak validate` — myst resolves it against the paper's source file, not the config that
+   *  declared it, so no absolutizing is needed (unlike brand assets, [R62]). */
+  thumbnail?: string;
 }
 
 export interface ComposeInput {

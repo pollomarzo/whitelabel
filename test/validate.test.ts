@@ -4,6 +4,7 @@ import {
   checkLayout,
   checkBrandFavicon,
   checkBrandWatermark,
+  checkThumbnail,
   runValidate,
   type FsProbes,
   checkLayerDisjointness,
@@ -84,6 +85,33 @@ describe('checkBrandWatermark ([R62])', () => {
   });
   it('warns when no watermark is declared', () => {
     expect(checkBrandWatermark({ instanceRoot: '/i' }, allTrue).ok).toBe(false);
+  });
+});
+
+describe('checkThumbnail ([R81])', () => {
+  it('passes when no thumbnail is declared (myst\'s first-image fallback is live)', () => {
+    expect(checkThumbnail({ paperRoot: '/paper' }, allFalse).ok).toBe(true);
+  });
+  it('passes a URL thumbnail (myst downloads it for HTML)', () => {
+    expect(
+      checkThumbnail({ paperRoot: '/paper', thumbnail: 'https://x/t.png' }, allFalse).ok,
+    ).toBe(true);
+  });
+  it('warns a declared thumbnail that does not resolve', () => {
+    const r = checkThumbnail({ paperRoot: '/paper', thumbnail: 'thumbnails/thumbnail.png' }, allFalse);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.severity).toBe('warn');
+  });
+  it('passes a resolvable thumbnail, probed against the PAPER root (no rebasing)', () => {
+    const seen: string[] = [];
+    const probes: FsProbes = {
+      existsProbe: (p) => (seen.push(p), true),
+      listTree: () => [],
+    };
+    expect(
+      checkThumbnail({ paperRoot: '/paper', thumbnail: 'thumbnails/thumbnail.png' }, probes).ok,
+    ).toBe(true);
+    expect(seen).toContain('/paper/thumbnails/thumbnail.png');
   });
 });
 
