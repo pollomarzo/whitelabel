@@ -84,10 +84,25 @@ So a checked-out engine tag is immediately runnable *including the PDF export*. 
 linux-x86_64 + node with nothing fetched.
 
 The rule for what earns a place at the tag leaf: things that are reproducibility-critical for the
-DOI'd artifact **and** not controlled by us — today exactly `bin/typst`. A typst bump = edit
-`typst.version` + cut a release, riding the single `options.oaktree-sapling.version` review gate.
+DOI'd artifact **and** not controlled by us — today exactly `bin/typst`. Our own assets
+(`book-theme.zip`, `typst-template.zip`) stay fetched-at-build. A typst bump = edit `typst.version`
++ cut a release, riding the single `options.oaktree-sapling.version` review gate.
 
-Full rationale, the five constraints this satisfies, and every rejected alternative (built refs,
-LFS, rolling assets, download-at-checkout, commit-to-`main`): `../implementation.md` **[R57]** and
-**[R66]**. The mechanics live in `scripts/cut-engine-release.sh` (header comment explains each
-step) and `.github/workflows/cut-engine-release.yml` — one path, runnable locally and by CI.
+**Why commit-at-tag rather than the obvious alternatives.** Three reasons, in order: the shim
+installs nothing, so the bundle must already be *in* the checkout; local and CI then consume the
+same committed object, making them byte-identical by git identity rather than by hoping esbuild is
+reproducible; and `bin/typst` inside `engine.zip` is what a DOI'd artifact needs to re-render.
+Rejected, so they don't get re-proposed: committing the bundle to `main` per-commit (bloats the
+browsed history with a build artifact); having CI commit it back (forces a `git pull` after every
+push); force-pushed `*-built` refs (standing infra for a rare need); rolling Release *assets* with
+download-at-checkout (puts the network back on the CI hot path, and assets don't survive a repo
+move the way a committed git object does); Git LFS (a dependency in every consumer).
+
+The accepted cost is that a floating branch is **not** runnable in CI — an unreleased pin fails
+loud in the shim. That is deliberate, and it also removes most of the ref-trust surface, since only
+tags ever run.
+
+Mechanics: `scripts/cut-engine-release.sh` (its header comment explains each step) and
+`.github/workflows/cut-engine-release.yml` — one path, runnable locally and by CI. The design
+ledger records this as **[R57]** (delivery) and **[R66]** (typst + deposit self-containment); those
+tags are the cross-reference if you have the ledger to hand — this file does not depend on it.
