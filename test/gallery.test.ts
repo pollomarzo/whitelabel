@@ -189,3 +189,13 @@ describe('loadRegistry', () => {
     expect(() => loadRegistry(file)).toThrow(/must be a LIST/);
   });
 });
+
+describe('the plugin name is load-bearing', () => {
+  it('is exactly what the site workflow greps for', async () => {
+    // The site workflow asserts `Paper Gallery.*loaded` in the build log, because a plugin
+    // that fails to load does not fail `myst build --strict` (verified on a live run, [R80]).
+    // Renaming the plugin silently disarms that guard, so pin the name here.
+    const plugin = (await import('../plugins/gallery.mjs')).default as { name: string };
+    expect(plugin.name).toBe('Paper Gallery');
+  });
+});

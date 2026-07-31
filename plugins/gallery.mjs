@@ -21,10 +21,13 @@
  * registry: it must be fixed, not papered over. A failed build is not an outage — Pages keeps
  * serving the last successful deploy, so the live journal stays exactly as it was until the
  * entry is corrected. Degrading would publish a visibly broken card to readers and bury the
- * signal in a log nobody reads. Note the division of labour: the `throw` below covers
- * PER-PAPER failures (it propagates and crashes the build regardless of flags), while
- * `--strict` in the site workflow covers "the plugin never loaded at all". Neither subsumes
- * the other, and both are required for the fail-loud policy to be real.
+ * signal in a log nobody reads. Note the division of labour, CORRECTED by a live run ([R80]):
+ * the `throw` below covers PER-PAPER failures (it propagates and crashes the build regardless
+ * of flags); `--strict` covers errors raised while building a page (a bad DOI, a missing
+ * image); and NEITHER covers "the plugin never loaded at all" — myst logs `Unknown plugin` +
+ * `unknown directive` and still exits 0, deploying a gallery-less page over a good one. That
+ * third case is caught in the site workflow by asserting this plugin's `name` appears in the
+ * build log, which is why the name below is load-bearing: do not rename it casually.
  *
  * The THUMBNAIL is deliberately not fetched here. This transform runs at `stage: 'document'`
  * (`process/mdast.ts:224`), i.e. BEFORE `transformImagesToDisk` (`:438`), so the remote URL

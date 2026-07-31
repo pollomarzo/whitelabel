@@ -135,6 +135,10 @@ describe('renderSiteTemplate', () => {
     // without it MyST emits root-absolute asset URLs so every image/CSS/JS 404s (found live).
     expect(wf).toContain('configure-pages');
     expect(wf).toContain('BASE_URL: ${{ steps.pages.outputs.base_path }}');
+    // A plugin that never loads does NOT fail --strict (verified live): myst logs
+    // "Unknown plugin" + "unknown directive" and exits 0. The workflow must therefore assert
+    // a POSITIVE signal — the plugin's own name in the build log.
+    expect(wf).toContain('Paper Gallery.*loaded');
 
     expect(readFileSync(join(dest, '.gitignore'), 'utf8')).toBe(
       readFileSync(join(SITE_ROOT, '.gitignore'), 'utf8'),
