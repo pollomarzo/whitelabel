@@ -387,9 +387,12 @@ async function cmdValidate(argv: string[]): Promise<number> {
         paperRoot,
         instanceRoot,
         edge: createMystEdge(),
-        // [R72] disjointness needs the engine layer + which edition file to compare.
+        // [R72] disjointness needs the engine layer + which edition file to compare; the
+        // engine root + instance are ALSO what let validate compose ([R82]) — without both it
+        // degrades to the author's config and says so in the report.
         engineRoot: engineRoot(),
         edition: readEditionQuietly(paperRoot),
+        engineRepo: readEngineRepo(paperRoot),
       },
       { strict, repo, pathBase: process.env.GITHUB_WORKSPACE ?? paperRoot },
     );
@@ -402,6 +405,10 @@ async function cmdValidate(argv: string[]): Promise<number> {
     errors: out.errors,
     warnings: out.warnings,
     checks: out.checks,
+    // Only when there is something to say: a composed run is the normal case and stays quiet,
+    // an UNCOMPOSED one must announce itself ([R82]) — the report is the only place a reader
+    // learns that these findings came from the author's config rather than the composed one.
+    ...(out.notes.length ? { notes: out.notes } : {}),
     ...(has(argv, 'json') ? { checkRun: out.checkRun } : {}),
   });
 
@@ -413,7 +420,7 @@ async function cmdValidate(argv: string[]): Promise<number> {
     writeFileSync(
       resolve(reportPath),
       JSON.stringify(
-        { status: out.status, errors: out.errors, warnings: out.warnings, checks: out.checks, checkRun: out.checkRun },
+        { status: out.status, errors: out.errors, warnings: out.warnings, checks: out.checks, notes: out.notes, checkRun: out.checkRun },
         null,
         2,
       ),

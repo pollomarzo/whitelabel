@@ -105,6 +105,34 @@ export function readTenantTypstTemplate(instanceRoot: string): string | undefine
   return typeof value === 'string' && value ? value : undefined;
 }
 
+/** Raw read of the AUTHOR's own typst `template:` straight from `<paperRoot>/myst.yml` —
+ *  the paper's own layer of the [R76] precedence chain. Same raw-lift discipline as
+ *  {@link readBrandAssetOptions}/{@link readTenantTypstTemplate}, and required for the same
+ *  reason once `oak validate` reads the COMPOSED config ([R82]): the override detection rests
+ *  on "paper-base and editions never declare `template:`, so a surviving value can only be the
+ *  author's" ([R79]) — but compose STAMPS one onto the composed export, so on the composed view
+ *  every paper would look like an override. Provenance is the point, so it is lifted outside
+ *  the merge. Absent file/export/key, or a malformed config → undefined (that is another
+ *  check's finding, not this reader's). */
+export function readAuthorTypstTemplate(paperRoot: string): string | undefined {
+  const authorPath = join(paperRoot, 'myst.yml');
+  if (!existsSync(authorPath)) return undefined;
+  let config: unknown;
+  try {
+    config = parseDocument(readFileSync(authorPath, 'utf8')).toJS();
+  } catch {
+    return undefined;
+  }
+  const exports = (config as { project?: { exports?: unknown } } | null)?.project?.exports;
+  if (!Array.isArray(exports)) return undefined;
+  const typst = exports.find(
+    (e): e is Record<string, unknown> =>
+      !!e && typeof e === 'object' && (e['format'] === 'typst' || e['id'] === 'typst-pdf'),
+  );
+  const template = typst?.['template'];
+  return typeof template === 'string' && template ? template : undefined;
+}
+
 /** Pass 1: set the `extends:` chain (replaces any existing — the new-model committed
  *  paper carries none, but a migrating paper may still have URL pins we overwrite). */
 export function setExtends(doc: Document, chain: string[]): void {

@@ -1,7 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import { fileURLToPath } from 'node:url';
+import { mkdtempSync, writeFileSync, mkdirSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
   checkLayout,
+  runLayerA,
+  splitUnrunnableChecks,
   checkBrandFavicon,
   checkBrandWatermark,
   checkThumbnail,
@@ -12,6 +17,7 @@ import {
   isFloatingTemplate,
   checkTemplates,
 } from '../src/validate.js';
+import { CheckStatus } from '../src/checks.js';
 import type { MystEdge } from '../src/build.js';
 
 const instanceRoot = fileURLToPath(new URL('./fixture-instance', import.meta.url));
@@ -402,5 +408,82 @@ describe('checkLayerDisjointness — extends layers must own disjoint keys ([R72
     expect(checkLayerDisjointness([{ name: 'a', config: null }, { name: 'b', config: {} }])).toEqual([]);
     expect(declaredKeys(undefined)).toEqual([]);
     expect(declaredKeys({ project: 'not-an-object' })).toEqual([]);
+  });
+});
+
+describe('the author template is RAW-LIFTED, never read from the composed project ([R82])', () => {
+  // The regression this whole mechanism exists to prevent. Once validate reads the COMPOSED
+  // config, the typst export always carries a template — compose stamps `flag ?? author ??
+  // tenant ?? engine` — so digging `authorTemplate` out of `project.exports` would make EVERY
+  // paper look like it overrode the journal's template.
+  const composedProject = {
+    id: 'j-2026-x',
+    exports: [{ format: 'typst', id: 'typst-pdf', template: '/engine/templates/typst' }],
+  };
+  const tmpDir = (files: Record<string, string>): string => {
+    const dir = mkdtempSync(join(tmpdir(), 'oak-lift-'));
+    for (const [name, body] of Object.entries(files)) writeFileSync(join(dir, name), body);
+    return dir;
+  };
+  const tenantInstance = () => {
+    // `allTrue` probes claim every path exists, so the instance must really carry the files
+    // runLayerA reads (journal + registry) — otherwise the read throws before the assertion.
+    const dir = tmpDir({ 'journal.yml': 'name: J\ntypst_template: ./tenant-template\n' });
+    mkdirSync(join(dir, 'registry'), { recursive: true });
+    writeFileSync(join(dir, 'registry', 'papers.yml'), '[]\n');
+    return dir;
+  };
+
+  it('does NOT flag template-override when the paper declares no template of its own', () => {
+    const paperRoot = tmpDir({ 'myst.yml': 'version: 1\nproject:\n  id: j-2026-x\n' });
+    const findings = runLayerA(
+      { paperRoot, instanceRoot: tenantInstance(), project: composedProject, repo: null },
+      allTrue,
+    );
+    expect(findings.some((f) => f.check === 'template-override')).toBe(false);
+  });
+
+  it('DOES flag template-override when the author declares one in their own myst.yml', () => {
+    const paperRoot = tmpDir({
+      'myst.yml':
+        'version: 1\nproject:\n  id: j-2026-x\n  exports:\n    - format: typst\n      id: typst-pdf\n      template: ./mine\n',
+    });
+    const findings = runLayerA(
+      { paperRoot, instanceRoot: tenantInstance(), project: composedProject, repo: null },
+      allTrue,
+    );
+    expect(findings.some((f) => f.check === 'template-override')).toBe(true);
+  });
+});
+
+describe('splitUnrunnableChecks — a check whose precondition is unmet is REPORTED, not run ([R82])', () => {
+  const selected = [{ id: 'authors-exist' }, { id: 'exports-exist' }];
+
+  it('holds exports-exist back when there are no build artifacts, with a cause', () => {
+    const { runnable, unrunnable } = splitUnrunnableChecks(selected, '/paper', allFalse);
+    expect(runnable.map((c) => c.id)).toEqual(['authors-exist']);
+    expect(unrunnable).toHaveLength(1);
+    expect(unrunnable[0]!.status).toBe(CheckStatus.error); // no `skip` in the enum
+    expect(unrunnable[0]!.message).toMatch(/requires build artifacts/);
+  });
+
+  it('runs everything once _build/exports is there', () => {
+    const { runnable, unrunnable } = splitUnrunnableChecks(selected, '/paper', allTrue);
+    expect(runnable).toHaveLength(2);
+    expect(unrunnable).toEqual([]);
+  });
+});
+
+describe('runValidate — degrading when there is nothing to compose ([R82])', () => {
+  it('still reports, and SAYS it ran uncomposed', async () => {
+    const out = await runValidate(
+      { paperRoot: '/paper', instanceRoot, edge: edgeReturning({ id: 'fixture-2026-sample-paper' }) },
+      { repo: 'open-scholar-nexus/fixture-sample-paper' },
+      allTrue,
+    );
+    // No engineRoot → nothing to compose. A silent difference between two runs of the same
+    // command is the [R71] mistake in miniature, so the report says so once.
+    expect(out.notes.some((n) => /UNCOMPOSED/.test(n))).toBe(true);
+    expect(out.checkRun).toBeDefined();
   });
 });

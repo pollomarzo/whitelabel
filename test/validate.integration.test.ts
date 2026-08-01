@@ -9,7 +9,7 @@
  */
 import { describe, it, expect, beforeAll } from 'vitest';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, copyFileSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, copyFileSync, writeFileSync, readFileSync, existsSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -98,5 +98,41 @@ describe.skipIf(bundleState() === 'absent')('oak validate — curvenote Layer-B 
     expect(written.checkRun.conclusion).toBe('success');
     expect(Array.isArray(written.checks)).toBe(true);
     expect(written.status).toBe('ok');
+  }, 60_000);
+});
+
+describe.skipIf(bundleState() === 'absent')('the COMPOSED view reaches the checks ([R82])', () => {
+  beforeAll(assertBundleNotStale);
+
+  it('the thumbnail check FIRES in validate — it could not before ([R81])', () => {
+    // The whole point of [R82]. `paper-base.yml` pins `project.thumbnail`, which exists only
+    // post-`extends`; on the author's own config validate saw nothing and passed silently. The
+    // fixture paper genuinely ships no `thumbnails/`, so a composed run must now say so.
+    const { out } = runValidate(fixturePaper);
+    const thumb = out.warnings.find((w: any) => w.check === 'thumbnail');
+    expect(thumb).toBeDefined();
+    expect(thumb.message).toMatch(/thumbnails\/thumbnail\.png/);
+    // A warn, not an error: it must not gate a paper that is otherwise fine ([R81]).
+    expect(out.status).toBe('ok');
+  }, 60_000);
+
+  it('and does NOT fire once the file is there — no false positive', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'oak-val-thumb-'));
+    copyFileSync(join(fixturePaper, 'bib.bib'), join(tmp, 'bib.bib'));
+    copyFileSync(join(fixturePaper, 'index.md'), join(tmp, 'index.md'));
+    copyFileSync(join(fixturePaper, 'myst.yml'), join(tmp, 'myst.yml'));
+    mkdirSync(join(tmp, 'thumbnails'), { recursive: true });
+    writeFileSync(join(tmp, 'thumbnails', 'thumbnail.png'), 'not a real png, but a real file');
+
+    const { out } = runValidate(tmp);
+    expect(out.warnings.some((w: any) => w.check === 'thumbnail')).toBe(false);
+  }, 60_000);
+
+  it('reports no template-override for a paper that declares no template of its own', () => {
+    // Compose STAMPS a template onto the composed export, so this is the regression that
+    // proves the author value is raw-lifted rather than read back off the composed project.
+    const { out } = runValidate(fixturePaper);
+    expect(out.warnings.some((w: any) => w.check === 'template-override')).toBe(false);
+    expect(out.errors.some((e: any) => e.check === 'template-override')).toBe(false);
   }, 60_000);
 });

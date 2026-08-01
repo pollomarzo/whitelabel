@@ -27,7 +27,7 @@ import {
   isBrandAssetUrl,
   isInstanceRelativeTemplate,
 } from './compose.js';
-import { readBrandAssetOptions } from './yaml-io.js';
+import { readBrandAssetOptions, readAuthorTypstTemplate, DERIVED_CONFIG_FILE } from './yaml-io.js';
 import {
   runChecks,
   toCheckRun,
@@ -36,7 +36,8 @@ import {
   type CheckRun,
   type JournalCheck,
 } from './checks.js';
-import type { MystEdge } from './build.js';
+import { materializeDerived, type MystEdge } from './build.js';
+import type { ComposeInput } from './compose.js';
 
 export interface FsProbes {
   existsProbe(path: string): boolean;
@@ -385,9 +386,11 @@ export function runLayerA(
   input: {
     paperRoot: string;
     instanceRoot: string | null;
-    /** `exports` is read for the author's own typst `template:` ([R76]) — paper-base and
-     *  editions never declare one, so a surviving value can only be the author's. */
-    project: { id?: string; exports?: Array<Record<string, unknown>>; thumbnail?: string };
+    /** The COMPOSED project ([R82]) — author config + extends chain, i.e. what ships. Only
+     *  fields no engine layer stamps are read here; the author's typst `template:` is
+     *  raw-lifted separately (see below), because for that one value the PROVENANCE is the
+     *  point and the composed view has lost it. */
+    project: { id?: string; thumbnail?: string };
     repo: string | null;
     /** Engine checkout, for the [R72] extends-layer disjointness check. Omitted → skipped. */
     engineRoot?: string | null;
@@ -445,15 +448,17 @@ export function runLayerA(
   add('brand-favicon', 'brand', checkBrandFavicon({ instanceRoot, favicon: brand.site.favicon }, probes));
   add('brand-watermark', 'brand', checkBrandWatermark({ instanceRoot, logo: brand.project.logo }, probes));
 
-  const typstExport = (project.exports ?? []).find(
-    (e) => e['format'] === 'typst' || e['id'] === 'typst-pdf',
-  );
-  const authorTemplate = typstExport?.['template'];
+  // The author's template comes from a RAW LIFT of their own myst.yml, never from `project`
+  // ([R82]). Digging it out of the composed `exports` would find compose's pass-2 stamp
+  // (`flag ?? author ?? tenant ?? engine`), so `template-override` would fire on every paper
+  // and `template-floating` would misattribute the layer. Same discipline as the brand assets
+  // ([R68]) and the tenant's own template ([R79]): a value whose provenance is the point is
+  // read outside the merge.
   findings.push(
     ...checkTemplates(
       {
         instanceRoot,
-        authorTemplate: typeof authorTemplate === 'string' ? authorTemplate : undefined,
+        authorTemplate: readAuthorTypstTemplate(paperRoot),
         tenantTemplate: journal.typst_template,
       },
       probes,
@@ -461,6 +466,48 @@ export function runLayerA(
   );
 
   return findings;
+}
+
+/* ---- Layer-B preconditions ----------------------------------------------- */
+
+/** The one catalog check that needs BUILD ARTIFACTS, not just a loaded project. */
+const EXPORTS_EXIST = 'exports-exist';
+
+/**
+ * Split off the selected checks whose precondition is unmet, reporting them instead of
+ * running them ([R82] §5).
+ *
+ * `exports-exist` compares each collected export's `output` against the filesystem — and
+ * `oak validate` does not build. Under the composed view it now collects the REAL typst
+ * export ([R53]), so left to run it would report a hard "Missing export" on every unbuilt
+ * paper: a true statement about a file validate never promised to produce.
+ * `CheckStatus` has no `skip`; `error` is documented as *"the check could not be run"*,
+ * which is exactly the situation and already how we report an unloadable project.
+ *
+ * Not solved by building first: `check.yml` is deliberately a separate, secretless Stage-1
+ * workflow from `ci.yml`, and building there would either couple the merge gate to build
+ * success or build every PR twice.
+ */
+export function splitUnrunnableChecks(
+  journalChecks: JournalCheck[],
+  paperRoot: string,
+  probes: FsProbes,
+): { runnable: JournalCheck[]; unrunnable: EngineCheckResult[] } {
+  if (probes.existsProbe(join(paperRoot, '_build', 'exports'))) {
+    return { runnable: journalChecks, unrunnable: [] };
+  }
+  return {
+    runnable: journalChecks.filter((c) => c.id !== EXPORTS_EXIST),
+    unrunnable: journalChecks
+      .filter((c) => c.id === EXPORTS_EXIST)
+      .map((c) => ({
+        id: EXPORTS_EXIST,
+        status: CheckStatus.error,
+        message: 'requires build artifacts — run `oak build` first',
+        cause: 'missing-build-artifacts',
+        ...(c.optional ? { optional: true } : {}),
+      })),
+  };
 }
 
 /* ---- the verb ------------------------------------------------------------ */
@@ -471,6 +518,10 @@ export interface ValidateResult {
   warnings: NamedFinding[];
   checks: EngineCheckResult[];
   checkRun: CheckRun;
+  /** Info-level notes about HOW the run happened — today, that it ran uncomposed ([R82]).
+   *  Never gates. A silent difference between two runs of the same command is the [R71]
+   *  mistake in miniature, so the degradation says so once, in the report. */
+  notes: string[];
   exitCode: number;
 }
 
@@ -479,19 +530,58 @@ export async function runValidate(
     paperRoot: string;
     instanceRoot: string | null;
     edge: MystEdge;
-    /** Engine checkout + edition, for the [R72] disjointness check. Omitted → skipped. */
+    /** Engine checkout + edition, for the [R72] disjointness check AND the composed view. */
     engineRoot?: string | null;
     edition?: string | null;
+    /** `engine_repo` pin, only so compose can build its fallback asset URLs. Never read by a
+     *  check here — the author's template is raw-lifted ([R82]) — so a default is harmless. */
+    engineRepo?: string;
   },
   opts: { strict?: boolean; repo?: string | null; pathBase?: string } = {},
   probes: FsProbes = realFs,
 ): Promise<ValidateResult> {
-  const project = (await input.edge.loadProject(input.paperRoot)) as {
-    id?: string;
-    exports?: Array<Record<string, unknown>>;
-    thumbnail?: string;
-  };
   const repo = opts.repo ?? null;
+  const notes: string[] = [];
+
+  // --- The view: COMPOSED when there is something to compose ([R82]) ----------------
+  // Validate must read the config that SHIPS, not the author's own file: `paper-base.yml`'s
+  // pinned `thumbnail` and its complete typst export exist only post-`extends`, so on the
+  // author's view those checks silently pass ([R81]). Materialization is SHARED with `oak
+  // build` so the two cannot drift — that drift is exactly what [R71] was about.
+  //
+  // Degrading is deliberate, not a fallback of last resort: a bare local `oak validate` or
+  // `--no-instance` has nothing to compose (dec. 20 soft-warn precedent). And we GUARD the
+  // materialization for the same reason the Layer-B call is guarded — validate is a REPORTER,
+  // and a gate that crashes tells the author less than a gate that says what it could not do.
+  let project: { id?: string; exports?: Array<Record<string, unknown>>; thumbnail?: string };
+  let configFile: string | undefined;
+  const composable = !!input.engineRoot && !!input.instanceRoot;
+  if (composable) {
+    try {
+      const materialized = await materializeDerived({
+        paperRoot: input.paperRoot,
+        engineRoot: input.engineRoot!,
+        instanceRoot: input.instanceRoot,
+        engineRepo: input.engineRepo ?? 'unknown/engine',
+        baseUrl: '', // no site is built here; compose only needs it for the build env
+        edge: input.edge,
+      });
+      project = materialized.resolvedProject;
+      configFile = DERIVED_CONFIG_FILE;
+    } catch (e) {
+      notes.push(
+        `ran UNCOMPOSED: the derived config could not be produced (${(e as Error).message}). ` +
+          `Checks read the author's own myst.yml, so layer-declared fields are invisible.`,
+      );
+    }
+  } else {
+    notes.push(
+      'ran UNCOMPOSED (no engine checkout or instance-config): checks read the paper\'s own ' +
+        'myst.yml, not the config that ships, so fields declared by the engine/edition/brand ' +
+        'layers — the pinned thumbnail, the typst export — are invisible here.',
+    );
+  }
+  project ??= (await input.edge.loadProject(input.paperRoot)) as typeof project;
 
   // Layer A — engine invariants
   const layerA = runLayerA(
@@ -523,13 +613,28 @@ export async function runValidate(
   // processing → skip Layer B. A bad id (identity) does NOT stop processing, so editorial
   // checks still run and the author sees the full fix-list at once (id-gate-relocation).
   const structuralErrors = errors.filter((f) => f.klass === 'structural');
+  // A selected check whose precondition is unmet is REPORTED, not run ([R82] §5) — today only
+  // `exports-exist`, which under the composed view collects the real typst export and would
+  // hard-fail on a paper validate never promised to build.
+  const { runnable, unrunnable } = splitUnrunnableChecks(
+    (journal.checks ?? []) as JournalCheck[],
+    input.paperRoot,
+    probes,
+  );
+  checks = unrunnable;
   if (structuralErrors.length === 0) {
     try {
-      checks = await input.edge.withProjectSession(input.paperRoot, (session) =>
-        runChecks(session, (journal.checks ?? []) as JournalCheck[]),
-      );
+      checks = [
+        ...unrunnable,
+        ...(await input.edge.withProjectSession(
+          input.paperRoot,
+          (session) => runChecks(session, runnable),
+          configFile, // the COMPOSED config when we have one ([R82])
+        )),
+      ];
     } catch (e) {
       checks = [
+        ...unrunnable,
         {
           id: 'editorial-checks',
           status: CheckStatus.error,
@@ -555,5 +660,5 @@ export async function runValidate(
   const hasError = errors.length > 0 || blockingCheckFail;
   const exitCode = hasError ? 1 : opts.strict && warnings.length ? 1 : 0;
 
-  return { status: hasError ? 'error' : 'ok', errors, warnings, checks, checkRun, exitCode };
+  return { status: hasError ? 'error' : 'ok', errors, warnings, checks, checkRun, notes, exitCode };
 }
