@@ -214,7 +214,7 @@ export function checksComment(report: ChecksReport, shimTouched: string[] = []):
 
 /** Frozen-shim paths (design §6a): everything under `.github/` plus `CODEOWNERS`. A PR that
  *  touches any of these can change how the checks themselves run, so a report produced under it
- *  cannot be fully trusted — check-post surfaces that as an advisory ([R##]). */
+ *  cannot be fully trusted — check-post surfaces that as an advisory ([R83]). */
 export function frozenPathsTouched(changed: string[]): string[] {
   return changed.filter((p) => p === 'CODEOWNERS' || p.startsWith('.github/'));
 }
@@ -264,7 +264,7 @@ export function cmdCheckPost(
 
   // Advisory only: prefix the Check-Run title + summary so the warning is visible on the check
   // itself, but leave `conclusion` untouched — this must not gate merge (legit upgrade PRs edit
-  // the shim too; CODEOWNERS is the real gate). [R##]
+  // the shim too; CODEOWNERS is the real gate). [R83]
   const checkRunToPost = shimTouched.length
     ? {
         ...report.checkRun,
