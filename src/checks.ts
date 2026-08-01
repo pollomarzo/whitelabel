@@ -196,18 +196,40 @@ export interface ChecksReport {
  * marker so `sticky()` upserts it in place; a headline from the Check-Run conclusion + title
  * ("N passed, M failed"), then the same markdown table the Check Run carries, then a footer.
  */
-export function checksComment(report: ChecksReport): string {
+export function checksComment(report: ChecksReport, shimTouched: string[] = []): string {
   const { conclusion, title, summary } = report.checkRun;
   const icon = conclusion === 'success' ? '✅' : '❌';
   const headline = conclusion === 'success' ? 'Journal checks passed' : 'Journal checks failed';
+  const banner = shimTouched.length ? [shimWarning(shimTouched), ''] : [];
   return [
     `<!-- oak-sticky: ${STICKY_CHECKS} -->`,
+    ...banner,
     `### ${icon} ${headline} — ${title}`,
     '',
     summary,
     '',
     '_Updated on every push to this PR._',
   ].join('\n');
+}
+
+/** Frozen-shim paths (design §6a): everything under `.github/` plus `CODEOWNERS`. A PR that
+ *  touches any of these can change how the checks themselves run, so a report produced under it
+ *  cannot be fully trusted — check-post surfaces that as an advisory ([R##]). */
+export function frozenPathsTouched(changed: string[]): string[] {
+  return changed.filter((p) => p === 'CODEOWNERS' || p.startsWith('.github/'));
+}
+
+/** The advisory banner for a PR that edits the frozen shim — a warning, not a gate (it never
+ *  changes the Check-Run conclusion): legitimate engine-upgrade PRs edit these files too, so
+ *  blocking would be wrong. Renders in both the sticky comment and the Check-Run summary. */
+export function shimWarning(touched: string[]): string {
+  const shown = touched.slice(0, 5).map((f) => `\`${f}\``).join(', ');
+  const more = touched.length > 5 ? `, +${touched.length - 5} more` : '';
+  return (
+    `> ⚠️ **This PR modifies the frozen CI shim** (${shown}${more}). The results below were ` +
+    `produced by this PR's own CI, so they may not reflect the journal's checks. If this is not a ` +
+    `deliberate engine upgrade, an editor should review the shim diff before trusting this.`
+  );
 }
 
 /** Seams for `cmdCheckPost` — structurally satisfied by `gh.realCheckRun` and
@@ -231,16 +253,28 @@ export interface CheckPostOutcome {
  * crashes the Stage-2 job. Posting needs `GH_TOKEN` in the real `gh` seams.
  */
 export function cmdCheckPost(
-  input: { report: ChecksReport; repo: string; sha: string; pr?: string },
+  input: { report: ChecksReport; repo: string; sha: string; pr?: string; shimTouched?: string[] },
   deps: CheckPostDeps,
 ): CheckPostOutcome {
   const { report, repo, sha, pr } = input;
+  const shimTouched = input.shimTouched ?? [];
   const warnings: string[] = [];
   let checkRunPosted = false;
   let commentPosted = false;
 
+  // Advisory only: prefix the Check-Run title + summary so the warning is visible on the check
+  // itself, but leave `conclusion` untouched — this must not gate merge (legit upgrade PRs edit
+  // the shim too; CODEOWNERS is the real gate). [R##]
+  const checkRunToPost = shimTouched.length
+    ? {
+        ...report.checkRun,
+        title: `⚠️ CI shim modified — ${report.checkRun.title}`,
+        summary: `${shimWarning(shimTouched)}\n\n${report.checkRun.summary}`,
+      }
+    : report.checkRun;
+
   try {
-    deps.checkRun.create(repo, sha, 'Journal checks', report.checkRun);
+    deps.checkRun.create(repo, sha, 'Journal checks', checkRunToPost);
     checkRunPosted = true;
   } catch (e) {
     const msg = `check-post: Check Run not posted (${(e as Error).message})`;
@@ -250,7 +284,7 @@ export function cmdCheckPost(
 
   if (pr) {
     try {
-      deps.sticky('.', pr, STICKY_CHECKS, checksComment(report));
+      deps.sticky('.', pr, STICKY_CHECKS, checksComment(report, shimTouched));
       commentPosted = true;
     } catch (e) {
       const msg = `check-post: comment not posted (${(e as Error).message})`;

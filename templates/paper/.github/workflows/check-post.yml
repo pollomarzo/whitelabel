@@ -72,6 +72,8 @@ jobs:
             --report journal-checks/report.json
             --repo ${{ github.repository }}
             --sha ${{ steps.meta.outputs.sha }}
+            --base ${{ github.event.repository.default_branch }}
+            --verified-head ${{ github.event.workflow_run.head_sha }}
             ${{ steps.meta.outputs.pr && format('--pr {0}', steps.meta.outputs.pr) || '' }}
         env:
           GH_TOKEN: ${{ github.token }}

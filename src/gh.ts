@@ -268,6 +268,22 @@ export interface CheckRunPoster {
   create(repo: string, headSha: string, name: string, run: CheckRun): void;
 }
 
+/** Files changed between `base` and `head` per the compare API. Called from check-post in
+ *  trusted base context, with `head` taken from `github.event.workflow_run.head_sha` (GitHub-set,
+ *  not the fork-controlled artifact) so the frozen-shim advisory cannot be dodged. Best-effort:
+ *  returns [] on any error so the advisory never fails the post. */
+export function changedFiles(repo: string, base: string, head: string): string[] {
+  try {
+    const out = gh(
+      ['api', `repos/${repo}/compare/${base}...${head}`, '--jq', '.files[].filename'],
+      { quiet: true },
+    );
+    return out ? out.split('\n').filter(Boolean) : [];
+  } catch {
+    return [];
+  }
+}
+
 export const realCheckRun: CheckRunPoster = {
   create(repo, headSha, name, run) {
     const body = JSON.stringify({
