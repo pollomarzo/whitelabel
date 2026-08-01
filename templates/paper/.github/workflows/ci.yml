@@ -26,6 +26,12 @@ jobs:
       - uses: ./.github/actions/engine
         with:
           args: build
+      # upload-artifact follows symlinks and stores their TARGET content as a regular file.
+      # Author content is untrusted, so a planted symlink (e.g. to .git/config or any
+      # runner-readable file) would ride into the artifact and be served on the public preview.
+      # Strip symlinks so the artifact carries only files the build actually produced.
+      - name: Drop symlinks from the build output
+        run: find _build/html -type l -delete
       - name: Stash PR number # workflow_run.pull_requests is EMPTY for forks (§6a)
         if: ${{ github.event_name == 'pull_request' }}
         run: echo "${{ github.event.pull_request.number }}" > _build/html/.pr-number
