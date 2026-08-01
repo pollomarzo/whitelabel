@@ -389,7 +389,17 @@ export function runLayerA(
     /** The COMPOSED project ([R82]) — author config + extends chain, i.e. what ships. Only
      *  fields no engine layer stamps are read here; the author's typst `template:` is
      *  raw-lifted separately (see below), because for that one value the PROVENANCE is the
-     *  point and the composed view has lost it. */
+     *  point and the composed view has lost it.
+     *
+     *  Specifically PASS 1, and deliberately so — it carries every layer-declared field but
+     *  none of compose's pass-2 stamps. `oak build` cannot hand over anything else: its
+     *  [R21] pre-flight runs BETWEEN the passes, so a structurally broken paper never
+     *  reaches compose. Pass 1 is therefore the one view both callers can share, at the cost
+     *  of Layer B reading pass 2 (it takes the derived FILE) while Layer A reads pass 1.
+     *  Today nothing overlaps — the stamps are `output`, `template`, `site.template` and the
+     *  absolutized brand assets, and Layer A reads the brand raw from `brand.yml`. A future
+     *  Layer-A check that wants a STAMPED field is the signal to revisit this, not to reach
+     *  for the derived file here. */
     project: { id?: string; thumbnail?: string };
     repo: string | null;
     /** Engine checkout, for the [R72] extends-layer disjointness check. Omitted → skipped. */
@@ -487,6 +497,14 @@ const EXPORTS_EXIST = 'exports-exist';
  * Not solved by building first: `check.yml` is deliberately a separate, secretless Stage-1
  * workflow from `ci.yml`, and building there would either couple the merge gate to build
  * success or build every PR twice.
+ *
+ * ALWAYS `optional`, whatever the journal said. `optional` is what keeps a result out of
+ * `blockingCheckFail`, and an unmet precondition must not gate: in CI `_build/exports` is
+ * NEVER present (gitignored, fresh checkout, no build step), so a plain selection of this id
+ * would fail the Check Run on every PR of every paper — with nothing any AUTHOR could do
+ * about it, since only the tenant can edit `journal.yml`. It would also pass locally, where
+ * a previous `oak build` left the directory behind. The tenant still sees the result and its
+ * cause in the summary table; it just cannot brick the merge gate.
  */
 export function splitUnrunnableChecks(
   journalChecks: JournalCheck[],
@@ -500,12 +518,12 @@ export function splitUnrunnableChecks(
     runnable: journalChecks.filter((c) => c.id !== EXPORTS_EXIST),
     unrunnable: journalChecks
       .filter((c) => c.id === EXPORTS_EXIST)
-      .map((c) => ({
+      .map(() => ({
         id: EXPORTS_EXIST,
         status: CheckStatus.error,
         message: 'requires build artifacts — run `oak build` first',
         cause: 'missing-build-artifacts',
-        ...(c.optional ? { optional: true } : {}),
+        optional: true,
       })),
   };
 }
@@ -536,6 +554,10 @@ export async function runValidate(
     /** `engine_repo` pin, only so compose can build its fallback asset URLs. Never read by a
      *  check here — the author's template is raw-lifted ([R82]) — so a default is harmless. */
     engineRepo?: string;
+    /** The dev/CI-from-checkout asset overrides `oak build` passes. Must be the SAME ones:
+     *  both verbs materialize one `myst.oak.yml`, and compose resolves the engine template
+     *  from these, so differing inputs make the shared function emit differing files. */
+    assetOverrides?: ComposeInput['assetOverrides'];
   },
   opts: { strict?: boolean; repo?: string | null; pathBase?: string } = {},
   probes: FsProbes = realFs,
@@ -564,6 +586,7 @@ export async function runValidate(
         instanceRoot: input.instanceRoot,
         engineRepo: input.engineRepo ?? 'unknown/engine',
         baseUrl: '', // no site is built here; compose only needs it for the build env
+        assetOverrides: input.assetOverrides,
         edge: input.edge,
       });
       project = materialized.resolvedProject;
@@ -600,7 +623,8 @@ export async function runValidate(
 
   // Layer B — journal-configured editorial checks, provided by @curvenote/check-implementations.
   // They read the myst store, so we run them inside a loaded+processed project session (the edge
-  // keeps myst-cli confined to myst.ts). The paper's own frontmatter is enough — no two-pass.
+  // keeps myst-cli confined to myst.ts), pointed at the DERIVED config when we have one — i.e.
+  // the post-pass-2 file, stamps and all ([R82]), unlike Layer A above which reads pass 1.
   //
   // A blocking Layer-A finding (missing index.md, a stray secondary myst.yml, a bad id) means the
   // project can't be processed — `withProjectSession` would THROW and take the whole report down,

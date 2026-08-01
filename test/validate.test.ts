@@ -17,7 +17,7 @@ import {
   isFloatingTemplate,
   checkTemplates,
 } from '../src/validate.js';
-import { CheckStatus } from '../src/checks.js';
+import { CheckStatus, toCheckRun } from '../src/checks.js';
 import type { MystEdge } from '../src/build.js';
 
 const instanceRoot = fileURLToPath(new URL('./fixture-instance', import.meta.url));
@@ -471,6 +471,16 @@ describe('splitUnrunnableChecks — a check whose precondition is unmet is REPOR
     const { runnable, unrunnable } = splitUnrunnableChecks(selected, '/paper', allTrue);
     expect(runnable).toHaveLength(2);
     expect(unrunnable).toEqual([]);
+  });
+
+  it('marks it OPTIONAL even when the journal selected it as blocking', () => {
+    // The merge-gate invariant. `_build/exports` is never present in CI (gitignored, fresh
+    // checkout, no build step in check.yml), so a blocking held-back result would fail the
+    // Check Run on every PR of every paper, with nothing an AUTHOR could do — only the tenant
+    // can edit journal.yml. And it would pass locally, where a previous build left the dir.
+    const { unrunnable } = splitUnrunnableChecks([{ id: 'exports-exist' }], '/paper', allFalse);
+    expect(unrunnable[0]!.optional).toBe(true);
+    expect(toCheckRun(unrunnable).conclusion).toBe('success');
   });
 });
 
