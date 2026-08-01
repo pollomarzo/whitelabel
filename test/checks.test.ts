@@ -73,6 +73,36 @@ describe('toCheckRun (reporting — GitHub Check Run, ours)', () => {
     expect(r.annotations[1]?.path).toBe('index.md');
   });
 
+  it('never annotates a finding anchored to the DERIVED config ([R82])', () => {
+    // Since validate reads myst.oak.yml, curvenote's config-anchored results name a generated,
+    // gitignored file. GitHub cannot resolve that path (and a batch of unresolvable ones 422s
+    // the POST); rewriting it to myst.yml would pin a confident annotation on a line number
+    // that is not the author's. So the finding stays in the summary, the inline pin goes.
+    const r = toCheckRun(
+      [
+        {
+          id: 'derived',
+          status: CheckStatus.fail,
+          message: 'no keywords',
+          file: '/paper/myst.oak.yml',
+          position: { start: { line: 12, column: 1 }, end: { line: 12, column: 1 } },
+        },
+        {
+          id: 'authored',
+          status: CheckStatus.fail,
+          message: 'bad abstract',
+          file: '/paper/index.md',
+          position: { start: { line: 4, column: 1 }, end: { line: 4, column: 1 } },
+        },
+      ],
+      '/paper',
+    );
+    expect(r.annotations.map((a) => a.path)).toEqual(['index.md']);
+    // Dropped from the annotations, NOT from the report — it still gates and still shows.
+    expect(r.conclusion).toBe('failure');
+    expect(r.summary).toMatch(/no keywords/);
+  });
+
   it('without a pathBase, paths pass through unchanged (pure default)', () => {
     const r = toCheckRun([
       {

@@ -10,7 +10,8 @@
  * weaken the set) and the GitHub Check-Run REPORTER (`toCheckRun`, pure). MyST `error_rules`
  * is NOT used for the gate: it is author-overridable, so it can't be the journal's contract.
  */
-import { isAbsolute, relative } from 'node:path';
+import { basename, isAbsolute, relative } from 'node:path';
+import { DERIVED_CONFIG_FILE } from './yaml-io.js';
 import type { ISession } from 'myst-cli';
 import {
   checks as CURVENOTE_DEFINITIONS,
@@ -112,6 +113,14 @@ const GITHUB_MAX_ANNOTATIONS = 50;
  * an absolute `file` (`selectCurrentProjectFile`), others a relative one (`loadProjectFromDisk`
  * → `index.md`). So `pathBase` (the repo checkout root — `GITHUB_WORKSPACE`, else the paper
  * root) relativizes ONLY the absolute paths; already-relative ones pass through untouched.
+ *
+ * A finding anchored to the DERIVED config never annotates. Since [R82] the session reads
+ * `myst.oak.yml`, so curvenote's config-anchored results (`getFrontmatter` returns
+ * `selectCurrentProjectFile`) now name a generated, gitignored file: GitHub cannot resolve
+ * the path, and rewriting it to `myst.yml` would be worse — the derived file has a banner, an
+ * injected `extends:` block and compose's stamps, so its line numbers are not the author's.
+ * A confident annotation on an unrelated line beats no annotation for nobody. The finding
+ * still lands in the summary table and the sticky comment; only the inline pin is dropped.
  */
 export function toCheckRun(results: EngineCheckResult[], pathBase?: string): CheckRun {
   const failed = results.filter((r) => r.status === CheckStatus.fail || r.status === CheckStatus.error);
@@ -130,7 +139,7 @@ export function toCheckRun(results: EngineCheckResult[], pathBase?: string): Che
   const summary = `| Check | Status | Detail |\n| --- | --- | --- |\n${rows}`;
 
   const annotations: CheckRunAnnotation[] = failed
-    .filter((r) => r.file && r.position)
+    .filter((r) => r.file && r.position && basename(r.file) !== DERIVED_CONFIG_FILE)
     .slice(0, GITHUB_MAX_ANNOTATIONS)
     .map((r) => ({
       path: pathBase && isAbsolute(r.file!) ? relative(pathBase, r.file!) : r.file!,
