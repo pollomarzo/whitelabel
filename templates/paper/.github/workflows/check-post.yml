@@ -40,11 +40,26 @@ jobs:
           run-id: ${{ github.event.workflow_run.id }}
           github-token: ${{ github.token }}
 
+      # The artifact comes from the untrusted Stage-1 job; head-sha/pr-number flow from here into
+      # the `args:` string spliced into a shell in ./.github/actions/engine. Validate shape and
+      # fail CLOSED before they leave this step — a git sha is [0-9a-f]{7,40}, a PR number is
+      # digits — so no newline (GITHUB_OUTPUT injection) or shell metacharacter can ride through
+      # even if Stage 1 gets attacker bytes into the files.
       - id: meta
         run: |
-          echo "sha=$(cat journal-checks/head-sha)" >> "$GITHUB_OUTPUT"
+          sha=$(cat journal-checks/head-sha)
+          if ! printf '%s' "$sha" | grep -qE '^[0-9a-f]{7,40}$'; then
+            echo "::error::head-sha in artifact is not a valid git sha; refusing to post"
+            exit 1
+          fi
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
           if [ -f journal-checks/pr-number ]; then
-            echo "pr=$(cat journal-checks/pr-number)" >> "$GITHUB_OUTPUT"
+            pr=$(cat journal-checks/pr-number)
+            if ! printf '%s' "$pr" | grep -qE '^[0-9]{1,10}$'; then
+              echo "::error::pr-number in artifact is not a valid number; refusing to post"
+              exit 1
+            fi
+            echo "pr=$pr" >> "$GITHUB_OUTPUT"
           fi
 
       # Posts the precomputed report — the Check Run on the PR HEAD sha and, when a PR, the
