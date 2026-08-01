@@ -3,6 +3,7 @@ import {
   toCheckRun,
   checksComment,
   cmdCheckPost,
+  frozenPathsTouched,
   STICKY_CHECKS,
   CheckStatus,
   type EngineCheckResult,
@@ -253,5 +254,43 @@ describe('cmdCheckPost (Stage-2 orchestration, fake seams)', () => {
     expect(out.commentPosted).toBe(false);
     expect(runs).toHaveLength(1);
     expect(out.warnings.join(' ')).toContain('comment not posted');
+  });
+});
+
+describe('frozenPathsTouched (frozen-shim detector)', () => {
+  it('matches .github/** and CODEOWNERS, ignores paper content', () => {
+    const changed = ['index.md', '.github/workflows/check.yml', 'CODEOWNERS', 'data/x.csv', '.github/actions/engine/pins.yml'];
+    expect(frozenPathsTouched(changed)).toEqual([
+      '.github/workflows/check.yml',
+      'CODEOWNERS',
+      '.github/actions/engine/pins.yml',
+    ]);
+  });
+  it('a content-only diff touches nothing frozen', () => {
+    expect(frozenPathsTouched(['index.md', 'myst.yml', 'figures/f1.png'])).toEqual([]);
+  });
+});
+
+describe('cmdCheckPost frozen-shim advisory', () => {
+  it('with shimTouched: warns in the comment AND the Check-Run title/summary, conclusion unchanged', () => {
+    const { deps, runs, stickies } = fakePost();
+    const out = cmdCheckPost(
+      { report: report(), repo: 'o/r', sha: 'abc', pr: '7', shimTouched: ['.github/workflows/check.yml'] },
+      deps,
+    );
+    expect(out.checkRunPosted).toBe(true);
+    // advisory only — the conclusion is NOT downgraded (must not gate; legit upgrades edit the shim)
+    expect(runs[0]!.run.conclusion).toBe(report().checkRun.conclusion);
+    expect(runs[0]!.run.title).toContain('CI shim modified');
+    expect(runs[0]!.run.summary).toContain('modifies the frozen CI shim');
+    expect(stickies[0]!.body).toContain('modifies the frozen CI shim');
+    expect(stickies[0]!.body).toContain('`.github/workflows/check.yml`');
+  });
+
+  it('no shimTouched: posts the report verbatim, no banner', () => {
+    const { deps, runs, stickies } = fakePost();
+    cmdCheckPost({ report: report(), repo: 'o/r', sha: 'abc', pr: '7' }, deps);
+    expect(runs[0]!.run.title).toBe(report().checkRun.title);
+    expect(stickies[0]!.body).not.toContain('frozen CI shim');
   });
 });

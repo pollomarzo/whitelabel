@@ -456,6 +456,11 @@ async function cmdCheckPost(argv: string[]): Promise<number> {
   const repo = flag(argv, 'repo') ?? process.env.GITHUB_REPOSITORY;
   const sha = flag(argv, 'sha');
   const pr = flag(argv, 'pr');
+  // Frozen-shim advisory ([R83]): --base + --verified-head come from the workflow_run event
+  // (GitHub-set, not the fork-controlled artifact), so a PR that edits `.github/`/`CODEOWNERS`
+  // is flagged even if the artifact lies. Absent ⇒ no advisory (back-compat).
+  const base = flag(argv, 'base');
+  const verifiedHead = flag(argv, 'verified-head');
   if (!reportPath || !repo || !sha) {
     process.stderr.write('oak check-post: --report <path>, --repo <owner/repo> and --sha <headsha> are required\n');
     return 2;
@@ -467,9 +472,11 @@ async function cmdCheckPost(argv: string[]): Promise<number> {
   const report = JSON.parse(readFileSync(reportPath, 'utf8'));
 
   const gh = await import('./gh.js');
-  const { cmdCheckPost: run } = await import('./checks.js');
+  const { cmdCheckPost: run, frozenPathsTouched } = await import('./checks.js');
+  const shimTouched =
+    base && verifiedHead ? frozenPathsTouched(gh.changedFiles(repo, base, verifiedHead)) : [];
   const out = run(
-    { report, repo, sha, pr },
+    { report, repo, sha, pr, shimTouched },
     { checkRun: gh.realCheckRun, sticky: (root, prNum, header, body) => gh.realGhPr.sticky(root, prNum, header, body) },
   );
   emit({ ...out });
