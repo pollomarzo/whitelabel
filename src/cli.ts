@@ -13,6 +13,7 @@ import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { parseDocument } from 'yaml';
 import type { UpgradeMode } from './upgrade.js';
+import type { ComposeInput } from './compose.js';
 
 // dist/cli.cjs is an esbuild CJS bundle ([R51]), so `__dirname` is the bundle's dir
 // (engine/dist). `oak` is only ever run bundled — CI (ci/run.sh) and local both invoke
@@ -64,6 +65,34 @@ function readEngineRepo(paperRoot: string): string {
   return 'pollomarzo/whitelabel';
 }
 
+/**
+ * Dev/CI-from-checkout asset resolution. `--typst-template` is the EXPLICIT override and
+ * tops compose's precedence chain; the engine checkout's local `templates/typst` is the
+ * BOTTOM fallback ([R76]) — it beats the (not-yet-existent) release zip but yields to a
+ * tenant's or an author's template, which is the whole point of the chain. (It used to be
+ * forced into the same slot as the explicit flag, i.e. first, which made both overrides
+ * unreachable.) `--no-site-template` uses myst's default theme until the fork release
+ * exists (compose siteTemplate: null).
+ *
+ * Shared by `oak build` and `oak validate`, which since [R82] materialize the SAME
+ * `myst.oak.yml` through the same `materializeDerived`. Sharing the function is not enough
+ * to stop them drifting if they feed it different inputs: `templates/typst` exists in every
+ * checkout including CI, so a validate that skipped these overrides stamped the release-zip
+ * URL where the build stamps the local path — two different files under one name, and
+ * `readStampedTemplate` (zenodo.ts) reads that file as the record of what the build rendered
+ * with. Same overrides in, same bytes out.
+ */
+function assetOverridesFrom(argv: string[]): ComposeInput['assetOverrides'] {
+  const localTypst = join(engineRoot(), 'templates', 'typst');
+  return {
+    ...(flag(argv, 'typst-template')
+      ? { typstTemplate: resolve(flag(argv, 'typst-template')!) }
+      : {}),
+    ...(existsSync(localTypst) ? { engineTypstTemplate: localTypst } : {}),
+    ...(has(argv, 'no-site-template') ? { siteTemplate: null as string | null } : {}),
+  };
+}
+
 /** Run the two-pass build for a paper; shared by `oak build` and `oak release`. Returns the
  *  resolved paper root (its `_build/exports` now holds the PDF `release` deposits). */
 async function buildPaper(argv: string[]): Promise<{ paperRoot: string; resolvedId?: string }> {
@@ -73,22 +102,7 @@ async function buildPaper(argv: string[]): Promise<{ paperRoot: string; resolved
     : resolve(flag(argv, 'instance') ?? mustInstance());
   const baseUrl = flag(argv, 'base-url') ?? '';
   const engineRepo = flag(argv, 'engine-repo') ?? readEngineRepo(paperRoot);
-
-  // Dev/CI-from-checkout asset resolution. `--typst-template` is the EXPLICIT override and
-  // tops compose's precedence chain; the engine checkout's local `templates/typst` is the
-  // BOTTOM fallback ([R76]) — it beats the (not-yet-existent) release zip but yields to a
-  // tenant's or an author's template, which is the whole point of the chain. (It used to be
-  // forced into the same slot as the explicit flag, i.e. first, which made both overrides
-  // unreachable.) `--no-site-template` uses myst's default theme until the fork release
-  // exists (compose siteTemplate: null).
-  const localTypst = join(engineRoot(), 'templates', 'typst');
-  const assetOverrides = {
-    ...(flag(argv, 'typst-template')
-      ? { typstTemplate: resolve(flag(argv, 'typst-template')!) }
-      : {}),
-    ...(existsSync(localTypst) ? { engineTypstTemplate: localTypst } : {}),
-    ...(has(argv, 'no-site-template') ? { siteTemplate: null as string | null } : {}),
-  };
+  const assetOverrides = assetOverridesFrom(argv);
 
   const { runBuild } = await import('./build.js');
   const { createMystEdge } = await import('./myst.js');
@@ -393,6 +407,9 @@ async function cmdValidate(argv: string[]): Promise<number> {
         engineRoot: engineRoot(),
         edition: readEditionQuietly(paperRoot),
         engineRepo: readEngineRepo(paperRoot),
+        // The SAME overrides `oak build` passes. Both verbs write one `myst.oak.yml`, so
+        // feeding them different inputs would put two different files under one name.
+        assetOverrides: assetOverridesFrom(argv),
       },
       { strict, repo, pathBase: process.env.GITHUB_WORKSPACE ?? paperRoot },
     );
