@@ -3,3 +3,8 @@ dist/
 bin/
 _build/
 *.tsbuildinfo
+
+# Derived config ([R71]). The fixture paper is a real paper: `oak build`/`oak validate` over
+# it write one, with absolute paths to THIS checkout. Tracking it dirties the tree on every
+# `npm test` from a different path, which cut-engine-release.sh refuses to release from.
+myst.oak.yml
