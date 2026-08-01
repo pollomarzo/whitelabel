@@ -1,9 +1,15 @@
 import { describe, it, expect } from 'vitest';
 import { fileURLToPath } from 'node:url';
+import { mkdtempSync, writeFileSync, mkdirSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
   checkLayout,
+  runLayerA,
+  splitUnrunnableChecks,
   checkBrandFavicon,
   checkBrandWatermark,
+  checkThumbnail,
   runValidate,
   type FsProbes,
   checkLayerDisjointness,
@@ -11,6 +17,7 @@ import {
   isFloatingTemplate,
   checkTemplates,
 } from '../src/validate.js';
+import { CheckStatus, toCheckRun } from '../src/checks.js';
 import type { MystEdge } from '../src/build.js';
 
 const instanceRoot = fileURLToPath(new URL('./fixture-instance', import.meta.url));
@@ -84,6 +91,33 @@ describe('checkBrandWatermark ([R62])', () => {
   });
   it('warns when no watermark is declared', () => {
     expect(checkBrandWatermark({ instanceRoot: '/i' }, allTrue).ok).toBe(false);
+  });
+});
+
+describe('checkThumbnail ([R81])', () => {
+  it('passes when no thumbnail is declared (myst\'s first-image fallback is live)', () => {
+    expect(checkThumbnail({ paperRoot: '/paper' }, allFalse).ok).toBe(true);
+  });
+  it('passes a URL thumbnail (myst downloads it for HTML)', () => {
+    expect(
+      checkThumbnail({ paperRoot: '/paper', thumbnail: 'https://x/t.png' }, allFalse).ok,
+    ).toBe(true);
+  });
+  it('warns a declared thumbnail that does not resolve', () => {
+    const r = checkThumbnail({ paperRoot: '/paper', thumbnail: 'thumbnails/thumbnail.png' }, allFalse);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.severity).toBe('warn');
+  });
+  it('passes a resolvable thumbnail, probed against the PAPER root (no rebasing)', () => {
+    const seen: string[] = [];
+    const probes: FsProbes = {
+      existsProbe: (p) => (seen.push(p), true),
+      listTree: () => [],
+    };
+    expect(
+      checkThumbnail({ paperRoot: '/paper', thumbnail: 'thumbnails/thumbnail.png' }, probes).ok,
+    ).toBe(true);
+    expect(seen).toContain('/paper/thumbnails/thumbnail.png');
   });
 });
 
@@ -374,5 +408,136 @@ describe('checkLayerDisjointness — extends layers must own disjoint keys ([R72
     expect(checkLayerDisjointness([{ name: 'a', config: null }, { name: 'b', config: {} }])).toEqual([]);
     expect(declaredKeys(undefined)).toEqual([]);
     expect(declaredKeys({ project: 'not-an-object' })).toEqual([]);
+  });
+});
+
+describe('the author template is RAW-LIFTED, never read from the composed project ([R82])', () => {
+  // The regression this whole mechanism exists to prevent. Once validate reads the COMPOSED
+  // config, the typst export always carries a template — compose stamps `flag ?? author ??
+  // tenant ?? engine` — so digging `authorTemplate` out of `project.exports` would make EVERY
+  // paper look like it overrode the journal's template.
+  const composedProject = {
+    id: 'j-2026-x',
+    exports: [{ format: 'typst', id: 'typst-pdf', template: '/engine/templates/typst' }],
+  };
+  const tmpDir = (files: Record<string, string>): string => {
+    const dir = mkdtempSync(join(tmpdir(), 'oak-lift-'));
+    for (const [name, body] of Object.entries(files)) writeFileSync(join(dir, name), body);
+    return dir;
+  };
+  const tenantInstance = () => {
+    // `allTrue` probes claim every path exists, so the instance must really carry the files
+    // runLayerA reads (journal + registry) — otherwise the read throws before the assertion.
+    const dir = tmpDir({ 'journal.yml': 'name: J\ntypst_template: ./tenant-template\n' });
+    mkdirSync(join(dir, 'registry'), { recursive: true });
+    writeFileSync(join(dir, 'registry', 'papers.yml'), '[]\n');
+    return dir;
+  };
+
+  it('does NOT flag template-override when the paper declares no template of its own', () => {
+    const paperRoot = tmpDir({ 'myst.yml': 'version: 1\nproject:\n  id: j-2026-x\n' });
+    const findings = runLayerA(
+      { paperRoot, instanceRoot: tenantInstance(), project: composedProject, repo: null },
+      allTrue,
+    );
+    expect(findings.some((f) => f.check === 'template-override')).toBe(false);
+  });
+
+  it('DOES flag template-override when the author declares one in their own myst.yml', () => {
+    const paperRoot = tmpDir({
+      'myst.yml':
+        'version: 1\nproject:\n  id: j-2026-x\n  exports:\n    - format: typst\n      id: typst-pdf\n      template: ./mine\n',
+    });
+    const findings = runLayerA(
+      { paperRoot, instanceRoot: tenantInstance(), project: composedProject, repo: null },
+      allTrue,
+    );
+    expect(findings.some((f) => f.check === 'template-override')).toBe(true);
+  });
+});
+
+describe('splitUnrunnableChecks — a check whose precondition is unmet is REPORTED, not run ([R82])', () => {
+  const selected = [{ id: 'authors-exist' }, { id: 'exports-exist' }];
+
+  it('holds exports-exist back when there are no build artifacts, with a cause', () => {
+    const { runnable, unrunnable } = splitUnrunnableChecks(selected, '/paper', allFalse);
+    expect(runnable.map((c) => c.id)).toEqual(['authors-exist']);
+    expect(unrunnable).toHaveLength(1);
+    expect(unrunnable[0]!.status).toBe(CheckStatus.error); // no `skip` in the enum
+    expect(unrunnable[0]!.message).toMatch(/requires build artifacts/);
+  });
+
+  it('runs everything once _build/exports is there', () => {
+    const { runnable, unrunnable } = splitUnrunnableChecks(selected, '/paper', allTrue);
+    expect(runnable).toHaveLength(2);
+    expect(unrunnable).toEqual([]);
+  });
+
+  it('marks it OPTIONAL even when the journal selected it as blocking', () => {
+    // The merge-gate invariant. `_build/exports` is never present in CI (gitignored, fresh
+    // checkout, no build step in check.yml), so a blocking held-back result would fail the
+    // Check Run on every PR of every paper, with nothing an AUTHOR could do — only the tenant
+    // can edit journal.yml. And it would pass locally, where a previous build left the dir.
+    const { unrunnable } = splitUnrunnableChecks([{ id: 'exports-exist' }], '/paper', allFalse);
+    expect(unrunnable[0]!.optional).toBe(true);
+    expect(toCheckRun(unrunnable).conclusion).toBe('success');
+  });
+});
+
+describe('runValidate — degrading when there is nothing to compose ([R82])', () => {
+  it('still reports, and SAYS it ran uncomposed', async () => {
+    const out = await runValidate(
+      { paperRoot: '/paper', instanceRoot, edge: edgeReturning({ id: 'fixture-2026-sample-paper' }) },
+      { repo: 'open-scholar-nexus/fixture-sample-paper' },
+      allTrue,
+    );
+    // No engineRoot → nothing to compose. A silent difference between two runs of the same
+    // command is the [R71] mistake in miniature, so the report says so once.
+    expect(out.notes.some((n) => /UNCOMPOSED/.test(n))).toBe(true);
+    expect(out.checkRun).toBeDefined();
+    // ...and it reaches the PR UI, not just stdout.
+    expect(out.checkRun.summary).toMatch(/⚠️ ran UNCOMPOSED/);
+    // Nothing to compose is an OPERATOR choice (--no-instance / a bare local run), so it
+    // explains without gating. Contrast the compose-FAILURE case below.
+    expect(out.errors.some((e) => e.check === 'compose')).toBe(false);
+  });
+
+  it('a compose FAILURE is a gating finding, not just a note', async () => {
+    // The merge-gate hole this closes: with an engine checkout AND an instance present,
+    // everything compose needs was supplied, so a throw means the paper's own config broke
+    // composition — a typo'd `edition:`, a missing coordinate, the [R36] cross-check. `oak
+    // build` hits the identical throw, so a green gate here ships a paper that cannot build.
+    // A REAL paper root: materializeDerived reads the author's myst.yml off disk (and needs a
+    // parseable engine coordinate) before the edge is ever consulted, so a fake path would
+    // throw ENOENT and prove nothing about the case we care about.
+    const paperRoot = mkdtempSync(join(tmpdir(), 'oak-compose-fail-'));
+    writeFileSync(
+      join(paperRoot, 'myst.yml'),
+      'version: 1\nproject:\n  id: fixture-2026-sample-paper\n  options:\n' +
+        '    oaktree-sapling:\n      version: v0.0.0-dev.1\n      edition: typo\n',
+    );
+    const edge: MystEdge = {
+      // Exactly how myst fails on an `extends:` entry that isn't there — the typo'd edition.
+      loadProject: async (_dir: string, configFile?: string) => {
+        if (configFile) throw new Error('Cannot find config file: editions/typo.yml');
+        return { id: 'fixture-2026-sample-paper' };
+      },
+      build: async () => {},
+      withProjectSession: async (_dir, fn) => fn({} as never),
+    };
+    const out = await runValidate(
+      { paperRoot, instanceRoot, edge, engineRoot: '/engine', edition: 'typo' },
+      { repo: 'open-scholar-nexus/fixture-sample-paper' },
+      allTrue,
+    );
+    const compose = out.errors.find((e) => e.check === 'compose');
+    expect(compose?.severity).toBe('error');
+    expect(compose?.klass).toBe('config'); // not `structural` — layer B still runs
+    expect(compose?.message).toMatch(/editions\/typo\.yml/);
+    expect(out.status).toBe('error');
+    expect(out.exitCode).toBe(1);
+    expect(out.checkRun.conclusion).toBe('failure');
+    // The note still explains WHY the other results are worth less than they look.
+    expect(out.notes.some((n) => /UNCOMPOSED/.test(n))).toBe(true);
   });
 });

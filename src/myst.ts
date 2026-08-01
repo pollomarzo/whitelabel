@@ -34,8 +34,9 @@ export function createMystEdge(): MystEdge {
    * (`myst-cli/session/session.js:70`, default `['myst.yml','myst.yaml']`) and every lookup
    * routes through it — `configFromPath`, `defaultConfigFile`, `project/load.js`, `fromTOC.js`,
    * `fromPath.js` — so pointing it at the derived config makes myst ignore the author's
-   * `myst.yml` entirely. Keyed cache rather than one session: `build` reads the derived config
-   * while `validate` (which does not compose) still reads the author's.
+   * `myst.yml` entirely. Keyed cache rather than one session: `build` and a composed `validate`
+   * read the derived config, while a DEGRADED validate (nothing to compose — no instance) still
+   * reads the author's ([R82]).
    */
   const sessions = new Map<string, Session>();
   const sessionFor = (configFile?: string): Session => {
@@ -72,13 +73,15 @@ export function createMystEdge(): MystEdge {
         process.chdir(prev);
       }
     },
-    async withProjectSession<T>(dir: string, fn: (session: ISession) => Promise<T>): Promise<T> {
-      // Author's config (default configFiles): `oak validate` does not compose, so there is no
-      // derived config to read. FOLLOW-UP OWED ([R71]): the Layer-B editorial checks arguably
-      // should see the COMPOSED config, since that is what actually gets published — deliberately
-      // not changed here, because it can flip the Journal-checks merge verdict and needs its own
-      // evaluation rather than riding a mechanical refactor.
-      const session = sessionFor();
+    async withProjectSession<T>(
+      dir: string,
+      fn: (session: ISession) => Promise<T>,
+      configFile?: string,
+    ): Promise<T> {
+      // `oak validate` passes the DERIVED config ([R82]): the Layer-B editorial checks read the
+      // config that actually gets published, not the author's pre-extends one. Omitted only when
+      // there was nothing to compose (no instance) — then myst's default `myst.yml` is all there is.
+      const session = sessionFor(configFile);
       const prev = process.cwd();
       process.chdir(dir);
       try {
