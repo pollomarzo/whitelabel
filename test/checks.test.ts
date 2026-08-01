@@ -73,6 +73,22 @@ describe('toCheckRun (reporting — GitHub Check Run, ours)', () => {
     expect(r.annotations[1]?.path).toBe('index.md');
   });
 
+  it('embeds notes above the table without touching the conclusion ([R82])', () => {
+    // A degraded run must be visibly degraded where people read verdicts. It must NOT become
+    // a failure just for being degraded — the compose finding is what gates, not the note.
+    const r = toCheckRun([{ id: 'authors-exist', status: CheckStatus.pass }], undefined, [
+      'ran UNCOMPOSED: the derived config could not be produced (boom).',
+    ]);
+    expect(r.conclusion).toBe('success');
+    expect(r.summary).toMatch(/^> ⚠️ ran UNCOMPOSED/);
+    expect(r.summary.indexOf('UNCOMPOSED')).toBeLessThan(r.summary.indexOf('| Check |'));
+  });
+
+  it('says nothing when there are no notes — a composed run stays quiet', () => {
+    const r = toCheckRun([{ id: 'authors-exist', status: CheckStatus.pass }]);
+    expect(r.summary.startsWith('| Check |')).toBe(true);
+  });
+
   it('never annotates a finding anchored to the DERIVED config ([R82])', () => {
     // Since validate reads myst.oak.yml, curvenote's config-anchored results name a generated,
     // gitignored file. GitHub cannot resolve that path (and a batch of unresolvable ones 422s
@@ -166,6 +182,18 @@ describe('checksComment (sticky PR-comment renderer)', () => {
     expect(body).toContain('❌');
     expect(body).toContain('1 passed, 1 failed');
     expect(body).toContain('authors-have-orcid');
+  });
+
+  it('carries a degraded run\'s note into the comment ([R82])', () => {
+    // check-post does not know notes exist — they ride inside checkRun.summary, which this
+    // renders. That is the whole fix: the PR UI stops showing a degraded run as a normal one.
+    const body = checksComment({
+      status: 'ok',
+      checkRun: toCheckRun([{ id: 'abstract-exists', status: CheckStatus.pass }], undefined, [
+        'ran UNCOMPOSED (no engine checkout or instance-config)',
+      ]),
+    });
+    expect(body).toContain('⚠️ ran UNCOMPOSED');
   });
 });
 

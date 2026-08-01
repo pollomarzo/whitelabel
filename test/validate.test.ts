@@ -495,5 +495,49 @@ describe('runValidate — degrading when there is nothing to compose ([R82])', (
     // command is the [R71] mistake in miniature, so the report says so once.
     expect(out.notes.some((n) => /UNCOMPOSED/.test(n))).toBe(true);
     expect(out.checkRun).toBeDefined();
+    // ...and it reaches the PR UI, not just stdout.
+    expect(out.checkRun.summary).toMatch(/⚠️ ran UNCOMPOSED/);
+    // Nothing to compose is an OPERATOR choice (--no-instance / a bare local run), so it
+    // explains without gating. Contrast the compose-FAILURE case below.
+    expect(out.errors.some((e) => e.check === 'compose')).toBe(false);
+  });
+
+  it('a compose FAILURE is a gating finding, not just a note', async () => {
+    // The merge-gate hole this closes: with an engine checkout AND an instance present,
+    // everything compose needs was supplied, so a throw means the paper's own config broke
+    // composition — a typo'd `edition:`, a missing coordinate, the [R36] cross-check. `oak
+    // build` hits the identical throw, so a green gate here ships a paper that cannot build.
+    // A REAL paper root: materializeDerived reads the author's myst.yml off disk (and needs a
+    // parseable engine coordinate) before the edge is ever consulted, so a fake path would
+    // throw ENOENT and prove nothing about the case we care about.
+    const paperRoot = mkdtempSync(join(tmpdir(), 'oak-compose-fail-'));
+    writeFileSync(
+      join(paperRoot, 'myst.yml'),
+      'version: 1\nproject:\n  id: fixture-2026-sample-paper\n  options:\n' +
+        '    oaktree-sapling:\n      version: v0.0.0-dev.1\n      edition: typo\n',
+    );
+    const edge: MystEdge = {
+      // Exactly how myst fails on an `extends:` entry that isn't there — the typo'd edition.
+      loadProject: async (_dir: string, configFile?: string) => {
+        if (configFile) throw new Error('Cannot find config file: editions/typo.yml');
+        return { id: 'fixture-2026-sample-paper' };
+      },
+      build: async () => {},
+      withProjectSession: async (_dir, fn) => fn({} as never),
+    };
+    const out = await runValidate(
+      { paperRoot, instanceRoot, edge, engineRoot: '/engine', edition: 'typo' },
+      { repo: 'open-scholar-nexus/fixture-sample-paper' },
+      allTrue,
+    );
+    const compose = out.errors.find((e) => e.check === 'compose');
+    expect(compose?.severity).toBe('error');
+    expect(compose?.klass).toBe('config'); // not `structural` — layer B still runs
+    expect(compose?.message).toMatch(/editions\/typo\.yml/);
+    expect(out.status).toBe('error');
+    expect(out.exitCode).toBe(1);
+    expect(out.checkRun.conclusion).toBe('failure');
+    // The note still explains WHY the other results are worth less than they look.
+    expect(out.notes.some((n) => /UNCOMPOSED/.test(n))).toBe(true);
   });
 });

@@ -537,8 +537,10 @@ export interface ValidateResult {
   checks: EngineCheckResult[];
   checkRun: CheckRun;
   /** Info-level notes about HOW the run happened — today, that it ran uncomposed ([R82]).
-   *  Never gates. A silent difference between two runs of the same command is the [R71]
-   *  mistake in miniature, so the degradation says so once, in the report. */
+   *  Never gates: when composing was possible and FAILED, the `compose` finding above is what
+   *  gates; a note only ever explains. They ride into `checkRun.summary`, so the Check Run and
+   *  the sticky comment both show them — a difference visible only in stdout is still the
+   *  [R71] mistake, since the PR UI is where anyone actually reads a verdict. */
   notes: string[];
   exitCode: number;
 }
@@ -577,6 +579,7 @@ export async function runValidate(
   // and a gate that crashes tells the author less than a gate that says what it could not do.
   let project: { id?: string; exports?: Array<Record<string, unknown>>; thumbnail?: string };
   let configFile: string | undefined;
+  let composeFailure: string | undefined;
   const composable = !!input.engineRoot && !!input.instanceRoot;
   if (composable) {
     try {
@@ -592,8 +595,17 @@ export async function runValidate(
       project = materialized.resolvedProject;
       configFile = DERIVED_CONFIG_FILE;
     } catch (e) {
+      // A throw HERE is a finding, not just a note. We had an engine checkout AND an
+      // instance-config — everything compose needs — so the failure is a defect in the
+      // paper's own config (a typo'd `edition:`, a missing/mismatched engine coordinate,
+      // the [R36] cross-check), and `oak build` will hit the identical throw on `main`.
+      // Reporting it as a note alone let a paper whose build provably crashes come back
+      // `status: ok`, exit 0, Check Run success — the merge gate green on a broken paper.
+      // Still guarded rather than rethrown: the rest of the report is worth more than a
+      // stack trace, and this way the author gets the whole fix-list at once.
+      composeFailure = (e as Error).message;
       notes.push(
-        `ran UNCOMPOSED: the derived config could not be produced (${(e as Error).message}). ` +
+        `ran UNCOMPOSED: the derived config could not be produced (${composeFailure}). ` +
           `Checks read the author's own myst.yml, so layer-declared fields are invisible.`,
       );
     }
@@ -618,6 +630,22 @@ export async function runValidate(
     },
     probes,
   );
+  // `config`, not `structural`: structural errors short-circuit Layer B, and the author is
+  // better served seeing the editorial fix-list in the same run (id-gate-relocation). Those
+  // Layer-B results are read off the author's config, so some may be vacuous — which is what
+  // the note says, and why this finding is the one that gates.
+  if (composeFailure) {
+    layerA.push({
+      check: 'compose',
+      severity: 'error',
+      message:
+        `the derived config could not be produced: ${composeFailure}. This paper's own ` +
+        `config is what broke composition, so \`oak build\` fails the same way — the checks ` +
+        `below read the author's myst.yml and cannot see what the engine, edition or brand ` +
+        `layers declare.`,
+      klass: 'config',
+    });
+  }
   const errors = layerA.filter((f) => f.severity === 'error');
   const warnings = layerA.filter((f) => f.severity === 'warn');
 
@@ -678,7 +706,7 @@ export async function runValidate(
   }));
   // Relativize curvenote's (sometimes absolute) annotation paths against the repo checkout root
   // so GitHub can resolve them; default to the paper root (== repo root in the n=1 model).
-  const checkRun = toCheckRun([...layerAResults, ...checks], opts.pathBase ?? input.paperRoot);
+  const checkRun = toCheckRun([...layerAResults, ...checks], opts.pathBase ?? input.paperRoot, notes);
 
   const blockingCheckFail = checks.some((c) => (c.status === CheckStatus.fail || c.status === CheckStatus.error) && !c.optional);
   const hasError = errors.length > 0 || blockingCheckFail;

@@ -122,7 +122,11 @@ const GITHUB_MAX_ANNOTATIONS = 50;
  * A confident annotation on an unrelated line beats no annotation for nobody. The finding
  * still lands in the summary table and the sticky comment; only the inline pin is dropped.
  */
-export function toCheckRun(results: EngineCheckResult[], pathBase?: string): CheckRun {
+export function toCheckRun(
+  results: EngineCheckResult[],
+  pathBase?: string,
+  notes: string[] = [],
+): CheckRun {
   const failed = results.filter((r) => r.status === CheckStatus.fail || r.status === CheckStatus.error);
   const blocking = failed.filter((r) => !r.optional);
   const passed = results.filter((r) => r.status === CheckStatus.pass);
@@ -136,7 +140,14 @@ export function toCheckRun(results: EngineCheckResult[], pathBase?: string): Che
       (r) => `| ${esc(r.id)} | ${r.status}${r.optional ? ' (optional)' : ''} | ${esc(r.message ?? '')} |`,
     )
     .join('\n');
-  const summary = `| Check | Status | Detail |\n| --- | --- | --- |\n${rows}`;
+  const table = `| Check | Status | Detail |\n| --- | --- | --- |\n${rows}`;
+  // Notes describe HOW the run happened, never WHETHER it passed — they must not touch
+  // `conclusion`. But they have to be VISIBLE: a run that could not compose reads the
+  // author's config, so some of the passes below mean less than they look like they do, and
+  // the Check Run is where a reviewer actually looks. Above the table, not below it.
+  const summary = notes.length
+    ? `${notes.map((n) => `> ⚠️ ${n}`).join('\n>\n')}\n\n${table}`
+    : table;
 
   const annotations: CheckRunAnnotation[] = failed
     .filter((r) => r.file && r.position && basename(r.file) !== DERIVED_CONFIG_FILE)
@@ -172,6 +183,11 @@ export const STICKY_CHECKS = 'oak-journal-checks';
 export interface ChecksReport {
   status?: 'ok' | 'error';
   checkRun: CheckRun;
+  /** `oak validate`'s info-level notes ([R82]), for anything reading the report directly.
+   *  Stage 2 does not re-render them: `toCheckRun` already embedded them in `checkRun.summary`,
+   *  which both the Check Run and the sticky comment print, so a DEGRADED run is visibly
+   *  different from a composed one in the PR UI without check-post knowing they exist. */
+  notes?: string[];
   [k: string]: unknown;
 }
 
