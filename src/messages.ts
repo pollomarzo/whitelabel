@@ -363,11 +363,12 @@ export const bootstrap = {
 
   runbookSite: (siteUrl: string): string =>
     `The journal website is built from this repo and goes live at ${siteUrl} once the first ` +
-    '"Journal site" workflow run finishes (watch it in the Actions tab). Every file in it is ' +
-    'yours to edit — the engine writes them once and never touches them again, so upgrading ' +
-    'the engine will not overwrite your design. Three version pins you bump by hand when you ' +
-    'want newer: the gallery plugin URL and `site.template` in myst.yml, and `mystmd` in ' +
-    'package.json.',
+    '"Journal site" workflow run finishes (watch it in the Actions tab). GitHub Pages takes a ' +
+    'minute or two to serve a brand-new site, so a 404 straight after this command is normal — ' +
+    'give it a moment and reload. Every file in it is yours to edit: the engine writes them ' +
+    'once and never touches them again, so upgrading the engine will not overwrite your ' +
+    'design. Three version pins you bump by hand when you want newer: the gallery plugin URL ' +
+    'and `site.template` in myst.yml, and `mystmd` in package.json.',
 
   runbookSiteFailure:
     'If a website build ever fails, the version already published keeps serving — a bad entry ' +
@@ -722,6 +723,9 @@ export const workflow = {
     'oak conformance: usage:\n' +
     '  oak conformance reset   --repo <owner/name>\n' +
     '  oak conformance certify --repo <owner/name> --tag <vX.Y.Z> [--run-id <id>] [--fork-repo <owner/name>] [--record <path>]',
+
+  /** Printed while a git/gh call is in flight, then erased — see gh.ts `showWorking`. */
+  working: (what: string): string => `  … ${what}`,
 
   // the engine-release resolver + the wrangler deploy (gh.ts)
   noReleases: (engineRepo: string): string => `no releases found on ${engineRepo} — pass --to <tag>`,
