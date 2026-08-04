@@ -27,6 +27,7 @@
 import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { readDoc } from './yaml-io.js';
+import * as msg from './messages.js';
 import { annotate } from './messages.js';
 import { JournalConfig, type PreviewConfig } from './schema.js';
 
@@ -141,13 +142,13 @@ export function planPreview(input: {
 }): PreviewPlan {
   const { preview, cf, repo, pr } = input;
   if (preview.provider !== 'cloudflare') {
-    return { mode: 'artifact', reason: `preview.provider is '${preview.provider}'` };
+    return { mode: 'artifact', reason: msg.workflow.previewProviderIsNot(preview.provider) };
   }
   if (!cf.apiToken || !cf.accountId) {
-    return { mode: 'artifact', reason: 'Cloudflare secrets are not configured' };
+    return { mode: 'artifact', reason: msg.workflow.previewNoCloudflareSecrets };
   }
   if (!preview.cf_project_name) {
-    return { mode: 'artifact', reason: 'preview.cf_project_name is unset in journal.yml' };
+    return { mode: 'artifact', reason: msg.workflow.previewNoProjectName };
   }
   return {
     mode: 'cloudflare',
@@ -161,26 +162,11 @@ export function planPreview(input: {
 const STICKY_MARK = (header: string): string => `<!-- oak-sticky: ${header} -->`;
 
 export function previewComment(url: string): string {
-  return [
-    STICKY_MARK(STICKY_PREVIEW),
-    '**Preview deployed** 🚀',
-    '',
-    `${url}`,
-    '',
-    '_Updated on every push to this PR._',
-  ].join('\n');
+  return [STICKY_MARK(STICKY_PREVIEW), msg.pr.previewDeployed(url)].join('\n');
 }
 
 export function artifactComment(runUrl: string, reason: string): string {
-  return [
-    STICKY_MARK(STICKY_PREVIEW),
-    '**Preview build ready** 📦',
-    '',
-    'No Cloudflare preview is configured, so the built site is attached to its Paper CI run as',
-    `the **paper-build** artifact — open the run and scroll to **Artifacts**: ${runUrl}`,
-    '',
-    `_(${reason}.)_`,
-  ].join('\n');
+  return [STICKY_MARK(STICKY_PREVIEW), msg.pr.previewArtifact(runUrl, reason)].join('\n');
 }
 
 /** Parse the Zenodo record URL from a concept DOI prefix (sandbox `10.5072` vs prod `10.5281`).
@@ -194,7 +180,7 @@ export function recordUrlForDoi(doi: string): { doi: string; recordUrl: string }
   for (const [prefix, base] of map) {
     if (doi.startsWith(prefix)) return { doi, recordUrl: `${base}${doi.slice(prefix.length)}` };
   }
-  return { error: `unrecognized DOI prefix: ${doi} (expected 10.5281/zenodo.* or 10.5072/zenodo.*)` };
+  return { error: msg.workflow.notifyBadDoi(doi) };
 }
 
 /** Whether the paper already has a published `v*` tag (⇒ a new-version reminder is due). */
@@ -203,20 +189,7 @@ export function hasVersionTag(tags: string[]): boolean {
 }
 
 export function newVersionComment(doi: string, recordUrl: string): string {
-  return [
-    STICKY_MARK(STICKY_NEWVERSION),
-    '**Zenodo new-version reminder**',
-    '',
-    'This paper is already published on Zenodo. Before tagging the next release, an editor must:',
-    '',
-    `1. Open the record: ${recordUrl}`,
-    '2. Click **New version** to spawn an empty draft.',
-    '',
-    'CI will populate that draft once the new `v*` tag is pushed. The editor then clicks',
-    '**Publish** on Zenodo to finalize.',
-    '',
-    `Concept DOI: \`${doi}\``,
-  ].join('\n');
+  return [STICKY_MARK(STICKY_NEWVERSION), msg.pr.newVersionReminder(doi, recordUrl)].join('\n');
 }
 
 /* --------------------------------------------------------------------------
@@ -253,8 +226,8 @@ export async function cmdDeployPreview(input: DeployPreviewInput, deps: PreviewD
   const { siteDir, repoRoot, instanceRoot, repo, serverUrl, cf, mystPath } = input;
   const pr = takePrNumber(siteDir);
   if (!pr) {
-    process.stderr.write('deploy-preview: no .pr-number in artifact — nothing to preview.\n');
-    return ok({ preview: 'skipped', reason: 'no .pr-number in artifact' });
+    process.stderr.write(msg.workflow.noPrNumber + '\n');
+    return ok({ preview: 'skipped', reason: msg.workflow.previewNoPrNumberReason });
   }
 
   const preview = loadJournalPreview(instanceRoot);
@@ -281,10 +254,15 @@ export async function cmdDeployPreview(input: DeployPreviewInput, deps: PreviewD
       // The ONE meaningful degrade ([R16]): a CF outage / missing secrets still leaves the
       // reviewer the artifact. This is not error-swallowing — it posts a different, useful
       // comment. A gh failure below is NOT degraded: it throws and fails the run, loudly.
-      const msg = (e as Error).message;
-      process.stderr.write(annotate('warning', `deploy-preview: Cloudflare deploy failed, degrading to artifact link (${msg})`) + '\n');
-      deps.gh.sticky(repoRoot, pr, STICKY_PREVIEW, artifactComment(runUrl, `Cloudflare deploy failed: ${msg}`));
-      outcome = { preview: 'artifact', reason: `cloudflare-failed: ${msg}` };
+      const failure = (e as Error).message;
+      process.stderr.write(annotate('warning', msg.workflow.cloudflareDegraded(failure)) + '\n');
+      deps.gh.sticky(
+        repoRoot,
+        pr,
+        STICKY_PREVIEW,
+        artifactComment(runUrl, msg.workflow.cloudflareDegradedReason(failure)),
+      );
+      outcome = { preview: 'artifact', reason: msg.workflow.previewCloudflareFailedReason(failure) };
     }
   } else {
     deps.gh.sticky(repoRoot, pr, STICKY_PREVIEW, artifactComment(runUrl, plan.reason));
@@ -318,17 +296,13 @@ export function runNewVersionReminder(input: NotifyInput, gh: GhPr): Outcome {
   const { repoRoot, mystPath, repo, pr } = input;
   const tags = gh.versionTags(repoRoot, repo);
   if (!hasVersionTag(tags)) {
-    return ok({ reminder: 'skipped', reason: 'no v* tags on main (first-deposit case)' });
+    return ok({ reminder: 'skipped', reason: msg.workflow.notifyFirstDeposit });
   }
 
   const doi = readProjectDoi(mystPath);
   if (!doi) {
     process.stderr.write(
-      annotate(
-        'error',
-        'notify: a v* tag exists on main but project.doi is missing from myst.yml — the ' +
-          'repo is published but unlinked. Fix myst.yml before tagging the next release.',
-      ) + '\n',
+      annotate('error', msg.workflow.notifyPublishedButUnlinked) + '\n',
     );
     return err(1, 'v* tag present but project.doi missing', { reminder: 'error' });
   }
@@ -341,7 +315,7 @@ export function runNewVersionReminder(input: NotifyInput, gh: GhPr): Outcome {
   gh.sticky(repoRoot, pr, STICKY_NEWVERSION, newVersionComment(parsed.doi, parsed.recordUrl));
   gh.addLabel(repoRoot, pr, LABEL_EDITOR_ACTION, {
     color: 'b60205',
-    description: 'An editor must take action before this can proceed',
+    description: msg.bootstrap.labelEditorAction,
   });
   return ok({ reminder: 'posted', record_url: parsed.recordUrl, doi: parsed.doi });
 }

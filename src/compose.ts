@@ -24,6 +24,7 @@
  * exports (now carry the edition's `articles`); (2) compose(resolved) → ownOverride →
  * write into the working-tree own project/site → build. Neither write is committed.
  */
+import * as msg from './messages.js';
 import { isAbsolute, join } from 'node:path';
 import { readEngineOptions } from './schema.js';
 import { typstTemplateUrl, themeZipUrl } from './assets.js';
@@ -256,9 +257,7 @@ export function compose(input: ComposeInput): ComposeResult {
   const resolved = readEngineOptions(resolvedProject.options);
   if (resolved.version !== engineVersion || resolved.edition !== edition) {
     throw new Error(
-      `options.oaktree-sapling mismatch: shim read {version:${engineVersion}, edition:${edition}} ` +
-        `but resolved config has {version:${resolved.version}, edition:${resolved.edition}}. ` +
-        `An extended config is likely overriding project.options.`,
+      msg.build.coordinateMismatch(engineVersion, edition, resolved.version, resolved.edition),
     );
   }
 

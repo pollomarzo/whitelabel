@@ -121,19 +121,7 @@ function resolveInstanceRoot(
   const explicit = flag(argv, 'instance');
   if (explicit) return { root: resolve(explicit) };
   if (existsSync(join(paperRoot, 'journal.yml'))) return { root: paperRoot };
-  return {
-    error:
-      `oak ${verb}: no instance-config resolved — ` +
-      `pass --instance <path> (or --no-instance for ` +
-      `${verb === 'validate' ? 'a bare, engine-only check' : verb === 'start' ? 'an unbranded preview' : 'an unbranded build'}).\n` +
-      `In a CI run the path comes from .github/actions/engine/pins.yml: ` +
-      `\`instance_repo: <owner/repo>\` makes the workflow fetch that journal, and ` +
-      `\`instance_repo: "."\` means the journal.yml sits in THIS repo — but there is no ` +
-      `journal.yml at ${paperRoot}.\n` +
-      `If this paper belongs to a journal, set instance_repo in pins.yml to that journal's ` +
-      `owner/repo (\`oak bootstrap paper --instance\` writes it for you). Running locally, ` +
-      `pass --instance <path to a checkout of the journal repo>.`,
-  };
+  return { error: msg.build.noInstance(verb, paperRoot) };
 }
 
 /**
@@ -372,7 +360,7 @@ async function cmdDeposit(argv: string[]): Promise<number> {
   const siteUrl = flag(rest, 'site-url') ?? process.env.SITE_URL;
   const token = flag(rest, 'token') ?? process.env.ZENODO_TOKEN;
   if (!token) {
-    process.stderr.write('no token: set ZENODO_TOKEN or pass --token\n');
+    process.stderr.write(msg.workflow.depositNoToken + '\n');
     return 2;
   }
   const api = new z.ZenodoApi(z.createFetchTransport(), z.apiBase(sandbox), token);
@@ -380,7 +368,7 @@ async function cmdDeposit(argv: string[]): Promise<number> {
   if (sub === 'prepare') {
     const repo = flag(rest, 'repo') ?? process.env.GITHUB_REPOSITORY;
     if (!repo) {
-      process.stderr.write('deposit prepare: pass --repo owner/repo (or set GITHUB_REPOSITORY)\n');
+      process.stderr.write(msg.workflow.depositNoRepo + '\n');
       return 2;
     }
     const out = await z.cmdPrepare({ mystPath, repo, siteUrl, sandbox, api, instanceRoot });
@@ -390,9 +378,9 @@ async function cmdDeposit(argv: string[]): Promise<number> {
     if (out.exitCode === 0 && !has(rest, 'no-pr') && process.env.GH_TOKEN) {
       try {
         const url = gh.openDoiPr(resolve(mystPath, '..'), { conceptDoi: String(out.result.concept_doi) });
-        process.stderr.write(`deposit prepare: opened DOI PR ${url}\n`);
+        process.stderr.write(msg.workflow.depositDoiPrOpened(url) + '\n');
       } catch (e) {
-        process.stderr.write(annotate('warning', `deposit prepare: DOI PR not opened (${(e as Error).message})`) + '\n');
+        process.stderr.write(annotate('warning', msg.workflow.depositDoiPrFailed((e as Error).message)) + '\n');
       }
     }
     return out.exitCode;
@@ -402,7 +390,7 @@ async function cmdDeposit(argv: string[]): Promise<number> {
     const pdf = flag(rest, 'pdf');
     const tag = flag(rest, 'tag');
     if (!pdf || !tag) {
-      process.stderr.write('deposit publish: --pdf and --tag are required\n');
+      process.stderr.write(msg.workflow.depositPublishArgs + '\n');
       return 2;
     }
     const out = await z.cmdPublish({
@@ -420,7 +408,7 @@ async function cmdDeposit(argv: string[]): Promise<number> {
     return out.exitCode;
   }
 
-  process.stderr.write('oak deposit: usage: oak deposit <prepare|publish|status> [...]\n');
+  process.stderr.write(msg.workflow.depositUsage + '\n');
   return 2;
 }
 
@@ -437,7 +425,7 @@ function findExportedPdf(paperRoot: string): string | null {
 async function cmdRelease(argv: string[]): Promise<number> {
   const tag = flag(argv, 'tag');
   if (!tag) {
-    process.stderr.write('oak release: --tag vX.Y.Z is required\n');
+    process.stderr.write(msg.workflow.releaseNoTag + '\n');
     return 2;
   }
   const z = await import('./zenodo.js');
@@ -455,19 +443,19 @@ async function cmdRelease(argv: string[]): Promise<number> {
 
   const doi = parseDocument(readFileSync(mystPath, 'utf8')).getIn(['project', 'doi']);
   if (typeof doi !== 'string' || !doi) {
-    process.stderr.write('oak release: project.doi missing — run prepare and merge that PR first.\n');
+    process.stderr.write(msg.workflow.releaseNoDoi + '\n');
     return 2;
   }
   const sandbox = z.isSandboxDoi(doi);
   const token = flag(argv, 'token') ?? (sandbox ? process.env.ZENODO_TOKEN_SANDBOX : process.env.ZENODO_TOKEN);
   if (!token) {
-    process.stderr.write(`no token: set ${sandbox ? 'ZENODO_TOKEN_SANDBOX' : 'ZENODO_TOKEN'}\n`);
+    process.stderr.write(msg.workflow.releaseNoToken(sandbox) + '\n');
     return 2;
   }
 
   const pdf = findExportedPdf(paperRoot);
   if (!pdf) {
-    process.stderr.write('oak release: no PDF under _build/exports (did the typst export run?)\n');
+    process.stderr.write(msg.workflow.releaseNoPdf + '\n');
     return 2;
   }
 
@@ -486,13 +474,13 @@ async function cmdRelease(argv: string[]): Promise<number> {
       const files = readdirSync(bundleOut).map((f) => join(bundleOut, f));
       gh.uploadReleaseAsset(paperRoot, tag, files);
       const sha = await gh.realGitContext.headSha(paperRoot);
-      gh.postCommitComment(paperRoot, sha, `Zenodo draft populated: ${out.result.draft_url ?? out.result.version_doi}`);
+      gh.postCommitComment(paperRoot, sha, msg.workflow.releaseCommitComment(String(out.result.draft_url ?? out.result.version_doi)));
     } catch (e) {
-      process.stderr.write(annotate('warning', `oak release: gh post-steps failed (${(e as Error).message})`) + '\n');
+      process.stderr.write(annotate('warning', msg.workflow.releasePostStepsFailed((e as Error).message)) + '\n');
     }
   } else if (out.exitCode !== 0 && process.env.GH_TOKEN) {
     try {
-      gh.openFailureIssue(paperRoot, `Zenodo publish failed for ${tag}`, String(out.result.message ?? 'unknown error'));
+      gh.openFailureIssue(paperRoot, msg.workflow.releaseFailureIssue(tag), String(out.result.message ?? 'unknown error'));
     } catch {
       /* best-effort */
     }
@@ -530,7 +518,7 @@ async function cmdDeployPreview(argv: string[]): Promise<number> {
  *  owns the [R26] delete). */
 async function cmdNotify(argv: string[]): Promise<number> {
   if (argv[0] !== 'new-version') {
-    process.stderr.write('oak notify: usage: oak notify new-version [--pr N | --site <dir>]\n');
+    process.stderr.write(msg.workflow.notifyUsage + '\n');
     return 2;
   }
   const rest = argv.slice(1);
@@ -543,7 +531,7 @@ async function cmdNotify(argv: string[]): Promise<number> {
     if (existsSync(f)) pr = readFileSync(f, 'utf8').trim();
   }
   if (!pr) {
-    process.stderr.write('oak notify new-version: pass --pr N (or --site <dir> holding a .pr-number)\n');
+    process.stderr.write(msg.workflow.notifyNoPr + '\n');
     return 2;
   }
 
@@ -631,13 +619,11 @@ function validateSummary(out: {
 }): string[] {
   const passed = out.checks.filter((c) => String(c.status) === 'pass').length;
   const counts = [
-    out.errors.length ? `${out.errors.length} error(s)` : '',
-    out.warnings.length ? `${out.warnings.length} warning(s)` : '',
-    out.checks.length ? `${passed}/${out.checks.length} editorial checks passed` : '',
+    out.errors.length ? msg.validate.countErrors(out.errors.length) : '',
+    out.warnings.length ? msg.validate.countWarnings(out.warnings.length) : '',
+    out.checks.length ? msg.validate.countChecks(passed, out.checks.length) : '',
   ].filter(Boolean);
-  const lines = [
-    `oak validate: ${out.status === 'ok' ? 'PASS' : 'FAIL'}${counts.length ? ' — ' + counts.join(', ') : ''}`,
-  ];
+  const lines = [msg.validate.verdict(out.status === 'ok', counts)];
   for (const e of out.errors) lines.push(`  ✗ ${e.check}: ${e.message}`);
   for (const w of out.warnings) lines.push(`  ! ${w.check}: ${w.message}`);
   for (const c of out.checks) {
@@ -656,13 +642,13 @@ async function cmdValidate(argv: string[]): Promise<number> {
   if (isJournalRepo(paperRoot)) {
     const text = msg.validate.inJournalRepo(paperRoot);
     process.stderr.write(text + '\n');
-    writeFailureReport(reportPath, 'oak validate could not run', text);
+    writeFailureReport(reportPath, msg.workflow.validateCouldNotRun, text);
     return 2;
   }
   const resolved = resolveInstanceRoot(argv, paperRoot, 'validate');
   if ('error' in resolved) {
     process.stderr.write(annotate('error', resolved.error) + '\n');
-    writeFailureReport(reportPath, 'oak validate could not run', resolved.error);
+    writeFailureReport(reportPath, msg.workflow.validateCouldNotRun, resolved.error);
     return 2;
   }
   const instanceRoot = resolved.root;
@@ -708,8 +694,8 @@ async function cmdValidate(argv: string[]): Promise<number> {
     // sentence — a stack in a Check Run summary tells an author nothing they can act on).
     const userFault = err instanceof UserError;
     const message = userFault ? (err as Error).message : String((err as Error)?.stack ?? err);
-    process.stderr.write(annotate('error', userFault ? message : `oak validate: ${message}`) + '\n');
-    writeFailureReport(reportPath, userFault ? 'oak validate could not run' : 'oak validate crashed', message);
+    process.stderr.write(annotate('error', userFault ? message : msg.workflow.validateCrashLine(message)) + '\n');
+    writeFailureReport(reportPath, userFault ? msg.workflow.validateCouldNotRun : msg.workflow.validateCrashed, message);
     return userFault ? 2 : 1;
   } finally {
     process.stdout.write = realStdoutWrite;
@@ -763,11 +749,11 @@ async function cmdCheckPost(argv: string[]): Promise<number> {
   const base = flag(argv, 'base');
   const verifiedHead = flag(argv, 'verified-head');
   if (!reportPath || !repo || !sha) {
-    process.stderr.write('oak check-post: --report <path>, --repo <owner/repo> and --sha <headsha> are required\n');
+    process.stderr.write(msg.workflow.checkPostArgs + '\n');
     return 2;
   }
   if (!existsSync(reportPath)) {
-    process.stderr.write(`oak check-post: report file not found: ${reportPath}\n`);
+    process.stderr.write(msg.workflow.checkPostNoReport(reportPath) + '\n');
     return 2;
   }
   const report = JSON.parse(readFileSync(reportPath, 'utf8'));
@@ -793,24 +779,17 @@ function makeConfirm(argv: string[]): (plan: string[]) => Promise<boolean> {
     for (const line of plan) process.stderr.write(line + '\n');
     if (has(argv, 'yes')) return true;
     if (!process.stdin.isTTY) {
-      process.stderr.write(
-        'aborted: stdin is not a TTY, so the plan above could not be confirmed interactively. ' +
-          'Nothing was created or changed. Re-run with --yes to accept the plan unattended.\n',
-      );
+      process.stderr.write(msg.prompt.nonTty + '\n');
       return false;
     }
     const { createInterface } = await import('node:readline/promises');
     const rl = createInterface({ input: process.stdin, output: process.stderr });
-    const ans = (await rl.question('Proceed? [y/N] ')).trim();
+    const ans = (await rl.question(msg.prompt.proceed)).trim();
     rl.close();
     if (/^y/i.test(ans)) return true;
     // Every abort says WHY. A bare `{"status":"aborted"}` after a prompt that defaults to No
     // reads as the tool refusing, not as the answer being taken at its word.
-    process.stderr.write(
-      `aborted: the plan above was not confirmed (` +
-        `${ans ? `answered "${ans}"` : 'empty answer — the prompt defaults to No'}). ` +
-        'Nothing was created or changed. Re-run and answer "y", or pass --yes.\n',
-    );
+    process.stderr.write(msg.prompt.declined(ans) + '\n');
     return false;
   };
 }
@@ -841,7 +820,7 @@ async function cmdBootstrap(argv: string[]): Promise<number> {
 
   const repo = flag(rest, 'repo');
   if (!repo) {
-    process.stderr.write('oak bootstrap: --repo <owner/name> is required\n');
+    process.stderr.write(msg.workflow.bootstrapNoRepo + '\n');
     return 2;
   }
   const engineRepo = flag(rest, 'engine-repo') ?? ENGINE_REPO_DEFAULT;
@@ -854,7 +833,7 @@ async function cmdBootstrap(argv: string[]): Promise<number> {
     try {
       engineVersion = gh.latestEngineRelease(engineRepo);
     } catch {
-      process.stderr.write('oak bootstrap: pass --engine-version <tag> (no release resolvable on the engine repo)\n');
+      process.stderr.write(msg.workflow.bootstrapNoRelease + '\n');
       return 2;
     }
   }
@@ -895,7 +874,7 @@ async function cmdBootstrap(argv: string[]): Promise<number> {
     const external = has(rest, 'external');
     const coLocated = has(rest, 'co-located');
     if (external === coLocated) {
-      process.stderr.write('oak bootstrap journal: pass exactly one of --external | --co-located\n');
+      process.stderr.write(msg.workflow.bootstrapJournalTier + '\n');
       return 2;
     }
     const out = await bootstrap.cmdBootstrapJournal(
@@ -922,7 +901,7 @@ async function cmdBootstrap(argv: string[]): Promise<number> {
     return out.exitCode;
   }
 
-  process.stderr.write('oak bootstrap: usage: oak bootstrap <paper|journal> --repo <owner/name> [...]\n');
+  process.stderr.write(msg.workflow.bootstrapUsage + '\n');
   return 2;
 }
 
@@ -934,7 +913,7 @@ async function cmdUpgrade(argv: string[]): Promise<number> {
   const paper = flag(argv, 'paper');
   const repo = flag(argv, 'repo');
   if (!paper && !repo) {
-    process.stderr.write('oak upgrade: pass --paper <dir> or --repo <owner/name>\n');
+    process.stderr.write(msg.upgrade.missingTarget + '\n');
     return 2;
   }
   const mode: UpgradeMode = has(argv, 'version-only')
@@ -970,7 +949,7 @@ async function cmdConformance(argv: string[]): Promise<number> {
   if (sub === 'reset') {
     const repo = flag(rest, 'repo');
     if (!repo) {
-      process.stderr.write('oak conformance reset: --repo <owner/name> is required\n');
+      process.stderr.write(msg.workflow.conformanceResetArgs + '\n');
       return 2;
     }
     const out = await conformance.cmdConformanceReset({ repo }, deps);
@@ -982,7 +961,7 @@ async function cmdConformance(argv: string[]): Promise<number> {
     const repo = flag(rest, 'repo');
     const tag = flag(rest, 'tag');
     if (!repo || !tag) {
-      process.stderr.write('oak conformance certify: --repo <owner/name> and --tag <vX.Y.Z> are required\n');
+      process.stderr.write(msg.workflow.conformanceCertifyArgs + '\n');
       return 2;
     }
     const upgrade = await import('./upgrade.js');
@@ -1030,11 +1009,7 @@ async function cmdConformance(argv: string[]): Promise<number> {
     return out.exitCode;
   }
 
-  process.stderr.write(
-    'oak conformance: usage:\n' +
-      '  oak conformance reset   --repo <owner/name>\n' +
-      '  oak conformance certify --repo <owner/name> --tag <vX.Y.Z> [--run-id <id>] [--fork-repo <owner/name>] [--record <path>]\n',
-  );
+  process.stderr.write(msg.workflow.conformanceUsage + '\n');
   return 2;
 }
 
@@ -1081,67 +1056,6 @@ function nearestVerb(word: string): string | null {
   return bestD <= 3 ? best : null;
 }
 
-/**
- * Usage. Opens with what `oak` IS and where someone with nothing starts, because the first
- * reader of this text is a tenant who has just installed it — a bare list of 14 verbs answers
- * a question they have not reached yet. The two journal shapes get a plain sentence each:
- * `--external` vs `--co-located` is the single most consequential choice on this screen and
- * it is not inferable from the words.
- */
-function usage(): string {
-  return (
-    `oak — the journal engine. It builds, checks, previews and publishes papers, and sets up\n` +
-    `the journal (its branding, editions and list of papers) they belong to. Anything that\n` +
-    `changes a repo prints a plan and asks before it does it.\n` +
-    `\n` +
-    `Starting from nothing? Create the journal, then a repo per paper:\n` +
-    `  oak bootstrap journal --repo <owner/name> --external --name "My Journal" --edition 2026\n` +
-    `  oak bootstrap paper   --repo <owner/name> --instance <owner/journal-repo> --edition 2026\n` +
-    `\n` +
-    `Setting up repos\n` +
-    `  oak bootstrap journal --repo <owner/name> (--external | --co-located) [--name <name>] [--edition <id>]\n` +
-    `                        [--engine-version <tag>] [--owner <@user|@org/team>] [--no-require-checks] [--no-site] [--yes]\n` +
-    `      --external    the journal gets its own public repo, holding its settings, branding\n` +
-    `                    and the list of published papers; each paper then lives in a repo of\n` +
-    `                    its own that points back at it. This is the usual choice.\n` +
-    `      --co-located  one single repo is both the journal and its paper — journal settings\n` +
-    `                    and manuscript side by side. For a one-off publication with no\n` +
-    `                    separate journal repo; there is no journal website in this shape.\n` +
-    `  oak bootstrap paper   --repo <owner/name> --instance <owner/journal-repo> --edition <id>\n` +
-    `                        [--from <author-url> [--source-ref <ref>]]\n` +
-    `                        [--engine-version <tag>] [--owner <@user|@org/team>] [--private] [--no-require-checks] [--yes]\n` +
-    `      --instance    the journal repo this paper belongs to ('.' only if the journal\n` +
-    `                    settings live in this same repo); --edition names one of its editions\n` +
-    `  oak upgrade (--repo <owner/name> | --paper <dir>) [--to <tag>] [--version-only|--files-only|--both] [--yes]\n` +
-    `                    move a paper repo to a newer engine version, as a pull request\n` +
-    `\n` +
-    `Working on a paper\n` +
-    `  oak validate [--paper <dir>] [--instance <dir> | --no-instance] [--strict] [--report <path>]\n` +
-    `                    run the journal's checks over a manuscript and report what fails\n` +
-    `  oak build   [--paper <dir>] [--instance <dir> | --no-instance] [--base-url <url>] [--no-site-template]\n` +
-    `                    build the paper's website + PDF into _build/\n` +
-    `  oak start   [--paper <dir>] [--instance <dir> | --no-instance] [--port <n>] [--server-port <n>]\n` +
-    `                    preview the paper in a browser, with the journal's settings and branding\n` +
-    `                    applied — the same config its CI builds. Reloads as you edit; Ctrl-C stops it.\n` +
-    `                    Run in the journal repo, it previews the journal website instead.\n` +
-    `\n` +
-    `Run by the workflows (rarely typed by hand)\n` +
-    `  oak check-post --report <path> --repo <owner/repo> --sha <headsha> [--pr <n>]\n` +
-    `  oak deploy-preview <site> [--instance <dir>] [--repo <owner/repo>]\n` +
-    `  oak notify new-version [--pr <n> | --site <dir>] [--repo <owner/repo>]\n` +
-    `  oak deposit prepare --repo <owner/repo> [--site-url <url>] [--sandbox] [--instance <dir>]\n` +
-    `  oak deposit publish --pdf <path> --tag <vX.Y.Z> [--site-url <url>] [--sandbox] [--instance <dir>]\n` +
-    `  oak deposit status  [--sandbox] [--instance <dir>]\n` +
-    `  oak release --tag <vX.Y.Z> [--paper <dir>] [--instance <dir>] [--site-url <url>]\n` +
-    `  oak conformance reset   --repo <owner/name>\n` +
-    `  oak conformance certify --repo <owner/name> --tag <vX.Y.Z> [--fork-repo <owner/name>]\n` +
-    `\n` +
-    `Any command\n` +
-    `  --json      print the full machine-readable result on stdout instead of a summary\n` +
-    `  --verbose   show the raw git/gh commands' output (shown on failure either way)\n`
-  );
-}
-
 async function main(argv: string[]): Promise<number> {
   const verb = argv[0] as Verb | undefined;
   // One switch, read by gh.ts, so `--verbose` reaches the subprocess layer without threading
@@ -1159,7 +1073,7 @@ async function main(argv: string[]): Promise<number> {
   if (verb === 'upgrade') return cmdUpgrade(argv.slice(1));
   if (verb === 'conformance') return cmdConformance(argv.slice(1));
   if (verb && verb in STUB_SLICE) {
-    process.stderr.write(`oak ${verb}: not implemented yet (${STUB_SLICE[verb]}).\n`);
+    process.stderr.write(msg.workflow.notImplemented(verb, STUB_SLICE[verb]!) + '\n');
     return 1;
   }
   // A word we do not know is an ERROR, not an invitation to read the manual. Printing usage
@@ -1167,11 +1081,9 @@ async function main(argv: string[]): Promise<number> {
   // like a bare `oak`, so the reader assumes the command ran and did nothing.
   if (verb) {
     const near = nearestVerb(verb);
-    process.stderr.write(
-      `oak: unknown command '${verb}'${near ? ` — did you mean '${near}'?` : ''}\n\n`,
-    );
+    process.stderr.write(msg.unknownCommand(verb, near) + '\n');
   }
-  process.stderr.write(usage());
+  process.stderr.write(msg.usage());
   return 2;
 }
 

@@ -9,6 +9,7 @@
  * are absent (a local sandbox rehearsal), the caller degrades to just the Zenodo work + a
  * working-tree myst.yml write, which is enough for the slice-3 acceptance (a sandbox record).
  */
+import * as msg from './messages.js';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { cpSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -292,7 +293,7 @@ export const realPagesDeployer: PagesDeployer = {
       },
     );
     const m = /https?:\/\/[^\s]*\.pages\.dev[^\s]*/.exec(out);
-    if (!m) throw new Error('wrangler did not report a *.pages.dev deployment URL');
+    if (!m) throw new Error(msg.workflow.wranglerNoUrl);
     return m[0];
   },
 };
@@ -495,7 +496,7 @@ export function tempClone(repo: string): string {
 /** Latest engine release tag for `engineRepo` (`gh release list`). */
 export function latestEngineRelease(engineRepo: string): string {
   const tag = gh(['release', 'list', '--repo', engineRepo, '--limit', '1', '--json', 'tagName', '--jq', '.[0].tagName']);
-  if (!tag) throw new Error(`no releases found on ${engineRepo} — pass --to <tag>`);
+  if (!tag) throw new Error(msg.workflow.noReleases(engineRepo));
   return tag;
 }
 

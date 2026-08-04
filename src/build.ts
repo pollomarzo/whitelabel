@@ -19,6 +19,7 @@ import { join } from 'node:path';
 import type { ISession } from 'myst-cli';
 import { compose, extendsChainFor, type ResolvedProject, type ComposeInput } from './compose.js';
 import { runLayerA } from './validate.js';
+import * as msg from './messages.js';
 import { originRepo } from './gh.js';
 import {
   readDoc,
@@ -216,8 +217,7 @@ export async function runBuild(input: RunBuildInput): Promise<RunBuildResult> {
       const blocking = layerA.filter((f) => f.severity === 'error' && f.klass === 'structural');
       if (blocking.length) {
         throw new Error(
-          'oak build: pre-flight validation failed:\n' +
-            blocking.map((f) => `  - [${f.check}] ${f.message}`).join('\n'),
+          msg.build.preflightFailed(blocking.map((f) => `  - [${f.check}] ${f.message}`).join('\n')),
         );
       }
       layerAWarnings.push(

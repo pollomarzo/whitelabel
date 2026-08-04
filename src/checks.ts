@@ -12,6 +12,7 @@
  */
 import { basename, isAbsolute, relative } from 'node:path';
 import { DERIVED_CONFIG_FILE } from './yaml-io.js';
+import * as messages from './messages.js';
 import { annotate } from './messages.js';
 import type { ISession } from 'myst-cli';
 import {
@@ -70,7 +71,7 @@ export async function runChecks(
   for (const jc of journalChecks) {
     const impl = catalog.find((c) => c.id === jc.id);
     if (!impl) {
-      out.push({ id: jc.id, status: CheckStatus.error, message: `unknown check id "${jc.id}"` });
+      out.push({ id: jc.id, status: CheckStatus.error, message: messages.pr.unknownCheckId(jc.id) });
       continue;
     }
     const { optional, ...check } = jc;
@@ -133,7 +134,7 @@ export function toCheckRun(
   const passed = results.filter((r) => r.status === CheckStatus.pass);
 
   const conclusion: CheckRun['conclusion'] = blocking.length ? 'failure' : 'success';
-  const title = `${passed.length} passed, ${failed.length} failed`;
+  const title = messages.pr.checkRunTitle(passed.length, failed.length);
 
   const esc = (s: string) => s.replace(/\|/g, '\\|');
   const rows = results
@@ -141,7 +142,7 @@ export function toCheckRun(
       (r) => `| ${esc(r.id)} | ${r.status}${r.optional ? ' (optional)' : ''} | ${esc(r.message ?? '')} |`,
     )
     .join('\n');
-  const table = `| Check | Status | Detail |\n| --- | --- | --- |\n${rows}`;
+  const table = `${messages.pr.checkTableHeader}\n${rows}`;
   // Notes describe HOW the run happened, never WHETHER it passed — they must not touch
   // `conclusion`. But they have to be VISIBLE: a run that could not compose reads the
   // author's config, so some of the passes below mean less than they look like they do, and
@@ -199,17 +200,15 @@ export interface ChecksReport {
  */
 export function checksComment(report: ChecksReport, shimTouched: string[] = []): string {
   const { conclusion, title, summary } = report.checkRun;
-  const icon = conclusion === 'success' ? '✅' : '❌';
-  const headline = conclusion === 'success' ? 'Journal checks passed' : 'Journal checks failed';
   const banner = shimTouched.length ? [shimWarning(shimTouched), ''] : [];
   return [
     `<!-- oak-sticky: ${STICKY_CHECKS} -->`,
     ...banner,
-    `### ${icon} ${headline} — ${title}`,
+    messages.pr.checksHeadline(conclusion === 'success', title),
     '',
     summary,
     '',
-    '_Updated on every push to this PR._',
+    messages.pr.checksFooter,
   ].join('\n');
 }
 
@@ -226,12 +225,7 @@ export function frozenPathsTouched(changed: string[]): string[] {
 export function shimWarning(touched: string[]): string {
   const shown = touched.slice(0, 5).map((f) => `\`${f}\``).join(', ');
   const more = touched.length > 5 ? `, +${touched.length - 5} more` : '';
-  return (
-    `> ⚠️ **This PR changes the files that run the checks** (${shown}${more}). The results below ` +
-    `were produced by this PR's own copy of them, so they may not be the journal's checks. ` +
-    `Unless this is a deliberate engine upgrade, an editor should read those changes before ` +
-    `trusting the report.`
-  );
+  return messages.pr.shimWarning(shown, more);
 }
 
 /** Seams for `cmdCheckPost` — structurally satisfied by `gh.realCheckRun` and
@@ -270,7 +264,7 @@ export function cmdCheckPost(
   const checkRunToPost = shimTouched.length
     ? {
         ...report.checkRun,
-        title: `⚠️ CI shim modified — ${report.checkRun.title}`,
+        title: messages.pr.checkRunTitleShimTouched(report.checkRun.title),
         summary: `${shimWarning(shimTouched)}\n\n${report.checkRun.summary}`,
       }
     : report.checkRun;
@@ -279,7 +273,7 @@ export function cmdCheckPost(
     deps.checkRun.create(repo, sha, 'Journal checks', checkRunToPost);
     checkRunPosted = true;
   } catch (e) {
-    const msg = `check-post: Check Run not posted (${(e as Error).message})`;
+    const msg = messages.workflow.checkPostCheckRunFailed((e as Error).message);
     warnings.push(msg);
     process.stderr.write(annotate('warning', msg) + '\n');
   }
@@ -289,7 +283,7 @@ export function cmdCheckPost(
       deps.sticky('.', pr, STICKY_CHECKS, checksComment(report, shimTouched));
       commentPosted = true;
     } catch (e) {
-      const msg = `check-post: comment not posted (${(e as Error).message})`;
+      const msg = messages.workflow.checkPostCommentFailed((e as Error).message);
       warnings.push(msg);
       process.stderr.write(annotate('warning', msg) + '\n');
     }

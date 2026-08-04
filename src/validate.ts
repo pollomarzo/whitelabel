@@ -12,6 +12,7 @@
  * in myst-cli via myst.ts (kept the sole importer). No git here — the caller resolves the repo
  * (for registry-self exclusion) and passes it in, so validate stays pure/testable.
  */
+import * as msg from './messages.js';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { parse } from 'yaml';
 import {
@@ -74,7 +75,7 @@ export function checkLayout(
   const out: Array<{ severity: 'error'; message: string }> = [];
   for (const f of ['index.md', 'myst.yml']) {
     if (!probes.existsProbe(join(paperRoot, f))) {
-      out.push({ severity: 'error', message: `missing required file "${f}" at the paper root` });
+      out.push({ severity: 'error', message: msg.validate.missingFile(f) });
     }
   }
   const stray = probes
@@ -93,7 +94,7 @@ export function checkLayout(
   for (const s of stray) {
     out.push({
       severity: 'error',
-      message: `stray secondary myst.yml at "${s}" breaks the n=1 paper layout`,
+      message: msg.validate.strayMystYml(s),
     });
   }
   return out;
@@ -110,14 +111,14 @@ export function checkBrandFavicon(
     return {
       ok: false,
       severity: 'warn',
-      message: 'brand declares no favicon: the built site fails to render its pages without one — set `favicon` in brand.yml',
+      message: msg.validate.brandNoFavicon,
     };
   }
   if (isBrandAssetUrl(favicon)) return { ok: true };
   const resolved = instanceRoot ? resolveBrandAssetPath(instanceRoot, favicon) : favicon;
   return probes.existsProbe(resolved)
     ? { ok: true }
-    : { ok: false, severity: 'warn', message: `brand favicon "${favicon}" does not resolve to a file` };
+    : { ok: false, severity: 'warn', message: msg.validate.brandFaviconUnresolved(favicon) };
 }
 
 /** Warn on a brand typst watermark (project.options.logo) that is absent, a URL (typst can't
@@ -131,20 +132,20 @@ export function checkBrandWatermark(
     return {
       ok: false,
       severity: 'warn',
-      message: 'brand declares no watermark image (project.options.logo in brand.yml): the PDF renders without one',
+      message: msg.validate.brandNoWatermark,
     };
   }
   if (isBrandAssetUrl(logo)) {
     return {
       ok: false,
       severity: 'warn',
-      message: `brand watermark "${logo}" is a URL: the PDF renderer cannot fetch it, so it must be a file committed in the journal repo`,
+      message: msg.validate.brandWatermarkIsUrl(logo),
     };
   }
   const resolved = instanceRoot ? resolveBrandAssetPath(instanceRoot, logo) : logo;
   return probes.existsProbe(resolved)
     ? { ok: true }
-    : { ok: false, severity: 'warn', message: `brand typst watermark "${logo}" does not resolve to a file` };
+    : { ok: false, severity: 'warn', message: msg.validate.brandWatermarkUnresolved(logo) };
 }
 
 /**
@@ -177,10 +178,7 @@ export function checkThumbnail(
     : {
         ok: false,
         severity: 'warn',
-        message:
-          `thumbnail "${thumbnail}" does not resolve to a file under the paper root — the ` +
-          `paper will ship with NO thumbnail (a declared thumbnail disables myst's ` +
-          `first-image fallback) and its gallery card renders blank`,
+        message: msg.validate.thumbnailUnresolved(thumbnail),
       };
 }
 
@@ -241,9 +239,7 @@ export function checkTemplates(
   if (authorTemplate && tenantTemplate) {
     warn(
       'template-override',
-      `this paper declares its own typst template ("${authorTemplate}"), overriding the ` +
-        `journal's ("${tenantTemplate}"). Allowed and applied — flagged so the change from ` +
-        `journal identity is a deliberate, reviewed choice.`,
+      msg.validate.templateOverride(authorTemplate, tenantTemplate),
     );
   }
 
@@ -254,10 +250,7 @@ export function checkTemplates(
     if (!value || !isFloatingTemplate(value)) continue;
     warn(
       'template-floating',
-      `${layer} typst template "${value}" is not pinned — its bytes can change under the ` +
-        `living site without this reference changing. Prefer a tag/release URL or a local ` +
-        `path. (DOI'd PDFs stay reproducible regardless: the deposit archives the resolved ` +
-        `template bytes.)`,
+      msg.validate.templateFloating(layer, value),
     );
   }
 
@@ -270,9 +263,7 @@ export function checkTemplates(
     if (bare && probes.existsProbe(join(instanceRoot, tenantTemplate))) {
       warn(
         'template-name-ambiguous',
-        `journal.yml typst_template "${tenantTemplate}" is being used as a myst template ` +
-          `NAME, but "${tenantTemplate}" also exists in instance-config. If you meant the ` +
-          `directory, write "./${tenantTemplate}" — only ./ and ../ values are treated as paths.`,
+        msg.validate.templateNameAmbiguous(tenantTemplate),
       );
     }
   }
@@ -363,10 +354,7 @@ export function checkLayerDisjointness(
   return [
     {
       severity: 'error',
-      message:
-        `extends layers declare overlapping keys: ${clashes.join(', ')}. ` +
-        'myst resolves sibling extends by load-completion order, so the winner is ' +
-        'non-deterministic — move each key to exactly one layer.',
+      message: msg.validate.layersOverlap(clashes.join(', ')),
     },
   ];
 }
@@ -419,7 +407,7 @@ export function runLayerA(
   const registry = loadRegistry(instanceRoot, probes);
 
   if (!project.id) {
-    findings.push({ check: 'id-present', severity: 'error', message: 'project.id is missing', klass: 'identity' });
+    findings.push({ check: 'id-present', severity: 'error', message: msg.validate.idMissing, klass: 'identity' });
   } else {
     add('id-shape', 'identity', checkIdShape(project.id, { id_sentinel: journal.id_sentinel, id_pattern: journal.id_pattern }));
     add(
@@ -521,7 +509,7 @@ export function splitUnrunnableChecks(
       .map(() => ({
         id: EXPORTS_EXIST,
         status: CheckStatus.error,
-        message: 'requires build artifacts — run `oak build` first',
+        message: msg.validate.needsBuildArtifacts,
         cause: 'missing-build-artifacts',
         optional: true,
       })),
@@ -604,17 +592,10 @@ export async function runValidate(
       // Still guarded rather than rethrown: the rest of the report is worth more than a
       // stack trace, and this way the author gets the whole fix-list at once.
       composeFailure = (e as Error).message;
-      notes.push(
-        `checked the paper's own myst.yml ONLY: it could not be combined with the journal's ` +
-          `settings (${composeFailure}), so anything the journal or its edition adds was not checked.`,
-      );
+      notes.push(msg.validate.noteComposeFailed(composeFailure));
     }
   } else {
-    notes.push(
-      "checked the paper's own myst.yml ONLY: the journal's settings were not available to " +
-        'this run, so whatever the journal, its edition or its branding add — the cover image, ' +
-        'the PDF export — was not checked here.',
-    );
+    notes.push(msg.validate.noteUncomposed);
   }
   project ??= (await input.edge.loadProject(input.paperRoot)) as typeof project;
 
@@ -638,11 +619,7 @@ export async function runValidate(
     layerA.push({
       check: 'compose',
       severity: 'error',
-      message:
-        `the derived config could not be produced: ${composeFailure}. This paper's own ` +
-        `config is what broke composition, so \`oak build\` fails the same way — the checks ` +
-        `below read the author's myst.yml and cannot see what the engine, edition or brand ` +
-        `layers declare.`,
+      message: msg.validate.composeFailed(composeFailure),
       klass: 'config',
     });
   }
@@ -690,7 +667,7 @@ export async function runValidate(
         {
           id: 'editorial-checks',
           status: CheckStatus.error,
-          message: `could not load the paper project for editorial checks: ${(e as Error).message}`,
+          message: msg.validate.editorialLoadFailed((e as Error).message),
         },
       ];
     }
