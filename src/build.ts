@@ -39,6 +39,16 @@ export interface BuildOpts {
   exportsOnly?: boolean;
 }
 
+/** The `myst start` options `oak start` passes through (myst's own names, `cli/start.js`). */
+export interface StartOpts {
+  port?: number;
+  serverPort?: number;
+  headless?: boolean;
+  keepHost?: boolean;
+  template?: string;
+  baseurl?: string;
+}
+
 /**
  * The seam to mystmd (myst.ts implements it with the bundled myst-cli).
  *
@@ -53,6 +63,12 @@ export interface MystEdge {
   loadProject(dir: string, configFile?: string): Promise<ResolvedProject>;
   /** build(session, [], opts) from within `dir`. */
   build(dir: string, opts: BuildOpts, configFile?: string): Promise<void>;
+  /**
+   * startServer(session, opts) from within `dir` — the dev server behind `oak start`.
+   * Resolves once the server is UP (myst's own contract) and leaves it running, so the
+   * caller must not let the process exit afterwards.
+   */
+  start(dir: string, opts: StartOpts, configFile?: string): Promise<void>;
   /**
    * Load AND process the project at `dir` (config + current-project pointer + mdast), then run
    * `fn` against the myst Session with the current project set — so the curvenote Layer-B checks
@@ -216,4 +232,25 @@ export async function runBuild(input: RunBuildInput): Promise<RunBuildResult> {
   await edge.build(paperRoot, buildOpts, DERIVED_CONFIG_FILE);
 
   return { resolvedProject, extendsChain, warnings: [...warnings, ...layerAWarnings] };
+}
+
+export interface RunStartInput extends MaterializeInput {
+  startOpts?: StartOpts;
+}
+
+/**
+ * `oak start` — compose exactly as `oak build` does, then hand the DERIVED config to myst's
+ * dev server. The point is that a local preview and the CI build read the same file: an author
+ * previewing with a bare `myst start` sees their own myst.yml, without the journal's branding,
+ * edition or export settings, and only finds out at PR time.
+ *
+ * No Layer-A pre-flight here, unlike `runBuild`: a preview is for looking at work in progress,
+ * and a placeholder id or a missing thumbnail must not stand between an author and their draft.
+ * `oak validate` is the verb that judges; the PR check is the gate.
+ */
+export async function runStart(input: RunStartInput): Promise<MaterializeResult> {
+  const { paperRoot, startOpts = {}, edge } = input;
+  const materialized = await materializeDerived(input);
+  await edge.start(paperRoot, startOpts, DERIVED_CONFIG_FILE);
+  return materialized;
 }

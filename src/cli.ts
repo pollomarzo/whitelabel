@@ -8,13 +8,13 @@
  * dep only loads when actually building.
  */
 import { join, resolve } from 'node:path';
-import { existsSync, readFileSync, readdirSync, writeFileSync, mkdtempSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, writeFileSync, mkdtempSync, watchFile } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { parseDocument } from 'yaml';
 import type { UpgradeMode } from './upgrade.js';
 import type { ComposeInput } from './compose.js';
-import type { MaterializeInput } from './build.js';
+import type { MaterializeInput, StartOpts } from './build.js';
 import * as msg from './messages.js';
 import { annotate, UserError } from './messages.js';
 
@@ -26,6 +26,7 @@ declare const __dirname: string;
 
 type Verb =
   | 'build'
+  | 'start'
   | 'validate'
   | 'check-post'
   | 'deploy-preview'
@@ -114,7 +115,7 @@ function assetOverridesFrom(argv: string[]): ComposeInput['assetOverrides'] {
 function resolveInstanceRoot(
   argv: string[],
   paperRoot: string,
-  verb: 'build' | 'validate',
+  verb: 'build' | 'start' | 'validate',
 ): { root: string | null } | { error: string } {
   if (has(argv, 'no-instance')) return { root: null };
   const explicit = flag(argv, 'instance');
@@ -124,7 +125,7 @@ function resolveInstanceRoot(
     error:
       `oak ${verb}: no instance-config resolved — ` +
       `pass --instance <path> (or --no-instance for ` +
-      `${verb === 'build' ? 'an unbranded build' : 'a bare, engine-only check'}).\n` +
+      `${verb === 'validate' ? 'a bare, engine-only check' : verb === 'start' ? 'an unbranded preview' : 'an unbranded build'}).\n` +
       `In a CI run the path comes from .github/actions/engine/pins.yml: ` +
       `\`instance_repo: <owner/repo>\` makes the workflow fetch that journal, and ` +
       `\`instance_repo: "."\` means the journal.yml sits in THIS repo — but there is no ` +
@@ -212,6 +213,73 @@ async function cmdBuild(argv: string[]): Promise<number> {
   const { resolvedId } = await buildPaper(argv);
   process.stderr.write(msg.build.done(resolvedId ?? '?') + '\n');
   return 0;
+}
+
+/** The `myst start` flags `oak start` forwards (myst's own names and meanings). */
+function startOptsFrom(argv: string[]): StartOpts {
+  const num = (name: string) => (flag(argv, name) ? Number(flag(argv, name)) : undefined);
+  return {
+    ...(num('port') !== undefined ? { port: num('port') } : {}),
+    ...(num('server-port') !== undefined ? { serverPort: num('server-port') } : {}),
+    ...(has(argv, 'headless') ? { headless: true } : {}),
+    ...(has(argv, 'keep-host') ? { keepHost: true } : {}),
+    ...(flag(argv, 'template') ? { template: flag(argv, 'template') } : {}),
+    ...(flag(argv, 'base-url') ? { baseurl: flag(argv, 'base-url') } : {}),
+  };
+}
+
+/**
+ * `oak start` — compose, then hand off to myst's dev server (the same one `myst start` runs).
+ *
+ * Never returns: myst's `startServer` resolves once the server is UP, and `main()`'s return
+ * would exit the process out from under it. The wait is what keeps the server alive; Ctrl-C
+ * ends it.
+ */
+async function cmdStart(argv: string[]): Promise<number> {
+  const paperRoot = resolve(flag(argv, 'paper') ?? '.');
+  const { createMystEdge } = await import('./myst.js');
+  const edge = createMystEdge();
+
+  // The journal repo is a plain myst project (its website), with nothing to compose: no engine
+  // layers, no edition, no derived config — myst reads its own myst.yml, exactly as the site
+  // workflow does. Same shape check as `oak build`, opposite conclusion: here there IS
+  // something to show.
+  if (isJournalRepo(paperRoot)) {
+    process.stderr.write(msg.start.journalSite(paperRoot) + '\n');
+    await edge.start(paperRoot, startOptsFrom(argv));
+    return await never();
+  }
+
+  const resolved = resolveInstanceRoot(argv, paperRoot, 'start');
+  if ('error' in resolved) {
+    process.stderr.write(resolved.error + '\n');
+    return 2;
+  }
+  const input = { ...materializeInputFrom(argv, paperRoot, resolved.root), edge };
+
+  const { runStart, materializeDerived } = await import('./build.js');
+  process.stderr.write(msg.start.composed(paperRoot, resolved.root) + '\n');
+  const first = await runStart({ ...input, startOpts: startOptsFrom(argv) });
+  for (const w of first.warnings) process.stderr.write(annotate('warning', w) + '\n');
+
+  // myst watches the DERIVED config (that is the one it was pointed at), so an edit to the
+  // author's `myst.yml` would otherwise change nothing on screen until the next `oak start` —
+  // the one file an author edits most. Recomposing rewrites `myst.oak.yml`, which myst's own
+  // watcher then picks up: the reload path stays myst's, we only refresh its input.
+  watchFile(join(paperRoot, 'myst.yml'), { interval: 500 }, (curr, prev) => {
+    if (curr.mtimeMs === prev.mtimeMs) return;
+    materializeDerived(input).then(
+      () => process.stderr.write(msg.start.recomposed + '\n'),
+      // A half-edited config is normal while typing: say what is stale and keep serving.
+      (e) => process.stderr.write(msg.start.recomposeFailed(String((e as Error)?.message ?? e)) + '\n'),
+    );
+  });
+  return await never();
+}
+
+/** Hand the process to the running server: resolve never, so `main()` never exits. */
+function never(): Promise<number> {
+  return new Promise<number>(() => {});
 }
 
 /** myst.yml path from --myst, or <--paper|.>/myst.yml. */
@@ -972,6 +1040,7 @@ async function cmdConformance(argv: string[]): Promise<number> {
 
 const VERBS: Verb[] = [
   'build',
+  'start',
   'validate',
   'check-post',
   'deploy-preview',
@@ -1051,6 +1120,10 @@ function usage(): string {
     `                    run the journal's checks over a manuscript and report what fails\n` +
     `  oak build   [--paper <dir>] [--instance <dir> | --no-instance] [--base-url <url>] [--no-site-template]\n` +
     `                    build the paper's website + PDF into _build/\n` +
+    `  oak start   [--paper <dir>] [--instance <dir> | --no-instance] [--port <n>] [--server-port <n>]\n` +
+    `                    preview the paper in a browser, with the journal's settings and branding\n` +
+    `                    applied — the same config its CI builds. Reloads as you edit; Ctrl-C stops it.\n` +
+    `                    Run in the journal repo, it previews the journal website instead.\n` +
     `\n` +
     `Run by the workflows (rarely typed by hand)\n` +
     `  oak check-post --report <path> --repo <owner/repo> --sha <headsha> [--pr <n>]\n` +
@@ -1075,6 +1148,7 @@ async function main(argv: string[]): Promise<number> {
   // a parameter through every seam (and survives the child process `oak release` spawns).
   if (has(argv, 'verbose')) process.env.OAK_VERBOSE = '1';
   if (verb === 'build') return cmdBuild(argv.slice(1));
+  if (verb === 'start') return cmdStart(argv.slice(1));
   if (verb === 'validate') return cmdValidate(argv.slice(1));
   if (verb === 'check-post') return cmdCheckPost(argv.slice(1));
   if (verb === 'deposit') return cmdDeposit(argv.slice(1));

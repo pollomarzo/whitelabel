@@ -20,12 +20,13 @@ import {
   Session,
   loadConfig,
   build,
+  startServer,
   processProject,
   findCurrentProjectAndLoad,
   findCurrentSiteAndLoad,
 } from 'myst-cli';
 import type { ISession } from 'myst-cli';
-import type { MystEdge, BuildOpts } from './build.js';
+import type { MystEdge, BuildOpts, StartOpts } from './build.js';
 import type { ResolvedProject } from './compose.js';
 
 export function createMystEdge(): MystEdge {
@@ -72,6 +73,18 @@ export function createMystEdge(): MystEdge {
       } finally {
         process.chdir(prev);
       }
+    },
+    async start(dir: string, opts: StartOpts, configFile?: string): Promise<void> {
+      const session = sessionFor(configFile);
+      // The dev server stays up, so this chdir is PERMANENT for the process (unlike build's) —
+      // myst's watcher and its `npm run start` child both resolve paths from cwd. `oak start`
+      // does nothing after this call, so there is nothing left to surprise.
+      process.chdir(dir);
+      // Same site/project pointers the build needs ([R59]) — a bare loadConfig leaves
+      // `currentSitePath` unset and the server would have no site to serve.
+      await findCurrentProjectAndLoad(session, dir);
+      await findCurrentSiteAndLoad(session, dir);
+      await startServer(session, opts);
     },
     async withProjectSession<T>(
       dir: string,

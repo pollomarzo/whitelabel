@@ -63,7 +63,7 @@ export const build = {
     `settings and its myst.yml is the journal website — there is no manuscript here to build.\n` +
     `The website builds itself: every push to main runs the "Journal site" workflow, which ` +
     `publishes it to GitHub Pages. To look at it before you push, run \`npm install\` once in ` +
-    `this repo and then \`npx myst start\`.\n` +
+    `this repo and then \`oak start\`.\n` +
     `To build a paper, run oak build inside that paper's checkout, or pass ` +
     `--paper <path to the paper>.`,
 
@@ -81,6 +81,31 @@ export const build = {
       ? `It names the engine release that builds this paper, e.g. \`version: v0.1.0\`.`
       : `It names which of the journal's editions this paper appears in — the ids are the ` +
         `filenames under editions/ in the journal repo.`),
+};
+
+/* ═══════════════════════════════════════════════════════════════════════════════════════════
+ * oak start
+ * ═════════════════════════════════════════════════════════════════════════════════════════ */
+
+export const start = {
+  composed: (root: string, instanceRoot: string | null): string =>
+    `oak start: previewing ${root} with ${instanceRoot ? `the journal settings in ${instanceRoot}` : 'no journal settings (--no-instance): unbranded, engine defaults only'}.\n` +
+    `This is the same config the paper's CI builds — myst reads myst.oak.yml, composed just now ` +
+    `from your myst.yml. Edit myst.yml as usual; oak rewrites myst.oak.yml when you save it.\n` +
+    `Press Ctrl-C to stop.`,
+
+  journalSite: (root: string): string =>
+    `oak start: ${root} is the journal repo, so this is a plain myst preview of the journal ` +
+    `website — nothing to compose, no engine settings involved.\n` +
+    `If the paper gallery is missing, run \`npm install\` in this repo first: the gallery plugin ` +
+    `needs it.\n` +
+    `Press Ctrl-C to stop.`,
+
+  recomposed: 'oak start: myst.yml changed — recomposed, the preview will reload.',
+
+  recomposeFailed: (message: string): string =>
+    `oak start: myst.yml changed but could not be composed, so the preview is still showing the ` +
+    `previous version — ${message}`,
 };
 
 /* ═══════════════════════════════════════════════════════════════════════════════════════════

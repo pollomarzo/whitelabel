@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseDocument } from 'yaml';
-import { runBuild, type MystEdge } from '../src/build.js';
+import { runBuild, runStart, type MystEdge } from '../src/build.js';
 import { UserError } from '../src/messages.js';
 import { DERIVED_CONFIG_FILE } from '../src/yaml-io.js';
 import type { ResolvedProject } from '../src/compose.js';
@@ -45,6 +45,9 @@ function fakeEdge(): { edge: MystEdge; calls: string[] } {
       },
       async build(_dir, opts, configFile) {
         calls.push(`build:${opts.all}:${opts.html}:${configFile}`);
+      },
+      async start(dir, opts, configFile) {
+        calls.push(`start:${dir}:${JSON.stringify(opts)}:${configFile}`);
       },
     },
   };
@@ -205,5 +208,55 @@ describe('a missing engine coordinate is a SENTENCE, not a stack', () => {
     expect(err.message).toContain(authorPath); // the file to edit
     expect(err.message).toContain('project.options.oaktree-sapling'); // where in it
     expect(err.message).toContain('oak upgrade'); // and what changes it for you
+  });
+});
+
+describe('runStart — compose, then hand off to myst', () => {
+  it('composes the SAME derived config as a build and points the server at it', async () => {
+    const paperRoot = tmpPaper();
+    const { edge, calls } = fakeEdge();
+
+    await runStart({
+      paperRoot,
+      engineRoot: '.engine',
+      instanceRoot: '.instance',
+      engineRepo: 'x/y',
+      baseUrl: '',
+      startOpts: { port: 3210 },
+      edge,
+    });
+
+    // Pass 1 loaded the derived config, and the handoff named it too: what the author previews
+    // is what CI builds, which is the whole reason `oak start` exists rather than `myst start`.
+    expect(calls).toEqual([
+      `load:${DERIVED_CONFIG_FILE}`,
+      `start:${paperRoot}:{"port":3210}:${DERIVED_CONFIG_FILE}`,
+    ]);
+    // No build ran — the server does its own.
+    expect(calls.some((c) => c.startsWith('build:'))).toBe(false);
+
+    const doc = parseDocument(readFileSync(join(paperRoot, DERIVED_CONFIG_FILE), 'utf8'));
+    expect(doc.getIn(['extends', 0])).toBe('.engine/paper-base.yml');
+    expect(doc.getIn(['project', 'exports', 0, 'output'])).toBe(TYPST_OUTPUT);
+  });
+
+  it('does NOT gate a preview on Layer-A findings the way a build does', async () => {
+    // A placeholder id is exactly what a fresh repo has, and it must not stand between an
+    // author and looking at their draft. (index.md is absent here — the structural class that
+    // DOES block `oak build`.)
+    const paperRoot = mkdtempSync(join(tmpdir(), 'oak-start-'));
+    copyFileSync(fixturePaper, join(paperRoot, 'myst.yml'));
+    const { edge, calls } = fakeEdge();
+
+    await runStart({
+      paperRoot,
+      engineRoot: '.engine',
+      instanceRoot: '.instance',
+      engineRepo: 'x/y',
+      baseUrl: '',
+      edge,
+    });
+
+    expect(calls.some((c) => c.startsWith('start:'))).toBe(true);
   });
 });

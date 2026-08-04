@@ -166,6 +166,12 @@ describe.skipIf(bundleState() === 'absent')('a broken paper gets a sentence, nev
     expect(stderr).not.toContain('::error::');
     expect(stderr).not.toContain('cli.cjs:');
   }, 60_000);
+
+  it('usage lists oak start next to oak build', () => {
+    const { stderr } = oak([]);
+    expect(stderr).toMatch(/oak start/);
+    expect(stderr).toContain('preview the paper in a browser');
+  });
 });
 
 describe('subprocess output carries its provenance', () => {
