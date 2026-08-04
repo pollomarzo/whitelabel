@@ -171,7 +171,7 @@ function materializeInputFrom(argv: string[], paperRoot: string, instanceRoot: s
 async function buildPaper(argv: string[]): Promise<{ paperRoot: string; resolvedId?: string }> {
   const paperRoot = resolve(flag(argv, 'paper') ?? '.');
   if (isJournalRepo(paperRoot)) {
-    process.stderr.write(msg.build.inJournalRepo(paperRoot) + '\n');
+    process.stderr.write(annotate('error', msg.build.inJournalRepo(paperRoot)) + '\n');
     process.exit(2);
   }
   const resolved = resolveInstanceRoot(argv, paperRoot, 'build');
@@ -641,7 +641,7 @@ async function cmdValidate(argv: string[]): Promise<number> {
   // the engine coordinate a journal repo never has, and reports it as an engine crash.
   if (isJournalRepo(paperRoot)) {
     const text = msg.validate.inJournalRepo(paperRoot);
-    process.stderr.write(text + '\n');
+    process.stderr.write(annotate('error', text) + '\n');
     writeFailureReport(reportPath, msg.workflow.validateCouldNotRun, text);
     return 2;
   }
@@ -1095,7 +1095,7 @@ main(process.argv.slice(2)).then(
     // config line reported as a five-frame trace through the bundle. Anything else is an engine
     // bug, and the stack is the only useful thing we have.
     if (err instanceof UserError) {
-      process.stderr.write(err.message + '\n');
+      process.stderr.write(annotate('error', err.message) + '\n');
       process.exit(2);
     }
     process.stderr.write(annotate('error', msg.engineCrash(String(err?.stack ?? err))) + '\n');

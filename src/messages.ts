@@ -4,8 +4,9 @@
  * string shown to the user should be validated by me").
  *
  * How to use this file:
- *   - Grouped by SURFACE, roughly in the order a tenant meets them: usage → bootstrap →
- *     upgrade → build/start → validate → the PR write-back verbs → the plumbing.
+ *   - Grouped by SURFACE: the output plumbing first (it decides how the rest is printed), then
+ *     roughly the order a tenant meets them — usage → the confirm prompt → bootstrap → upgrade →
+ *     build → start → validate → what lands on a pull request → the workflow-run verbs.
  *   - Fixed strings are consts; parameterized ones are functions. Edit the words freely; keep
  *     the `${…}` holes and the leading `oak <verb>:` prefixes (the prefix is how a reader knows
  *     which command spoke, and a few tests assert on distinctive fragments).
@@ -78,9 +79,9 @@ export function annotate(kind: 'warning' | 'error', message: string): string {
 
 /**
  * An error whose message was written FOR a tenant. `main()` prints it as a plain sentence and
- * exits 2 — no stack trace, no annotation. Anything else reaching the top level is an engine
- * bug, and gets the stack it needs. The class lives here because the message and the promise
- * "this prints without a stack" are one decision.
+ * exits 2 — **no stack trace** (in a workflow log it is annotated, like every other error).
+ * Anything else reaching the top level is an engine bug, and gets the stack it needs. The class
+ * lives here because the message and the promise "this prints without a stack" are one decision.
  */
 export class UserError extends Error {
   constructor(message: string) {

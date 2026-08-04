@@ -21,8 +21,16 @@ const fixtureInstance = join(engineDir, 'test', 'fixture-instance');
 /** The repo the fixture paper is registered to (id-uniqueness passes only under it). */
 const fixtureRepo = 'open-scholar-nexus/fixture-sample-paper';
 
+/**
+ * Run the bundle as a TENANT's terminal sees it. `CI`/`GITHUB_ACTIONS` are cleared deliberately:
+ * they switch the output to GitHub annotations, and this suite is the contract for the human
+ * side — inheriting them would make these assertions pass locally and fail in our own CI.
+ */
 function oak(args: string[]): { code: number; stdout: string; stderr: string } {
-  const r = spawnSync('node', [bundlePath, ...args], { encoding: 'utf8' });
+  const env = { ...process.env };
+  delete env.CI;
+  delete env.GITHUB_ACTIONS;
+  const r = spawnSync('node', [bundlePath, ...args], { encoding: 'utf8', env });
   return { code: r.status ?? 1, stdout: r.stdout ?? '', stderr: r.stderr ?? '' };
 }
 
