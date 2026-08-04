@@ -449,12 +449,97 @@ export interface Outcome {
   result: Record<string, unknown>;
 }
 
+/**
+ * Where each value the tenant did NOT type came from, so the plan can say so. The CLI knows
+ * this and bootstrap does not: by the time an input arrives here a defaulted value and a
+ * typed one are indistinguishable, and a plan that cannot tell them apart cannot declare
+ * either.
+ */
+export interface ResolvedFlags {
+  engineVersionFrom?: 'flag' | 'latest-release';
+  engineRepoFrom?: 'flag' | 'default';
+}
+
+/**
+ * The plan's opening block: every value this run will use, and for each one whether it came
+ * from a flag or from us. A default nobody was told about is a decision made on the tenant's
+ * behalf, and `Proceed? [y/N]` is only consent if the assumptions are on the screen above it
+ * — most of these end up stamped into files that are awkward to change afterwards.
+ */
+function declaredValues(v: {
+  engineVersion: string;
+  engineRepo: string;
+  owner: string;
+  ownerGiven: boolean;
+  /** Whether this run actually USES the owner (an external journal repo gets no CODEOWNERS
+   *  and no team grant, so declaring one there would be a value we do not honour). */
+  ownerUsed: boolean;
+  edition: string;
+  editionGiven: boolean;
+  /** The journal's name: a string when given, `null` on a journal run that did not give one,
+   *  `undefined` when the row does not apply (a paper). */
+  journalName?: string | null;
+  instanceRepo?: string;
+  resolved?: ResolvedFlags;
+}): string[] {
+  const rows: Array<[string, string]> = [];
+  if (v.instanceRepo) {
+    rows.push([
+      'journal repo',
+      v.instanceRepo === '.'
+        ? '. — this repo carries its own journal settings (--instance .)'
+        : `${v.instanceRepo} — the journal this paper belongs to (--instance)`,
+    ]);
+  }
+  if (v.journalName !== undefined) {
+    rows.push([
+      'journal name',
+      v.journalName
+        ? `${v.journalName} (--name)`
+        : 'not given — journal.yml keeps its "CHANGE-ME Journal" placeholder for you to edit ' +
+          '(pass --name "Your Journal" to set it now)',
+    ]);
+  }
+  rows.push([
+    'edition',
+    v.editionGiven
+      ? `${v.edition} (--edition)`
+      : `${v.edition} — placeholder, no --edition given; the scaffold writes editions/${v.edition}.yml ` +
+        `and every paper must name the same id (pass --edition 2026, say, to use your own)`,
+  ]);
+  rows.push([
+    'engine version',
+    v.resolved?.engineVersionFrom === 'flag'
+      ? `${v.engineVersion} (--engine-version)`
+      : `${v.engineVersion} — the newest engine release right now, no --engine-version given ` +
+        `(pass one to pin a version you have tested)`,
+  ]);
+  rows.push([
+    'engine repo',
+    v.resolved?.engineRepoFrom === 'flag'
+      ? `${v.engineRepo} (--engine-repo)`
+      : `${v.engineRepo} — built-in default, no --engine-repo given (where the workflows fetch the engine from)`,
+  ]);
+  if (v.ownerUsed) {
+    rows.push([
+      'review owner',
+      v.ownerGiven
+        ? `${v.owner} (--owner) — written into CODEOWNERS, so this is who must approve changes`
+        : `${v.owner} — your own GitHub login, no --owner given; written into CODEOWNERS, so this ` +
+          `is who must approve changes (pass --owner @org/team for a team)`,
+    ]);
+  }
+  const width = Math.max(...rows.map(([k]) => k.length));
+  return rows.map(([k, val]) => `  ${k.padEnd(width)} : ${val}`);
+}
+
 export interface BootstrapPaperInput {
   repo: string; // owner/name
   from?: string; // author url (ingest mode) — bare when absent
   sourceRef?: string;
   instance?: string; // owner/instance-config; '.' co-located
-  edition: string;
+  /** The journal edition this paper belongs to. REQUIRED (see cmdBootstrapPaper). */
+  edition?: string;
   engineVersion: string;
   engineRepo: string; // resolved engine repo for pins.yml
   owner?: string; // @user | @org/team
@@ -462,6 +547,8 @@ export interface BootstrapPaperInput {
   private: boolean;
   requireChecks: boolean; // add "Journal checks" to protect-main required checks (default true)
   secrets: SecretInputs;
+  /** Provenance of the defaulted values, for the plan's declaration block. */
+  resolved?: ResolvedFlags;
 }
 
 /** owner login (first path segment) of an owner/repo. */
@@ -500,11 +587,11 @@ function applyProvisioning(
   // protect-main
   if (prov.rulesetExists(repo, RULESET_PROTECT_MAIN)) {
     actions.protect_main = 'already exists';
-    log(`  ✓ ruleset '${RULESET_PROTECT_MAIN}' already exists`);
+    log(`  ✓ branch rule '${RULESET_PROTECT_MAIN}' already exists`);
   } else {
     prov.createRuleset(repo, protectMainBody(requireChecks));
     actions.protect_main = 'created';
-    log(`  ✓ created ruleset '${RULESET_PROTECT_MAIN}'`);
+    log(`  ✓ created branch rule '${RULESET_PROTECT_MAIN}' — changes to main need a pull request approved by a code owner`);
   }
 
   // editors-only-v-tags
@@ -513,32 +600,32 @@ function applyProvisioning(
     : [{ actor_id: 5, actor_type: 'RepositoryRole', bypass_mode: 'always' }]; // repo admin
   if (prov.rulesetExists(repo, RULESET_V_TAGS)) {
     actions.v_tags = 'already exists';
-    log(`  ✓ ruleset '${RULESET_V_TAGS}' already exists`);
+    log(`  ✓ tag rule '${RULESET_V_TAGS}' already exists`);
   } else {
     prov.createRuleset(repo, vTagsBody(bypass));
     actions.v_tags = 'created';
-    log(`  ✓ created ruleset '${RULESET_V_TAGS}'`);
+    log(`  ✓ created tag rule '${RULESET_V_TAGS}' — only editors can create the v* tags that publish a version`);
   }
 
   // Pages
   if (prov.pagesEnabled(repo)) {
     actions.pages = 'already enabled';
-    log('  ✓ Pages already enabled');
+    log('  ✓ GitHub Pages already enabled');
   } else {
     prov.enablePages(repo);
     actions.pages = 'enabled';
-    log('  ✓ Pages enabled (build_type=workflow)');
+    log('  ✓ GitHub Pages enabled (published by a workflow)');
   }
 
   // zenodo-publish environment + v* policy
   prov.upsertEnvironment(repo, 'zenodo-publish');
   if (prov.branchPolicyExists(repo, 'zenodo-publish', 'v*')) {
     actions.zenodo_env = 'v* policy already exists';
-    log("  ✓ zenodo-publish v* policy already exists");
+    log("  ✓ the 'zenodo-publish' environment already restricts its secrets to v* tags");
   } else {
     prov.createBranchPolicy(repo, 'zenodo-publish', 'v*', 'tag');
     actions.zenodo_env = 'created with v* policy';
-    log('  ✓ created zenodo-publish environment with v* tag policy');
+    log("  ✓ created the 'zenodo-publish' environment — only v* tags may use its secrets");
   }
 
   // labels
@@ -565,11 +652,15 @@ function applySecrets(repo: string, secrets: SecretInputs, deps: BootstrapDeps):
     runbook.push(
       `Set the remaining Actions secrets on https://github.com/${repo}/settings/secrets/actions : ` +
         missing.join(', ') +
-        '. (ZENODO_TOKEN* gate deposit; CLOUDFLARE_* enable real previews — deposit/preview degrade until set.)',
+        '. Until they are set, publishing to Zenodo (ZENODO_TOKEN*) and live pull-request ' +
+        'previews (CLOUDFLARE_*) are skipped — everything else works, and a preview falls back ' +
+        'to a downloadable copy of the built site.',
     );
   }
   runbook.push(
-    `First fork-PR run needs a one-time manual approval in the Actions tab (unavoidable [UI] step).`,
+    `The first time someone opens a pull request from their own fork, GitHub asks an editor to ` +
+      `approve the workflow run before it starts — one click in the repo's Actions tab, per new ` +
+      `contributor. There is no way to switch this off.`,
   );
   return { set, runbook };
 }
@@ -595,13 +686,35 @@ export async function cmdBootstrapPaper(input: BootstrapPaperInput, deps: Bootst
         status: 'error',
         repo,
         error:
-          'oak bootstrap paper: --instance <owner/instance-config> is required. It names the ' +
-          'journal this paper belongs to and is written into .github/actions/engine/pins.yml ' +
-          'as the `instance_repo` the paper CI clones for the brand/edition extends chain and ' +
-          'the journal.yml `checks:` gate. Without it the repo bootstraps fine and then every ' +
-          'CI run fails with "no instance-config resolved". Pass `--instance .` only for a repo ' +
-          'that carries its own journal.yml (the co-located tier — use ' +
-          '`oak bootstrap journal --co-located` to stand one up).',
+          'oak bootstrap paper: --instance <owner/journal-repo> is required. It names the ' +
+          'journal this paper belongs to and is written into .github/actions/engine/pins.yml, ' +
+          'where the paper\'s workflows read it to fetch the journal\'s branding, its edition ' +
+          'and the checks it wants run. Without it the repo bootstraps fine and then every CI ' +
+          'run fails with "no instance-config resolved". Pass `--instance .` only for a repo ' +
+          'that carries its own journal.yml (use `oak bootstrap journal --co-located` to stand ' +
+          'one up).',
+      },
+    };
+  }
+  // Same shape as --instance, and for the same reason. The edition id is written into the
+  // paper's myst.yml, and the journal must already have an `editions/<id>.yml` under that
+  // exact name — so a defaulted literal `edition` is not a convenience, it is a guaranteed
+  // failure the tenant meets in CI rather than here. (`bootstrap journal` may default it:
+  // there the SAME value names the edition file it writes, so it is self-consistent.)
+  if (!input.edition) {
+    return {
+      exitCode: 2,
+      result: {
+        status: 'error',
+        repo,
+        error:
+          'oak bootstrap paper: --edition <id> is required. It says which of the journal\'s ' +
+          'editions this paper appears in, and is written into the paper\'s myst.yml; the ' +
+          'journal repo must already have an editions/<id>.yml with that exact name. The ids ' +
+          'are the filenames under editions/ in ' +
+          (input.instance === '.' ? 'this repo' : `https://github.com/${input.instance}`) +
+          ' (`oak bootstrap journal` creates the first one). Defaulting it would only move the ' +
+          'failure into the first CI run.',
       },
     };
   }
@@ -623,28 +736,44 @@ export async function cmdBootstrapPaper(input: BootstrapPaperInput, deps: Bootst
   const prThere = reviewThere && prov.prExists(repo, 'review');
 
   const plan = [
-    `bootstrap paper (${mode}): ${repo}`,
+    `bootstrap paper (${mode === 'ingest' ? 'importing an author\'s repo' : 'new, empty paper'}): ${repo}`,
+    ...declaredValues({
+      engineVersion: input.engineVersion,
+      engineRepo: input.engineRepo,
+      owner: owner.ownerToken,
+      ownerGiven: Boolean(input.owner),
+      ownerUsed: true,
+      edition: input.edition,
+      editionGiven: true, // required for papers — never defaulted
+      instanceRepo,
+      resolved: input.resolved,
+    }),
     repoThere ? '  ✓ repo exists' : `  ○ create repo (${input.private ? 'private' : 'public'})`,
-    mainThere ? '  ✓ main seeded' : '  ○ seed main from the frozen shim + starter content',
+    mainThere
+      ? '  ✓ main seeded'
+      : '  ○ seed main with the starter manuscript + the GitHub Actions workflows that build and check it',
     // Idempotency has a sharp edge worth naming: a re-run to CHANGE an answer (a different
     // --instance, a different --engine-version) does not re-seed, so the earlier pins.yml
     // survives and the re-run appears to succeed while fixing nothing.
     ...(mainThere
       ? [
-          `  ! main is already seeded — this run will NOT re-stamp the frozen shim or pins.yml, so an` +
-            ` instance_repo/engine version written by an earlier bootstrap stays as it is` +
-            ` (this run would set instance_repo: ${instanceRepo}). To change them, run \`oak upgrade\`` +
-            ` or edit .github/actions/engine/pins.yml by PR.`,
+          `  ! main is already seeded — this run will NOT rewrite the workflows or` +
+            ` .github/actions/engine/pins.yml, so the journal repo and engine version an earlier` +
+            ` bootstrap wrote stay as they are (this run would have set instance_repo:` +
+            ` ${instanceRepo}). To change them, run \`oak upgrade\` or edit` +
+            ` .github/actions/engine/pins.yml in a pull request.`,
         ]
       : []),
     ...(mode === 'ingest'
       ? [
-          reviewThere ? '  ✓ review branch exists' : `  ○ ingest review branch from ${input.from}@${input.sourceRef ?? 'main'}`,
-          prThere ? '  ✓ review → main PR open' : '  ○ open review → main PR',
+          reviewThere
+            ? '  ✓ review branch exists'
+            : `  ○ copy the author's files from ${input.from}@${input.sourceRef ?? 'main'} onto a "review" branch`,
+          prThere ? '  ✓ review → main PR open' : '  ○ open the review → main pull request',
         ]
       : []),
-    '  ○ provisioning: rulesets + Pages + zenodo-publish env + labels (idempotent)',
-    `  ○ secrets: ${SECRET_MAP.filter((s) => input.secrets[s.key]).map((s) => s.name).join(', ') || 'none provided (runbook printed)'}`,
+    '  ○ repo settings: branch + tag rules, GitHub Pages, the zenodo-publish environment, issue labels (safe to re-run)',
+    `  ○ secrets: ${SECRET_MAP.filter((s) => input.secrets[s.key]).map((s) => s.name).join(', ') || 'none given — you get a list of what to set by hand'}`,
   ];
   if (!(await deps.confirm(plan)))
     return {
@@ -660,7 +789,7 @@ export async function cmdBootstrapPaper(input: BootstrapPaperInput, deps: Bootst
   const actions: Record<string, string> = {};
 
   if (!repoThere) {
-    prov.createRepo(repo, { private: input.private, description: `Paper repo (${mode}) — oak bootstrap` });
+    prov.createRepo(repo, { private: input.private, description: 'A paper — created by `oak bootstrap paper`' });
     actions.repo = 'created';
     log(`  ✓ created ${repo}`);
   } else actions.repo = 'exists';
@@ -684,7 +813,7 @@ export async function cmdBootstrapPaper(input: BootstrapPaperInput, deps: Bootst
         message: `Submission from ${input.from}\n\nOriginal repository: ${input.from}`,
       });
       actions.review = 'ingested';
-      log('  ✓ built review branch (full .github restored from main)');
+      log("  ✓ built the review branch — the author's files, with this repo's own workflows and settings restored over them");
     } else actions.review = 'exists';
 
     if (!prThere) {
@@ -709,11 +838,17 @@ export async function cmdBootstrapPaper(input: BootstrapPaperInput, deps: Bootst
   };
 }
 
+/** The placeholder edition id when `--edition` is not given. Self-consistent (it also names
+ *  the `editions/<id>.yml` this run writes) and declared in the plan — unlike the paper path,
+ *  where the same default would name an edition file some OTHER repo has to already have. */
+const DEFAULT_EDITION = 'edition';
+
 export interface BootstrapJournalInput {
   repo: string; // owner/name
   tier: 'external' | 'co-located';
   name?: string;
-  edition: string;
+  /** Defaults to {@link DEFAULT_EDITION}, declared in the plan. */
+  edition?: string;
   engineVersion: string;
   engineRepo: string;
   owner?: string;
@@ -727,6 +862,8 @@ export interface BootstrapJournalInput {
    *  be silently meaningless — and silently meaningless flags teach the wrong model. */
   site?: boolean;
   secrets: SecretInputs;
+  /** Provenance of the defaulted values, for the plan's declaration block. */
+  resolved?: ResolvedFlags;
 }
 
 export async function cmdBootstrapJournal(input: BootstrapJournalInput, deps: BootstrapDeps): Promise<Outcome> {
@@ -740,20 +877,21 @@ export async function cmdBootstrapJournal(input: BootstrapJournalInput, deps: Bo
         status: 'error',
         repo,
         error:
-          '--no-site is only meaningful with --external: the co-located tier never stamps a ' +
-          'journal site (an index over many papers in one repo is separate, unbuilt work).',
+          '--no-site is only meaningful with --external: a co-located journal never gets a ' +
+          'website (an index over many papers in one repo is separate, unbuilt work).',
       },
     };
   }
   const withSite = external && input.site !== false;
   const owner = resolveOwner(input, prov);
+  const edition = input.edition ?? DEFAULT_EDITION;
 
   const answers: TemplateAnswers = {
     engineRepo: input.engineRepo,
     instanceRepo: '.', // co-located: this repo IS the instance; external: unused
     owner: owner.ownerToken,
     version: input.engineVersion,
-    edition: input.edition,
+    edition,
     journalName: input.name,
   };
 
@@ -761,22 +899,37 @@ export async function cmdBootstrapJournal(input: BootstrapJournalInput, deps: Bo
   const mainThere = repoThere && prov.branchExists(repo, 'main');
 
   const plan = [
-    `bootstrap journal (${input.tier}): ${repo}`,
-    repoThere ? '  ✓ repo exists' : `  ○ create repo (public${external ? ', instance-config MUST stay public' : ''})`,
+    `bootstrap journal (${external ? 'its own repo; papers live elsewhere' : 'journal and paper in one repo'}): ${repo}`,
+    ...declaredValues({
+      engineVersion: input.engineVersion,
+      engineRepo: input.engineRepo,
+      owner: owner.ownerToken,
+      ownerGiven: Boolean(input.owner),
+      // An external journal repo gets no CODEOWNERS file and no team grant — nothing here
+      // consumes the owner, so the plan must not claim it does.
+      ownerUsed: !external,
+      edition,
+      editionGiven: Boolean(input.edition),
+      journalName: input.name ?? null,
+      resolved: input.resolved,
+    }),
+    repoThere
+      ? '  ✓ repo exists'
+      : `  ○ create repo (public${external ? ' — it must stay public: every paper build reads the journal settings from it, without a token' : ''})`,
     mainThere ? '  ✓ main seeded' : external
-      ? `  ○ seed main with the instance-config scaffold${withSite ? ' + the journal site' : ''} (no frozen shim)`
-      : '  ○ seed main with the frozen shim + starter paper + instance-config (co-located)',
+      ? `  ○ seed main with the journal's settings, branding and paper list${withSite ? ", plus the journal website" : ''} (no paper workflows — this repo publishes nothing itself)`
+      : "  ○ seed main with the journal's settings AND a starter paper, plus the workflows that build and check it",
     external
       ? withSite
-        ? `  ○ enable Pages for the journal site (${siteUrlFor(repo)}); no rulesets/env`
-        : '  ○ (--no-site: data-only repo — no site, no rulesets/env)'
-      : '  ○ provisioning: rulesets + Pages + zenodo-publish env + labels',
+        ? `  ○ turn on GitHub Pages for the journal website (${siteUrlFor(repo)}); no branch rules, no environments`
+        : '  ○ (--no-site: settings only — no website, no branch rules, no environments)'
+      : '  ○ repo settings: branch + tag rules, GitHub Pages, the zenodo-publish environment, issue labels',
     // Same sharp edge as the paper path: a re-run never re-seeds, so a changed --name /
     // --edition / --engine-version does not reach an already-seeded main.
     ...(mainThere
       ? [
-          '  ! main is already seeded — this run will NOT re-stamp the scaffold, so a changed' +
-            ' --name/--edition/--engine-version will not reach it. Edit the repo directly.',
+          '  ! main is already seeded — this run will NOT rewrite the files there, so a changed' +
+            ' --name/--edition/--engine-version will not reach them. Edit the repo directly.',
         ]
       : []),
   ];
@@ -794,7 +947,12 @@ export async function cmdBootstrapJournal(input: BootstrapJournalInput, deps: Bo
   const actions: Record<string, string> = {};
 
   if (!repoThere) {
-    prov.createRepo(repo, { private: false, description: `${external ? 'Instance-config' : 'Co-located journal'} — oak bootstrap` });
+    prov.createRepo(repo, {
+      private: false,
+      description: external
+        ? 'Journal settings, branding and paper list — created by `oak bootstrap journal`'
+        : 'Journal and paper in one repo — created by `oak bootstrap journal --co-located`',
+    });
     actions.repo = 'created (public)';
     log(`  ✓ created ${repo} (public)`);
   } else {
@@ -803,7 +961,7 @@ export async function cmdBootstrapJournal(input: BootstrapJournalInput, deps: Bo
     if (prov.repoVisibility(repo) === 'private') {
       prov.setRepoPublic(repo);
       actions.visibility = 'forced public';
-      log('  ✓ forced repo public (instance-config must be public)');
+      log('  ✓ made the repo public (paper builds read these settings from here with no token)');
     }
   }
 
@@ -837,8 +995,12 @@ export async function cmdBootstrapJournal(input: BootstrapJournalInput, deps: Bo
   // adding protection is a tenant policy call, the same stance as `--no-require-checks`
   // on papers. Named in the runbook, not imposed.
   const runbook: string[] = [
-    'instance-config is UNPROTECTED by design — registry/brand upkeep is a manual editorial ' +
-      'PR ([S5]). Add branch protection yourself if your journal wants it.',
+    `Start here: edit journal.yml (your journal's name and the rules papers are checked against) ` +
+      `and brand/ (logo + colours). Papers read both at build time, so a change here reaches ` +
+      `every paper's next build. Clone it with: git clone https://github.com/${repo}.git`,
+    'This repo has no branch protection: adding a paper to the list, or changing the branding, ' +
+      'is an ordinary commit or pull request. If you want those changes reviewed, add a branch ' +
+      'protection rule yourself.',
   ];
   if (!withSite) {
     return { exitCode: 0, result: { status: 'ok', repo, tier: input.tier, actions, runbook } };
@@ -847,23 +1009,26 @@ export async function cmdBootstrapJournal(input: BootstrapJournalInput, deps: Bo
   // Pages, through the same GET-then-act seams the paper path uses (idempotent re-run).
   if (prov.pagesEnabled(repo)) {
     actions.pages = 'already enabled';
-    log('  ✓ Pages already enabled');
+    log('  ✓ GitHub Pages already enabled');
   } else {
     prov.enablePages(repo);
     actions.pages = 'enabled';
-    log('  ✓ Pages enabled (build_type=workflow)');
+    log('  ✓ GitHub Pages enabled (published by a workflow)');
   }
 
   const siteUrl = siteUrlFor(repo);
   actions.site = 'stamped';
-  log(`  ✓ journal site stamped — ${siteUrl}`);
+  log(`  ✓ journal website added — ${siteUrl}`);
   runbook.push(
-    `The journal site builds from this repo and serves at ${siteUrl} once the first ` +
-      '"Journal site" workflow run finishes. It is YOURS from here — not frozen, not ' +
-      'touched by `oak upgrade`. Three pins to bump by hand: the gallery plugin URL and ' +
-      '`site.template` in myst.yml, and `mystmd` in package.json.',
-    'A failed site build leaves the PREVIOUS deploy serving, so a broken registry entry ' +
-      'never takes the journal down — fix the entry and push again.',
+    `The journal website is built from this repo and goes live at ${siteUrl} once the first ` +
+      '"Journal site" workflow run finishes (watch it in the Actions tab). Every file in it is ' +
+      'yours to edit — the engine writes them once and never touches them again, so upgrading ' +
+      'the engine will not overwrite your design. Three version pins you bump by hand when you ' +
+      'want newer: the gallery plugin URL and `site.template` in myst.yml, and `mystmd` in ' +
+      'package.json.',
+    'If a website build ever fails, the version already published keeps serving — a bad entry ' +
+      'in registry/papers.yml (the list of published papers) cannot take the journal offline. ' +
+      'Fix the entry and push again.',
   );
   for (const line of runbook) log(`  → ${line}`);
 

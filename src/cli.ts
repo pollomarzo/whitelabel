@@ -122,12 +122,13 @@ function resolveInstanceRoot(
       `oak ${verb}: no instance-config resolved — ` +
       `pass --instance <path> (or --no-instance for ` +
       `${verb === 'build' ? 'an unbranded build' : 'a bare, engine-only check'}).\n` +
-      `In CI the path comes from .github/actions/engine/pins.yml: \`instance_repo: <owner/repo>\` ` +
-      `makes the shim clone that journal, and \`instance_repo: "."\` means the journal.yml is ` +
-      `co-located in THIS repo — but there is no journal.yml at ${paperRoot}.\n` +
+      `In a CI run the path comes from .github/actions/engine/pins.yml: ` +
+      `\`instance_repo: <owner/repo>\` makes the workflow fetch that journal, and ` +
+      `\`instance_repo: "."\` means the journal.yml sits in THIS repo — but there is no ` +
+      `journal.yml at ${paperRoot}.\n` +
       `If this paper belongs to a journal, set instance_repo in pins.yml to that journal's ` +
-      `owner/repo (\`oak bootstrap paper --instance\` writes it for you). ` +
-      `Local pins-based instance cloning is a CI concern for now.`,
+      `owner/repo (\`oak bootstrap paper --instance\` writes it for you). Running locally, ` +
+      `pass --instance <path to a checkout of the journal repo>.`,
   };
 }
 
@@ -181,8 +182,73 @@ function instanceRootOf(argv: string[]): string | null {
   const i = flag(argv, 'instance');
   return i ? resolve(i) : null;
 }
-function emit(result: Record<string, unknown>): void {
-  process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+
+/** Keys a human summary never prints: already narrated as prose (`runbook`, logged line by
+ *  line with `→`), or a whole markdown document meant for the PR UI (`checkRun`). */
+const SUMMARY_SKIP = new Set(['runbook', 'checkRun']);
+
+/** Fallback rendering of a result object for a human: one `key: value` line per field. Arrays
+ *  of strings become bullets, nested objects a compact `k=v` list, empty things nothing. */
+function summarize(result: Record<string, unknown>): string[] {
+  // A refusal is a sentence, not a record — the message already names the verb and the fix.
+  if (result.status === 'error') {
+    const text = result.error ?? result.message;
+    if (typeof text === 'string') return [text];
+  }
+  // An abort has already explained itself at the prompt; repeating it as fields is the
+  // duplication this pass exists to remove.
+  if (result.status === 'aborted') return [];
+  const lines: string[] = [];
+  for (const [key, value] of Object.entries(result)) {
+    if (SUMMARY_SKIP.has(key) || value === undefined || value === null) continue;
+    if (Array.isArray(value)) {
+      if (!value.length) continue;
+      if (value.every((v) => typeof v === 'string')) {
+        lines.push(`${key}:`);
+        for (const v of value) lines.push(`  - ${v}`);
+      } else lines.push(`${key}: ${value.length}`);
+    } else if (typeof value === 'object') {
+      const inner = Object.entries(value as Record<string, unknown>)
+        .map(([k, v]) => `${k}=${v}`)
+        .join(', ');
+      if (inner) lines.push(`${key}: ${inner}`);
+    } else lines.push(`${key}: ${value}`);
+  }
+  return lines;
+}
+
+/**
+ * The human rendering for the verbs that narrate every step as they happen (`bootstrap`,
+ * `upgrade`): their result object is a recap of lines already on the screen, so it closes
+ * with one line naming what to open, instead of repeating itself.
+ */
+function narrated(result: Record<string, unknown>): string[] {
+  const special = summarize(result);
+  if (result.status !== 'ok') return special;
+  const what = result.repo ?? result.target ?? '';
+  const links = [result.pr, result.site_url].filter((v): v is string => typeof v === 'string' && !!v);
+  return [`done: ${what}${links.length ? ` — ${links.join('  ')}` : ''}`];
+}
+
+/**
+ * Print a verb's result. The JSON envelope is OPT-IN (`--json`): dumping it into a human's
+ * terminal repeats, in a shape nobody reads, what the verb has just said in prose — the
+ * runbook a tenant is supposed to act on arrived twice, once as instructions and once as a
+ * log. Nothing in CI parses this stdout (the shim and the workflows consume FILES — `oak
+ * validate --report`, `oak conformance --record`), so the envelope can be gated without
+ * touching them. Human output goes to stderr, where the rest of our prose already is, so
+ * `--json`'s stdout stays a clean machine channel.
+ */
+function emit(
+  argv: string[],
+  result: Record<string, unknown>,
+  human?: (r: Record<string, unknown>) => string[],
+): void {
+  if (has(argv, 'json')) {
+    process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+    return;
+  }
+  for (const line of (human ?? summarize)(result)) process.stderr.write(line + '\n');
 }
 
 /** `oak deposit <prepare|publish|status>` — the Zenodo deposit verbs (slice 3). */
@@ -210,7 +276,7 @@ async function cmdDeposit(argv: string[]): Promise<number> {
       return 2;
     }
     const out = await z.cmdPrepare({ mystPath, repo, siteUrl, sandbox, api, instanceRoot });
-    emit(out.result);
+    emit(rest, out.result);
     // Open the DOI PR over the working-tree myst.yml write ([R3]/§1d). Best-effort: a local
     // sandbox rehearsal with no gh/token just leaves the write for the human to PR.
     if (out.exitCode === 0 && !has(rest, 'no-pr') && process.env.GH_TOKEN) {
@@ -236,13 +302,13 @@ async function cmdDeposit(argv: string[]): Promise<number> {
       bundleOut: resolve(flag(rest, 'bundle-out') ?? '_bundle'),
       api, git: gh.realGitContext, instanceRoot, engineRoot: engineRoot(),
     });
-    emit(out.result);
+    emit(rest, out.result);
     return out.exitCode;
   }
 
   if (sub === 'status') {
     const out = await z.cmdStatus({ mystPath, siteUrl, sandbox, api, instanceRoot });
-    emit(out.result);
+    emit(rest, out.result);
     return out.exitCode;
   }
 
@@ -305,7 +371,7 @@ async function cmdRelease(argv: string[]): Promise<number> {
     sandbox, bundleOut, api, git: gh.realGitContext, instanceRoot: instanceRootOf(argv),
     engineRoot: engineRoot(),
   });
-  emit(out.result);
+  emit(argv, out.result);
 
   if (out.exitCode === 0 && process.env.GH_TOKEN) {
     try {
@@ -346,7 +412,7 @@ async function cmdDeployPreview(argv: string[]): Promise<number> {
     },
     { deployer: gh.realPagesDeployer, gh: gh.realGhPr },
   );
-  emit(out.result);
+  emit(argv, out.result);
   return out.exitCode;
 }
 
@@ -382,7 +448,7 @@ async function cmdNotify(argv: string[]): Promise<number> {
     },
     gh.realGhPr,
   );
-  emit(out.result);
+  emit(rest, out.result);
   return out.exitCode;
 }
 
@@ -441,6 +507,39 @@ function writeFailureReport(reportPath: string | undefined, title: string, messa
   }
 }
 
+/**
+ * The human rendering of a validate run. Without `--json` the reader gets the verdict and
+ * the findings that produced it, not the envelope: the envelope exists for `check-post`
+ * (which reads `--report <path>`), and a terminal reader has no use for its `checkRun`
+ * markdown. Every finding still appears — a shorter summary that DROPS findings would be a
+ * different verdict, which is the one thing a validator may never do.
+ */
+function validateSummary(out: {
+  status: string;
+  errors: Array<{ check: string; message: string }>;
+  warnings: Array<{ check: string; message: string }>;
+  checks: Array<{ id: string; status: string; message?: string; optional?: boolean }>;
+  notes: string[];
+}): string[] {
+  const passed = out.checks.filter((c) => String(c.status) === 'pass').length;
+  const counts = [
+    out.errors.length ? `${out.errors.length} error(s)` : '',
+    out.warnings.length ? `${out.warnings.length} warning(s)` : '',
+    out.checks.length ? `${passed}/${out.checks.length} editorial checks passed` : '',
+  ].filter(Boolean);
+  const lines = [
+    `oak validate: ${out.status === 'ok' ? 'PASS' : 'FAIL'}${counts.length ? ' — ' + counts.join(', ') : ''}`,
+  ];
+  for (const e of out.errors) lines.push(`  ✗ ${e.check}: ${e.message}`);
+  for (const w of out.warnings) lines.push(`  ! ${w.check}: ${w.message}`);
+  for (const c of out.checks) {
+    if (String(c.status) === 'pass') continue;
+    lines.push(`  ${c.optional ? '!' : '✗'} ${c.id}: ${c.message ?? String(c.status)}`);
+  }
+  for (const n of out.notes) lines.push(`  → ${n}`);
+  return lines;
+}
+
 async function cmdValidate(argv: string[]): Promise<number> {
   const paperRoot = resolve(flag(argv, 'paper') ?? '.');
   const reportPath = flag(argv, 'report');
@@ -497,17 +596,21 @@ async function cmdValidate(argv: string[]): Promise<number> {
     process.stdout.write = realStdoutWrite;
   }
 
-  emit({
-    status: out.status,
-    errors: out.errors,
-    warnings: out.warnings,
-    checks: out.checks,
-    // Only when there is something to say: a composed run is the normal case and stays quiet,
-    // an UNCOMPOSED one must announce itself ([R82]) — the report is the only place a reader
-    // learns that these findings came from the author's config rather than the composed one.
-    ...(out.notes.length ? { notes: out.notes } : {}),
-    ...(has(argv, 'json') ? { checkRun: out.checkRun } : {}),
-  });
+  emit(
+    argv,
+    {
+      status: out.status,
+      errors: out.errors,
+      warnings: out.warnings,
+      checks: out.checks,
+      // Only when there is something to say: a composed run is the normal case and stays quiet,
+      // an UNCOMPOSED one must announce itself ([R82]) — the report is the only place a reader
+      // learns that these findings came from the author's config rather than the composed one.
+      ...(out.notes.length ? { notes: out.notes } : {}),
+      checkRun: out.checkRun,
+    },
+    () => validateSummary(out),
+  );
 
   // `--report <path>`: write the FULL envelope (checkRun always included) for the Stage-2
   // `oak check-post` job, which reads it in trusted base context and posts the Check Run +
@@ -558,7 +661,7 @@ async function cmdCheckPost(argv: string[]): Promise<number> {
     { report, repo, sha, pr, shimTouched },
     { checkRun: gh.realCheckRun, sticky: (root, prNum, header, body) => gh.realGhPr.sticky(root, prNum, header, body) },
   );
-  emit({ ...out });
+  emit(argv, { ...out });
   return 0;
 }
 
@@ -624,6 +727,10 @@ async function cmdBootstrap(argv: string[]): Promise<number> {
   }
   const engineRepo = flag(rest, 'engine-repo') ?? ENGINE_REPO_DEFAULT;
   let engineVersion = flag(rest, 'engine-version');
+  // How the version was arrived at is part of the plan, not a detail: "the newest release
+  // right now" and "the tag you named" are different promises, and only one of them is
+  // reproducible next month.
+  const engineVersionFrom: 'flag' | 'latest-release' = engineVersion ? 'flag' : 'latest-release';
   if (!engineVersion) {
     try {
       engineVersion = gh.latestEngineRelease(engineRepo);
@@ -632,6 +739,10 @@ async function cmdBootstrap(argv: string[]): Promise<number> {
       return 2;
     }
   }
+  const resolved = {
+    engineVersionFrom,
+    engineRepoFrom: (flag(rest, 'engine-repo') ? 'flag' : 'default') as 'flag' | 'default',
+  };
   const deps = { prov: gh.realProvisioner, paperTemplateRoot, instanceTemplateRoot, siteTemplateRoot, mystRange, log: (m: string) => process.stderr.write(m + '\n'), confirm: makeConfirm(rest), workdir: workdir('oak-bootstrap-') };
 
   if (sub === 'paper') {
@@ -641,7 +752,11 @@ async function cmdBootstrap(argv: string[]): Promise<number> {
         from: flag(rest, 'from'),
         sourceRef: flag(rest, 'source-ref'),
         instance: flag(rest, 'instance'),
-        edition: flag(rest, 'edition') ?? 'edition',
+        // NOT defaulted (unlike `bootstrap journal`, where the scaffold's own edition file is
+        // named from the same value and so agrees with itself). A paper is joining a journal
+        // that already has editions; a literal `edition` invented here matches none of them,
+        // and the paper's CI fails on the missing edition file long after this command said ok.
+        edition: flag(rest, 'edition'),
         engineVersion,
         engineRepo,
         owner: flag(rest, 'owner'),
@@ -649,10 +764,11 @@ async function cmdBootstrap(argv: string[]): Promise<number> {
         private: has(rest, 'private'),
         requireChecks: !has(rest, 'no-require-checks'),
         secrets: secretsFrom(rest),
+        resolved,
       },
       deps,
     );
-    emit(out.result);
+    emit(rest, out.result, narrated);
     return out.exitCode;
   }
 
@@ -668,7 +784,10 @@ async function cmdBootstrap(argv: string[]): Promise<number> {
         repo,
         tier: external ? 'external' : 'co-located',
         name: flag(rest, 'name'),
-        edition: flag(rest, 'edition') ?? 'edition',
+        // Defaulted (and declared in the plan): the scaffold NAMES its own edition file from
+        // this value, so `edition` is self-consistent here — a placeholder the tenant renames,
+        // not a claim about someone else's journal.
+        edition: flag(rest, 'edition'),
         engineVersion,
         engineRepo,
         owner: flag(rest, 'owner'),
@@ -676,10 +795,11 @@ async function cmdBootstrap(argv: string[]): Promise<number> {
         requireChecks: !has(rest, 'no-require-checks'),
         site: !has(rest, 'no-site'),
         secrets: secretsFrom(rest),
+        resolved,
       },
       deps,
     );
-    emit(out.result);
+    emit(rest, out.result, narrated);
     return out.exitCode;
   }
 
@@ -715,7 +835,7 @@ async function cmdUpgrade(argv: string[]): Promise<number> {
       confirm: makeConfirm(argv),
     },
   );
-  emit(out.result);
+  emit(argv, out.result, narrated);
   return out.exitCode;
 }
 
@@ -735,7 +855,7 @@ async function cmdConformance(argv: string[]): Promise<number> {
       return 2;
     }
     const out = await conformance.cmdConformanceReset({ repo }, deps);
-    emit(out.result);
+    emit(rest, out.result);
     return out.exitCode;
   }
 
@@ -781,10 +901,11 @@ async function cmdConformance(argv: string[]): Promise<number> {
         },
       },
     );
-    emit(out.result);
+    emit(rest, out.result);
     // The tag-keyed cert record (the C5 promotion-gate seam): persist the verdict for a later
-    // gate to read. stdout already carries it; --record writes it to a file the workflow can
-    // attach to the engine tag's release.
+    // gate to read. `--record` writes it to a file the workflow can attach to the engine tag's
+    // release — the FILE is the machine channel (stdout carries the envelope only under
+    // `--json`), which is why the conformance workflow passes `--record` and parses nothing.
     const record = flag(rest, 'record');
     if (record) writeFileSync(resolve(record), JSON.stringify(out.result, null, 2) + '\n');
     return out.exitCode;
@@ -798,8 +919,110 @@ async function cmdConformance(argv: string[]): Promise<number> {
   return 2;
 }
 
+const VERBS: Verb[] = [
+  'build',
+  'validate',
+  'check-post',
+  'deploy-preview',
+  'deposit',
+  'release',
+  'notify',
+  'bootstrap',
+  'upgrade',
+  'conformance',
+];
+
+/** Levenshtein distance — only ever run over two short command words. */
+function editDistance(a: string, b: string): number {
+  const prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    let diag = prev[0]!;
+    prev[0] = i;
+    for (let j = 1; j <= b.length; j++) {
+      const tmp = prev[j]!;
+      prev[j] = Math.min(prev[j]! + 1, prev[j - 1]! + 1, diag + (a[i - 1] === b[j - 1] ? 0 : 1));
+      diag = tmp;
+    }
+  }
+  return prev[b.length]!;
+}
+
+/** The closest command to a typo, or null when nothing is close enough to suggest. */
+function nearestVerb(word: string): string | null {
+  let best: string | null = null;
+  let bestD = Infinity;
+  for (const v of VERBS) {
+    const d = editDistance(word.toLowerCase(), v);
+    if (d < bestD) {
+      bestD = d;
+      best = v;
+    }
+  }
+  return bestD <= 3 ? best : null;
+}
+
+/**
+ * Usage. Opens with what `oak` IS and where someone with nothing starts, because the first
+ * reader of this text is a tenant who has just installed it — a bare list of 14 verbs answers
+ * a question they have not reached yet. The two journal shapes get a plain sentence each:
+ * `--external` vs `--co-located` is the single most consequential choice on this screen and
+ * it is not inferable from the words.
+ */
+function usage(): string {
+  return (
+    `oak — the journal engine. It builds, checks, previews and publishes papers, and sets up\n` +
+    `the journal (its branding, editions and list of papers) they belong to. Anything that\n` +
+    `changes a repo prints a plan and asks before it does it.\n` +
+    `\n` +
+    `Starting from nothing? Create the journal, then a repo per paper:\n` +
+    `  oak bootstrap journal --repo <owner/name> --external --name "My Journal" --edition 2026\n` +
+    `  oak bootstrap paper   --repo <owner/name> --instance <owner/journal-repo> --edition 2026\n` +
+    `\n` +
+    `Setting up repos\n` +
+    `  oak bootstrap journal --repo <owner/name> (--external | --co-located) [--name <name>] [--edition <id>]\n` +
+    `                        [--engine-version <tag>] [--owner <@user|@org/team>] [--no-require-checks] [--no-site] [--yes]\n` +
+    `      --external    the journal gets its own public repo, holding its settings, branding\n` +
+    `                    and the list of published papers; each paper then lives in a repo of\n` +
+    `                    its own that points back at it. This is the usual choice.\n` +
+    `      --co-located  one single repo is both the journal and its paper — journal settings\n` +
+    `                    and manuscript side by side. For a one-off publication with no\n` +
+    `                    separate journal repo; there is no journal website in this shape.\n` +
+    `  oak bootstrap paper   --repo <owner/name> --instance <owner/journal-repo> --edition <id>\n` +
+    `                        [--from <author-url> [--source-ref <ref>]]\n` +
+    `                        [--engine-version <tag>] [--owner <@user|@org/team>] [--private] [--no-require-checks] [--yes]\n` +
+    `      --instance    the journal repo this paper belongs to ('.' only if the journal\n` +
+    `                    settings live in this same repo); --edition names one of its editions\n` +
+    `  oak upgrade (--repo <owner/name> | --paper <dir>) [--to <tag>] [--version-only|--files-only|--both] [--yes]\n` +
+    `                    move a paper repo to a newer engine version, as a pull request\n` +
+    `\n` +
+    `Working on a paper\n` +
+    `  oak validate [--paper <dir>] [--instance <dir> | --no-instance] [--strict] [--report <path>]\n` +
+    `                    run the journal's checks over a manuscript and report what fails\n` +
+    `  oak build   [--paper <dir>] [--instance <dir> | --no-instance] [--base-url <url>] [--no-site-template]\n` +
+    `                    build the paper's website + PDF into _build/\n` +
+    `\n` +
+    `Run by the workflows (rarely typed by hand)\n` +
+    `  oak check-post --report <path> --repo <owner/repo> --sha <headsha> [--pr <n>]\n` +
+    `  oak deploy-preview <site> [--instance <dir>] [--repo <owner/repo>]\n` +
+    `  oak notify new-version [--pr <n> | --site <dir>] [--repo <owner/repo>]\n` +
+    `  oak deposit prepare --repo <owner/repo> [--site-url <url>] [--sandbox] [--instance <dir>]\n` +
+    `  oak deposit publish --pdf <path> --tag <vX.Y.Z> [--site-url <url>] [--sandbox] [--instance <dir>]\n` +
+    `  oak deposit status  [--sandbox] [--instance <dir>]\n` +
+    `  oak release --tag <vX.Y.Z> [--paper <dir>] [--instance <dir>] [--site-url <url>]\n` +
+    `  oak conformance reset   --repo <owner/name>\n` +
+    `  oak conformance certify --repo <owner/name> --tag <vX.Y.Z> [--fork-repo <owner/name>]\n` +
+    `\n` +
+    `Any command\n` +
+    `  --json      print the full machine-readable result on stdout instead of a summary\n` +
+    `  --verbose   show the raw git/gh commands' output (shown on failure either way)\n`
+  );
+}
+
 async function main(argv: string[]): Promise<number> {
   const verb = argv[0] as Verb | undefined;
+  // One switch, read by gh.ts, so `--verbose` reaches the subprocess layer without threading
+  // a parameter through every seam (and survives the child process `oak release` spawns).
+  if (has(argv, 'verbose')) process.env.OAK_VERBOSE = '1';
   if (verb === 'build') return cmdBuild(argv.slice(1));
   if (verb === 'validate') return cmdValidate(argv.slice(1));
   if (verb === 'check-post') return cmdCheckPost(argv.slice(1));
@@ -814,26 +1037,16 @@ async function main(argv: string[]): Promise<number> {
     process.stderr.write(`oak ${verb}: not implemented yet (${STUB_SLICE[verb]}).\n`);
     return 1;
   }
-  process.stderr.write(
-    `oak: usage:\n` +
-      `  oak build   [--paper <dir>] [--instance <dir> | --no-instance] [--base-url <url>] [--no-site-template]\n` +
-      `  oak validate [--paper <dir>] [--instance <dir> | --no-instance] [--strict] [--json] [--report <path>]\n` +
-      `  oak check-post --report <path> --repo <owner/repo> --sha <headsha> [--pr <n>]\n` +
-      `  oak deposit prepare --repo <owner/repo> [--site-url <url>] [--sandbox] [--instance <dir>]\n` +
-      `  oak deposit publish --pdf <path> --tag <vX.Y.Z> [--site-url <url>] [--sandbox] [--instance <dir>]\n` +
-      `  oak deposit status  [--sandbox] [--instance <dir>]\n` +
-      `  oak release --tag <vX.Y.Z> [--paper <dir>] [--instance <dir>] [--site-url <url>]\n` +
-      `  oak deploy-preview <site> [--instance <dir>] [--repo <owner/repo>]\n` +
-      `  oak notify new-version [--pr <n> | --site <dir>] [--repo <owner/repo>]\n` +
-      `  oak bootstrap paper   --repo <owner/name> --instance <owner/config> (the journal; '.' if co-located)\n` +
-      `                        [--from <author-url> [--source-ref <ref>]]\n` +
-      `                        [--edition <id>] [--engine-version <tag>] [--owner <@user|@org/team>] [--private] [--no-require-checks] [--yes]\n` +
-      `  oak bootstrap journal --repo <owner/name> (--external | --co-located) [--name <name>] [--edition <id>]\n` +
-      `                        [--engine-version <tag>] [--owner <@user|@org/team>] [--no-require-checks] [--no-site] [--yes]\n` +
-      `  oak upgrade (--repo <owner/name> | --paper <dir>) [--to <tag>] [--version-only|--files-only|--both] [--yes]\n` +
-      `  oak conformance reset   --repo <owner/name>\n` +
-      `  oak conformance certify --repo <owner/name> --tag <vX.Y.Z> [--fork-repo <owner/name>]\n`,
-  );
+  // A word we do not know is an ERROR, not an invitation to read the manual. Printing usage
+  // alone answers a question nobody asked and hides the one that matters: a typo looks exactly
+  // like a bare `oak`, so the reader assumes the command ran and did nothing.
+  if (verb) {
+    const near = nearestVerb(verb);
+    process.stderr.write(
+      `oak: unknown command '${verb}'${near ? ` — did you mean '${near}'?` : ''}\n\n`,
+    );
+  }
+  process.stderr.write(usage());
   return 2;
 }
 

@@ -226,9 +226,10 @@ export function shimWarning(touched: string[]): string {
   const shown = touched.slice(0, 5).map((f) => `\`${f}\``).join(', ');
   const more = touched.length > 5 ? `, +${touched.length - 5} more` : '';
   return (
-    `> ⚠️ **This PR modifies the frozen CI shim** (${shown}${more}). The results below were ` +
-    `produced by this PR's own CI, so they may not reflect the journal's checks. If this is not a ` +
-    `deliberate engine upgrade, an editor should review the shim diff before trusting this.`
+    `> ⚠️ **This PR changes the files that run the checks** (${shown}${more}). The results below ` +
+    `were produced by this PR's own copy of them, so they may not be the journal's checks. ` +
+    `Unless this is a deliberate engine upgrade, an editor should read those changes before ` +
+    `trusting the report.`
   );
 }
 

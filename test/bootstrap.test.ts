@@ -287,6 +287,65 @@ describe('cmdBootstrapPaper', () => {
     expect(calls.seedBranch).toHaveLength(0);
   });
 
+  it('refuses a paper with no --edition instead of inventing one', async () => {
+    // The same class as the missing --instance: `edition` is written into the paper's
+    // myst.yml and must match an editions/<id>.yml the JOURNAL already has, so a default
+    // invented here is a guaranteed CI failure dressed up as a convenience.
+    const { prov, calls } = fakeProv();
+    const out = await cmdBootstrapPaper(paperInput({ edition: undefined }), deps(prov));
+    expect(out.exitCode).toBe(2);
+    expect(out.result.status).toBe('error');
+    expect(String(out.result.error)).toContain('--edition');
+    expect(String(out.result.error)).toContain('editions/');
+    // The journal it would have belonged to is named, so the reader knows where to look.
+    expect(String(out.result.error)).toContain('me/instance-config');
+    expect(calls.createRepo).toHaveLength(0);
+    expect(calls.seedBranch).toHaveLength(0);
+  });
+
+  it('the plan DECLARES every value the run resolved, before the confirm', async () => {
+    // Nothing the CLI assumes may be silent: the prompt is only consent if the defaults are
+    // on the screen above it. These lines are what the reader is agreeing to.
+    const { prov } = fakeProv();
+    const plans: string[][] = [];
+    const d = deps(prov);
+    d.confirm = async (plan) => {
+      plans.push(plan);
+      return false;
+    };
+    await cmdBootstrapPaper(
+      paperInput({ resolved: { engineVersionFrom: 'latest-release', engineRepoFrom: 'default' } }),
+      d,
+    );
+    const plan = plans[0]!.join('\n');
+    expect(plan).toContain('journal repo   : me/instance-config');
+    expect(plan).toContain('edition        : ed-2026');
+    // The auto-resolved ones say so, and say which flag pins them.
+    expect(plan).toMatch(/engine version : v1\.2\.3 — the newest engine release right now/);
+    expect(plan).toContain('--engine-version');
+    expect(plan).toMatch(/engine repo    : me\/engine — built-in default/);
+    expect(plan).toMatch(/review owner   : @alice — your own GitHub login/);
+  });
+
+  it('a value that WAS passed is declared as passed, not as a default', async () => {
+    const { prov } = fakeProv();
+    const plans: string[][] = [];
+    const d = deps(prov);
+    d.confirm = async (plan) => {
+      plans.push(plan);
+      return false;
+    };
+    await cmdBootstrapPaper(
+      paperInput({ owner: '@org/editors', resolved: { engineVersionFrom: 'flag', engineRepoFrom: 'flag' } }),
+      d,
+    );
+    const plan = plans[0]!.join('\n');
+    expect(plan).toContain('engine version : v1.2.3 (--engine-version)');
+    expect(plan).toContain('engine repo    : me/engine (--engine-repo)');
+    expect(plan).toContain('review owner   : @org/editors (--owner)');
+    expect(plan).not.toContain('no --engine-version given');
+  });
+
   it('--instance . is the explicit co-located opt-in and still bootstraps', async () => {
     const { prov, calls } = fakeProv();
     const out = await cmdBootstrapPaper(paperInput({ instance: '.' }), deps(prov));
@@ -325,7 +384,7 @@ describe('cmdBootstrapPaper', () => {
     expect(out.result.status).toBe('aborted');
     expect(String(out.result.reason)).toContain('not confirmed');
     const plan = plans[0]!.join('\n');
-    expect(plan).toContain('will NOT re-stamp');
+    expect(plan).toContain('will NOT rewrite');
     expect(plan).toContain('pins.yml');
   });
 
@@ -506,6 +565,57 @@ describe('cmdBootstrapJournal', () => {
     expect(existsSync(join(seed, 'package.json'))).toBe(false);
     const myst = parseDocument(readFileSync(join(seed, 'myst.yml'), 'utf8'));
     expect(myst.getIn(['project', 'options', 'oaktree-sapling', 'version'])).toBe('v9'); // the PAPER starter
+  });
+
+  it('a defaulted --edition is DECLARED, and names the file it will write', async () => {
+    // The journal path may default the edition (unlike a paper: the same value names the
+    // editions/<id>.yml this very run writes, so it is self-consistent) — but the tenant is
+    // told, because every paper will have to spell that id back.
+    const { prov } = fakeProv();
+    const seedDirs: string[] = [];
+    const plans: string[][] = [];
+    const d = journalDeps(prov, seedDirs);
+    d.confirm = async (plan) => {
+      plans.push(plan);
+      return true;
+    };
+    await cmdBootstrapJournal(
+      { repo: 'me/config', tier: 'external', name: 'J', engineVersion: 'v1', engineRepo: 'me/engine', authedUser: 'alice', requireChecks: true, secrets: {}, resolved: { engineVersionFrom: 'flag', engineRepoFrom: 'default' } },
+      d,
+    );
+    const plan = plans[0]!.join('\n');
+    expect(plan).toMatch(/edition        : edition — placeholder, no --edition given/);
+    expect(plan).toContain('editions/edition.yml');
+    expect(existsSync(join(seedDirs[0]!, 'editions/edition.yml'))).toBe(true);
+  });
+
+  it('the plan does NOT claim a review owner an external journal never uses', async () => {
+    // An external journal repo gets no CODEOWNERS and no team grant. Declaring a value we
+    // do not honour is the same failure as hiding one we do.
+    const { prov } = fakeProv();
+    const plans: string[][] = [];
+    const ext = journalDeps(prov, []);
+    ext.confirm = async (plan) => {
+      plans.push(plan);
+      return false;
+    };
+    await cmdBootstrapJournal(
+      { repo: 'me/config', tier: 'external', name: 'J', edition: 'ed', engineVersion: 'v1', engineRepo: 'me/engine', authedUser: 'alice', requireChecks: true, secrets: {} },
+      ext,
+    );
+    expect(plans[0]!.join('\n')).not.toContain('review owner');
+
+    // ...but the co-located tier DOES write CODEOWNERS, so there it must be declared.
+    const colo = journalDeps(fakeProv().prov, []);
+    colo.confirm = async (plan) => {
+      plans.push(plan);
+      return false;
+    };
+    await cmdBootstrapJournal(
+      { repo: 'me/journal', tier: 'co-located', name: 'J', edition: 'ed', engineVersion: 'v1', engineRepo: 'me/engine', authedUser: 'alice', requireChecks: true, secrets: {} },
+      colo,
+    );
+    expect(plans[1]!.join('\n')).toContain('review owner   : @alice');
   });
 
   it('--co-located --no-site is a usage ERROR, not a silent no-op', async () => {

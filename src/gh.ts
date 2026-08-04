@@ -9,7 +9,7 @@
  * are absent (a local sandbox rehearsal), the caller degrades to just the Zenodo work + a
  * working-tree myst.yml write, which is enough for the slice-3 acceptance (a sandbox record).
  */
-import { execFileSync, type StdioOptions } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { cpSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -22,32 +22,77 @@ import type { UpgradePr } from './upgrade.js';
 import type { ConformanceGh } from './conformance.js';
 
 /**
- * `execFileSync` forwards the child's stderr to ours unless stdio says otherwise, so a probe
- * that treats failure as a valid answer still prints the failure. `quiet` pipes stderr into
- * the (discarded) result instead — use it only where the throw is caught and answered.
+ * All git/gh chatter is CAPTURED, not inherited. `execFileSync` otherwise forwards the child's
+ * stderr straight to ours, and the result was a bootstrap transcript where "Cloning into
+ * '/tmp/oak-seed-…'", "warning: You appear to have cloned an empty repository" and our own
+ * plan lines were indistinguishable — the reader cannot tell what the tool did from what a
+ * tool it called said about itself.
+ *
+ * So: quiet on success, and on FAILURE the captured text is replayed with the tool's name in
+ * front of every line, because that is exactly when it is the most useful thing on screen.
+ * `--verbose` (via `OAK_VERBOSE`) replays it on success too, and CI is verbose by default —
+ * a workflow log is read after the fact, by someone who cannot re-run it with a flag.
  */
-const stdio = (quiet?: boolean): StdioOptions | undefined =>
-  quiet ? ['pipe', 'pipe', 'pipe'] : undefined;
+function verboseChildren(): boolean {
+  return Boolean(process.env.OAK_VERBOSE || process.env.CI);
+}
+
+/** Replay a child's captured output with its provenance on every line. */
+export function labelChildOutput(tool: string, text: unknown): string {
+  return String(text ?? '')
+    .split('\n')
+    .filter((l) => l.trim() !== '')
+    .map((l) => `  [${tool}] ${l}`)
+    .join('\n');
+}
+
+function echoChild(tool: string, text: unknown): void {
+  const labelled = labelChildOutput(tool, text);
+  if (labelled) process.stderr.write(labelled + '\n');
+}
+
+/**
+ * Run `git`/`gh` with both streams captured. `quiet` means "not even on failure" — for the
+ * probes that treat a non-zero exit as a valid answer (does this ruleset exist?), where the
+ * child's complaint is noise about a question we already answered.
+ */
+function run(tool: 'git' | 'gh', args: string[], opts: { input?: string; cwd?: string; quiet?: boolean; env?: NodeJS.ProcessEnv } = {}): string {
+  // spawnSync, not execFileSync: capturing stderr AND being able to replay it needs the
+  // stream back in hand, which execFileSync only gives us on the failure path.
+  const r = spawnSync(tool, args, {
+    encoding: 'utf8',
+    input: opts.input,
+    cwd: opts.cwd,
+    maxBuffer: 64 * 1024 * 1024,
+    ...(opts.env ? { env: opts.env } : {}),
+  });
+  if (r.error) throw r.error;
+  if (r.status !== 0) {
+    if (!opts.quiet) echoChild(tool, r.stderr || r.stdout);
+    const first = String(r.stderr || r.stdout || '').split('\n').find((l) => l.trim() !== '') ?? '';
+    const err = new Error(
+      `${tool} ${args[0] ?? ''} failed (exit ${r.status ?? `signal ${r.signal}`})${first ? `: ${first.trim()}` : ''}`,
+    ) as Error & { status: number | null; stdout: string; stderr: string };
+    err.status = r.status;
+    err.stdout = String(r.stdout ?? '');
+    err.stderr = String(r.stderr ?? '');
+    throw err;
+  }
+  if (verboseChildren()) echoChild(tool, r.stderr);
+  return String(r.stdout ?? '').trim();
+}
 
 function git(repoRoot: string, args: string[], opts: { quiet?: boolean } = {}): string {
-  return execFileSync('git', ['-C', repoRoot, ...args], {
-    encoding: 'utf8',
-    stdio: stdio(opts.quiet),
-  }).trim();
+  return run('git', ['-C', repoRoot, ...args], opts);
 }
 
 /** git without a `-C` (clone / raw), optionally in `cwd`. */
 function gitRaw(args: string[], cwd?: string): string {
-  return execFileSync('git', args, { encoding: 'utf8', cwd }).trim();
+  return run('git', args, { cwd });
 }
 
 function gh(args: string[], opts: { input?: string; cwd?: string; quiet?: boolean } = {}): string {
-  return execFileSync('gh', args, {
-    encoding: 'utf8',
-    input: opts.input,
-    cwd: opts.cwd,
-    stdio: stdio(opts.quiet),
-  }).trim();
+  return run('gh', args, opts);
 }
 
 /** true when `gh api <path>` returns 2xx (idempotency GET probe). */
@@ -64,13 +109,7 @@ function ghOk(args: string[]): boolean {
  *  child sees `GH_TOKEN=token`. The conformance fork phase owns a second-account fork; base-repo
  *  ops keep using `gh()` (the ambient primary token), fork-repo ops use `ghAs(forkToken, …)`. */
 function ghAs(token: string, args: string[], opts: { input?: string; cwd?: string; quiet?: boolean } = {}): string {
-  return execFileSync('gh', args, {
-    encoding: 'utf8',
-    input: opts.input,
-    cwd: opts.cwd,
-    stdio: stdio(opts.quiet),
-    env: { ...process.env, GH_TOKEN: token },
-  }).trim();
+  return run('gh', args, { ...opts, env: { ...process.env, GH_TOKEN: token } });
 }
 
 /** Tolerant `ghAs` — the fork-token twin of `ghOk` (an already-absent ref DELETE is a no-op). */

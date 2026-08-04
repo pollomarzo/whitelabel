@@ -110,7 +110,7 @@ export function checkBrandFavicon(
     return {
       ok: false,
       severity: 'warn',
-      message: 'brand declares no favicon; the HTML prerender fatally 500s on /favicon.ico ([R61])',
+      message: 'brand declares no favicon: the built site fails to render its pages without one — set `favicon` in brand.yml',
     };
   }
   if (isBrandAssetUrl(favicon)) return { ok: true };
@@ -131,14 +131,14 @@ export function checkBrandWatermark(
     return {
       ok: false,
       severity: 'warn',
-      message: 'brand declares no typst watermark (project.options.logo); the PDF renders watermark-less ([R62])',
+      message: 'brand declares no watermark image (project.options.logo in brand.yml): the PDF renders without one',
     };
   }
   if (isBrandAssetUrl(logo)) {
     return {
       ok: false,
       severity: 'warn',
-      message: `brand typst watermark "${logo}" is a URL; typst cannot fetch — it must be a real local file ([R62])`,
+      message: `brand watermark "${logo}" is a URL: the PDF renderer cannot fetch it, so it must be a file committed in the journal repo`,
     };
   }
   const resolved = instanceRoot ? resolveBrandAssetPath(instanceRoot, logo) : logo;
@@ -366,7 +366,7 @@ export function checkLayerDisjointness(
       message:
         `extends layers declare overlapping keys: ${clashes.join(', ')}. ` +
         'myst resolves sibling extends by load-completion order, so the winner is ' +
-        'non-deterministic — move each key to exactly one layer ([R72]).',
+        'non-deterministic — move each key to exactly one layer.',
     },
   ];
 }
@@ -605,15 +605,15 @@ export async function runValidate(
       // stack trace, and this way the author gets the whole fix-list at once.
       composeFailure = (e as Error).message;
       notes.push(
-        `ran UNCOMPOSED: the derived config could not be produced (${composeFailure}). ` +
-          `Checks read the author's own myst.yml, so layer-declared fields are invisible.`,
+        `checked the paper's own myst.yml ONLY: it could not be combined with the journal's ` +
+          `settings (${composeFailure}), so anything the journal or its edition adds was not checked.`,
       );
     }
   } else {
     notes.push(
-      'ran UNCOMPOSED (no engine checkout or instance-config): checks read the paper\'s own ' +
-        'myst.yml, not the config that ships, so fields declared by the engine/edition/brand ' +
-        'layers — the pinned thumbnail, the typst export — are invisible here.',
+      "checked the paper's own myst.yml ONLY: the journal's settings were not available to " +
+        'this run, so whatever the journal, its edition or its branding add — the cover image, ' +
+        'the PDF export — was not checked here.',
     );
   }
   project ??= (await input.edge.loadProject(input.paperRoot)) as typeof project;
