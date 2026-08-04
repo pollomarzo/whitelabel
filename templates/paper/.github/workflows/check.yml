@@ -40,10 +40,14 @@ jobs:
         with:
           args: validate --report report.json
 
+      # Last resort only: `oak validate` writes a failing report even for a usage error or an
+      # unexpected throw, so reaching this branch means the engine died before it could write
+      # anything at all. Point at the step that holds the real message rather than restating
+      # "crash" — a bare "no valid report" told the author nothing about what to fix.
       - name: Ensure a valid report was produced
         run: |
           if ! jq -e '.checkRun.conclusion' report.json >/dev/null 2>&1; then
-            echo "::error::oak validate produced no valid report (engine crash) — failing Stage 1"
+            echo "::error::oak validate wrote no report at all — the engine died before it could report. The real error is in the '${{ steps.validate.outcome }}' validate step's log above; nothing was posted to the PR."
             exit 1
           fi
           echo "report ok — conclusion: $(jq -r '.checkRun.conclusion' report.json)"

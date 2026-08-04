@@ -9,7 +9,7 @@
  */
 import { describe, it, expect, beforeAll } from 'vitest';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, copyFileSync, writeFileSync, readFileSync, existsSync, mkdirSync } from 'node:fs';
+import { mkdtempSync, copyFileSync, writeFileSync, readFileSync, existsSync, mkdirSync, cpSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -134,5 +134,75 @@ describe.skipIf(bundleState() === 'absent')('the COMPOSED view reaches the check
     const { out } = runValidate(fixturePaper);
     expect(out.warnings.some((w: any) => w.check === 'template-override')).toBe(false);
     expect(out.errors.some((e: any) => e.check === 'template-override')).toBe(false);
+  }, 60_000);
+});
+
+/* --------------------------------------------------------------------------
+ * Instance resolution + the "engine crash" failure mode (UX-test bug hunt).
+ *
+ * Two defects from the same live run: the CI shim leaves `instance_repo: .` to "the CLI's
+ * root resolution" (the [R38] co-located rung), which did not exist — and when the resulting
+ * usage error fired, `oak validate` exited 2 having written NOTHING, so Stage 1 could only
+ * say "produced no valid report (engine crash)".
+ * ------------------------------------------------------------------------ */
+describe.skipIf(bundleState() === 'absent')('oak validate — instance resolution + crash reporting', () => {
+  beforeAll(assertBundleNotStale);
+
+  /** A copy of the fixture paper, alone (no journal.yml beside it). */
+  function paperOnly(): string {
+    const dir = mkdtempSync(join(tmpdir(), 'oak-val-noinst-'));
+    for (const f of ['bib.bib', 'index.md', 'myst.yml']) copyFileSync(join(fixturePaper, f), join(dir, f));
+    return dir;
+  }
+
+  it('writes a FAILING report instead of nothing when no instance resolves', () => {
+    // The Stage-1 guard is `jq -e '.checkRun.conclusion' report.json`. Before the fix that
+    // file did not exist and the author was told "engine crash" and nothing else.
+    const dir = paperOnly();
+    const report = join(dir, 'report.json');
+    const r = spawnSync('node', [bundle, 'validate', '--paper', dir, '--report', report], { encoding: 'utf8' });
+    expect(r.status).toBe(2);
+    expect(existsSync(report)).toBe(true);
+    const written = JSON.parse(readFileSync(report, 'utf8'));
+    expect(written.checkRun.conclusion).toBe('failure');
+    // The report must carry the REASON, since it is what Stage 2 posts on the PR.
+    expect(written.checkRun.summary).toContain('pins.yml');
+    expect(String(written.errors[0])).toContain('no instance-config resolved');
+  }, 60_000);
+
+  it('the error names pins.yml and the co-located rule, not just the flag', () => {
+    const r = spawnSync('node', [bundle, 'validate', '--paper', paperOnly()], { encoding: 'utf8' });
+    expect(r.status).toBe(2);
+    expect(r.stderr).toContain('instance_repo');
+    expect(r.stderr).toContain('--no-instance');
+  }, 60_000);
+
+  it('resolves the CO-LOCATED instance from a journal.yml beside the paper ([R38])', () => {
+    // What `instance_repo: .` means, and what the CI shim assumes the CLI does.
+    const dir = mkdtempSync(join(tmpdir(), 'oak-val-colo-'));
+    for (const f of ['bib.bib', 'index.md', 'myst.yml']) copyFileSync(join(fixturePaper, f), join(dir, f));
+    cpSync(fixtureInstance, dir, { recursive: true });
+    const report = join(dir, 'report.json');
+    const r = spawnSync(
+      'node',
+      [bundle, 'validate', '--paper', dir, '--repo', repo, '--report', report, '--json'],
+      { encoding: 'utf8' },
+    );
+    expect(r.status).toBe(0);
+    const out = JSON.parse(r.stdout);
+    expect(out.checkRun.conclusion).toBe('success');
+    // Composed against the co-located journal.yml: its five selected checks actually ran.
+    const ids = new Set(out.checks.map((c: any) => c.id));
+    expect(ids.has('abstract-exists')).toBe(true);
+    // ...and it did NOT silently degrade to the author's own config.
+    expect((out.notes ?? []).join(' ')).not.toMatch(/uncomposed/i);
+  }, 60_000);
+
+  it('--no-instance is still the explicit bare-check opt-out', () => {
+    const r = spawnSync('node', [bundle, 'validate', '--paper', paperOnly(), '--no-instance', '--json'], {
+      encoding: 'utf8',
+    });
+    expect(r.status).toBe(0);
+    expect(JSON.parse(r.stdout).checkRun.conclusion).toBe('success');
   }, 60_000);
 });

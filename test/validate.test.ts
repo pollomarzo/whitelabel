@@ -493,10 +493,10 @@ describe('runValidate — degrading when there is nothing to compose ([R82])', (
     );
     // No engineRoot → nothing to compose. A silent difference between two runs of the same
     // command is the [R71] mistake in miniature, so the report says so once.
-    expect(out.notes.some((n) => /UNCOMPOSED/.test(n))).toBe(true);
+    expect(out.notes.some((n) => /own myst\.yml ONLY/.test(n))).toBe(true);
     expect(out.checkRun).toBeDefined();
     // ...and it reaches the PR UI, not just stdout.
-    expect(out.checkRun.summary).toMatch(/⚠️ ran UNCOMPOSED/);
+    expect(out.checkRun.summary).toMatch(/⚠️ checked the paper's own myst\.yml ONLY/);
     // Nothing to compose is an OPERATOR choice (--no-instance / a bare local run), so it
     // explains without gating. Contrast the compose-FAILURE case below.
     expect(out.errors.some((e) => e.check === 'compose')).toBe(false);
@@ -538,6 +538,6 @@ describe('runValidate — degrading when there is nothing to compose ([R82])', (
     expect(out.exitCode).toBe(1);
     expect(out.checkRun.conclusion).toBe('failure');
     // The note still explains WHY the other results are worth less than they look.
-    expect(out.notes.some((n) => /UNCOMPOSED/.test(n))).toBe(true);
+    expect(out.notes.some((n) => /own myst\.yml ONLY/.test(n))).toBe(true);
   });
 });
