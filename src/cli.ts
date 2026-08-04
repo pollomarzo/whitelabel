@@ -93,13 +93,54 @@ function assetOverridesFrom(argv: string[]): ComposeInput['assetOverrides'] {
   };
 }
 
+/**
+ * The [R38] instance-root chain, minus the deferred pins-based clone: an explicit
+ * `--instance` › the CO-LOCATED root (a `journal.yml` sitting beside the paper) › the
+ * explicit `--no-instance` opt-out.
+ *
+ * The co-located rung is what `ci/run.sh` means by "'.' = co-located — leave to the CLI's
+ * root resolution": when `pins.yml` says `instance_repo: .` the shim clones nothing and
+ * passes no `--instance`, so WITHOUT this rung every co-located repo's CI died on the
+ * usage error below. It also makes the error itself useful — the common way to reach it is
+ * a paper whose `pins.yml` still carries the template's `.` placeholder, and the old text
+ * ("pass --instance <path>") named a flag the author cannot reach from a CI log.
+ *
+ * Returns a root or an error STRING; it never exits, so `oak validate` can turn the failure
+ * into a report instead of a crash.
+ */
+function resolveInstanceRoot(
+  argv: string[],
+  paperRoot: string,
+  verb: 'build' | 'validate',
+): { root: string | null } | { error: string } {
+  if (has(argv, 'no-instance')) return { root: null };
+  const explicit = flag(argv, 'instance');
+  if (explicit) return { root: resolve(explicit) };
+  if (existsSync(join(paperRoot, 'journal.yml'))) return { root: paperRoot };
+  return {
+    error:
+      `oak ${verb}: no instance-config resolved — ` +
+      `pass --instance <path> (or --no-instance for ` +
+      `${verb === 'build' ? 'an unbranded build' : 'a bare, engine-only check'}).\n` +
+      `In CI the path comes from .github/actions/engine/pins.yml: \`instance_repo: <owner/repo>\` ` +
+      `makes the shim clone that journal, and \`instance_repo: "."\` means the journal.yml is ` +
+      `co-located in THIS repo — but there is no journal.yml at ${paperRoot}.\n` +
+      `If this paper belongs to a journal, set instance_repo in pins.yml to that journal's ` +
+      `owner/repo (\`oak bootstrap paper --instance\` writes it for you). ` +
+      `Local pins-based instance cloning is a CI concern for now.`,
+  };
+}
+
 /** Run the two-pass build for a paper; shared by `oak build` and `oak release`. Returns the
  *  resolved paper root (its `_build/exports` now holds the PDF `release` deposits). */
 async function buildPaper(argv: string[]): Promise<{ paperRoot: string; resolvedId?: string }> {
   const paperRoot = resolve(flag(argv, 'paper') ?? '.');
-  const instanceRoot = has(argv, 'no-instance')
-    ? null
-    : resolve(flag(argv, 'instance') ?? mustInstance());
+  const resolved = resolveInstanceRoot(argv, paperRoot, 'build');
+  if ('error' in resolved) {
+    process.stderr.write(resolved.error + '\n');
+    process.exit(2);
+  }
+  const instanceRoot = resolved.root;
   const baseUrl = flag(argv, 'base-url') ?? '';
   const engineRepo = flag(argv, 'engine-repo') ?? readEngineRepo(paperRoot);
   const assetOverrides = assetOverridesFrom(argv);
@@ -124,14 +165,6 @@ async function buildPaper(argv: string[]): Promise<{ paperRoot: string; resolved
   });
   for (const w of res.warnings) process.stderr.write(`::warning::${w}\n`);
   return { paperRoot, resolvedId: res.resolvedProject.id };
-
-  function mustInstance(): string {
-    process.stderr.write(
-      'oak build: pass --instance <path> (or --no-instance for an unbranded build). ' +
-        'Local pins-based instance cloning is a CI concern for now.\n',
-    );
-    process.exit(2);
-  }
 }
 
 async function cmdBuild(argv: string[]): Promise<number> {
@@ -371,15 +404,53 @@ function readEditionQuietly(paperRoot: string): string | null {
   }
 }
 
+/**
+ * Write the `--report` envelope for a run that could NOT produce one. Stage 1's guard in the
+ * frozen `check.yml` only asks `jq -e '.checkRun.conclusion'`, so a missing file is
+ * indistinguishable from any other fault and the author is told "engine crash" and nothing
+ * else. A validator is a reporter first ([R82]'s "a gate that crashes tells the author less
+ * than one that says what it could not do") — so even a usage error or an unexpected throw
+ * leaves a well-formed failing report, and Stage 2 posts the actual reason on the PR.
+ * Best-effort: if even this write fails, the old "no valid report" path still catches it.
+ */
+function writeFailureReport(reportPath: string | undefined, title: string, message: string): void {
+  if (!reportPath) return;
+  try {
+    writeFileSync(
+      resolve(reportPath),
+      JSON.stringify(
+        {
+          status: 'error',
+          errors: [message],
+          warnings: [],
+          checks: [],
+          notes: [],
+          checkRun: {
+            conclusion: 'failure',
+            title,
+            summary: `**${title}**\n\n${'```'}\n${message}\n${'```'}`,
+            annotations: [],
+          },
+        },
+        null,
+        2,
+      ),
+    );
+  } catch {
+    /* best-effort — the Stage-1 guard remains the backstop */
+  }
+}
+
 async function cmdValidate(argv: string[]): Promise<number> {
   const paperRoot = resolve(flag(argv, 'paper') ?? '.');
-  const noInstance = has(argv, 'no-instance');
-  const instanceFlag = flag(argv, 'instance');
-  if (!noInstance && !instanceFlag) {
-    process.stderr.write('oak validate: pass --instance <path> (or --no-instance for a bare check).\n');
+  const reportPath = flag(argv, 'report');
+  const resolved = resolveInstanceRoot(argv, paperRoot, 'validate');
+  if ('error' in resolved) {
+    process.stderr.write(`::error::${resolved.error}\n`);
+    writeFailureReport(reportPath, 'oak validate could not run', resolved.error);
     return 2;
   }
-  const instanceRoot = noInstance ? null : resolve(instanceFlag!);
+  const instanceRoot = resolved.root;
   const strict = has(argv, 'strict');
 
   const gh = await import('./gh.js');
@@ -413,6 +484,15 @@ async function cmdValidate(argv: string[]): Promise<number> {
       },
       { strict, repo, pathBase: process.env.GITHUB_WORKSPACE ?? paperRoot },
     );
+  } catch (err) {
+    // runValidate already guards the Layer-A/Layer-B faults it can name. Anything reaching
+    // here is an ENGINE fault, and it must still leave a readable report: the alternative is
+    // the bare "engine crash" Stage-1 line, which names neither the fault nor the file.
+    process.stdout.write = realStdoutWrite;
+    const message = String((err as Error)?.stack ?? err);
+    process.stderr.write(`::error::oak validate: ${message}\n`);
+    writeFailureReport(reportPath, 'oak validate crashed', message);
+    return 1;
   } finally {
     process.stdout.write = realStdoutWrite;
   }
@@ -432,7 +512,6 @@ async function cmdValidate(argv: string[]): Promise<number> {
   // `--report <path>`: write the FULL envelope (checkRun always included) for the Stage-2
   // `oak check-post` job, which reads it in trusted base context and posts the Check Run +
   // sticky comment. Stage 1 never posts (it holds no write token over fork content).
-  const reportPath = flag(argv, 'report');
   if (reportPath) {
     writeFileSync(
       resolve(reportPath),
@@ -492,14 +571,25 @@ function makeConfirm(argv: string[]): (plan: string[]) => Promise<boolean> {
     for (const line of plan) process.stderr.write(line + '\n');
     if (has(argv, 'yes')) return true;
     if (!process.stdin.isTTY) {
-      process.stderr.write('not a TTY and --yes not set — aborting. Re-run with --yes.\n');
+      process.stderr.write(
+        'aborted: stdin is not a TTY, so the plan above could not be confirmed interactively. ' +
+          'Nothing was created or changed. Re-run with --yes to accept the plan unattended.\n',
+      );
       return false;
     }
     const { createInterface } = await import('node:readline/promises');
     const rl = createInterface({ input: process.stdin, output: process.stderr });
     const ans = (await rl.question('Proceed? [y/N] ')).trim();
     rl.close();
-    return /^y/i.test(ans);
+    if (/^y/i.test(ans)) return true;
+    // Every abort says WHY. A bare `{"status":"aborted"}` after a prompt that defaults to No
+    // reads as the tool refusing, not as the answer being taken at its word.
+    process.stderr.write(
+      `aborted: the plan above was not confirmed (` +
+        `${ans ? `answered "${ans}"` : 'empty answer — the prompt defaults to No'}). ` +
+        'Nothing was created or changed. Re-run and answer "y", or pass --yes.\n',
+    );
+    return false;
   };
 }
 
@@ -735,7 +825,8 @@ async function main(argv: string[]): Promise<number> {
       `  oak release --tag <vX.Y.Z> [--paper <dir>] [--instance <dir>] [--site-url <url>]\n` +
       `  oak deploy-preview <site> [--instance <dir>] [--repo <owner/repo>]\n` +
       `  oak notify new-version [--pr <n> | --site <dir>] [--repo <owner/repo>]\n` +
-      `  oak bootstrap paper   --repo <owner/name> [--from <author-url> [--source-ref <ref>]] [--instance <owner/config>]\n` +
+      `  oak bootstrap paper   --repo <owner/name> --instance <owner/config> (the journal; '.' if co-located)\n` +
+      `                        [--from <author-url> [--source-ref <ref>]]\n` +
       `                        [--edition <id>] [--engine-version <tag>] [--owner <@user|@org/team>] [--private] [--no-require-checks] [--yes]\n` +
       `  oak bootstrap journal --repo <owner/name> (--external | --co-located) [--name <name>] [--edition <id>]\n` +
       `                        [--engine-version <tag>] [--owner <@user|@org/team>] [--no-require-checks] [--no-site] [--yes]\n` +

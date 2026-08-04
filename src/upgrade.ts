@@ -181,7 +181,15 @@ export async function cmdUpgrade(input: UpgradeInput, deps: UpgradeDeps): Promis
     ...(filesChanged ? [`  ○ resync ${drift.length} drifted frozen file(s): ${drift.join(', ')}`] : []),
     ...(wantFiles && !filesChanged ? ['  ✓ frozen files already up to date'] : []),
   ];
-  if (!(await deps.confirm(plan))) return { exitCode: 0, result: { status: 'aborted', target } };
+  if (!(await deps.confirm(plan)))
+    return {
+      exitCode: 0,
+      result: {
+        status: 'aborted',
+        target,
+        reason: 'the plan above was not confirmed — nothing was changed and no PR was opened',
+      },
+    };
 
   const paths: string[] = [];
   if (versionChanged) {

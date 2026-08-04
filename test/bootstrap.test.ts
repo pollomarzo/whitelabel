@@ -242,6 +242,9 @@ function deps(prov: Provisioner): BootstrapDeps {
 
 const paperInput = (over: Record<string, unknown> = {}) => ({
   repo: 'me/paper',
+  // Required since the instance-less bootstrap fix: a paper must name the journal it belongs
+  // to, or its pins.yml claims a co-located journal.yml the render never writes.
+  instance: 'me/instance-config',
   edition: 'ed-2026',
   engineVersion: 'v1.2.3',
   engineRepo: 'me/engine',
@@ -267,6 +270,63 @@ describe('cmdBootstrapPaper', () => {
     expect(calls.openPr).toHaveLength(0);
     expect(calls.createRuleset).toHaveLength(2); // protect-main + v-tags
     expect(calls.enablePages).toHaveLength(1);
+  });
+
+  it('refuses an instance-less bootstrap up front instead of shipping pins.yml instance_repo: .', async () => {
+    // The UX-test defect: without --instance the paper seeded `instance_repo: .`, which claims
+    // a co-located journal.yml this render never writes — so the repo bootstrapped "ok" and the
+    // first CI run died on "no instance-config resolved". Fail here, where the flag is.
+    const { prov, calls } = fakeProv();
+    const out = await cmdBootstrapPaper(paperInput({ instance: undefined }), deps(prov));
+    expect(out.exitCode).toBe(2);
+    expect(out.result.status).toBe('error');
+    expect(String(out.result.error)).toContain('--instance');
+    expect(String(out.result.error)).toContain('pins.yml');
+    // Nothing was touched — the check precedes every effect.
+    expect(calls.createRepo).toHaveLength(0);
+    expect(calls.seedBranch).toHaveLength(0);
+  });
+
+  it('--instance . is the explicit co-located opt-in and still bootstraps', async () => {
+    const { prov, calls } = fakeProv();
+    const out = await cmdBootstrapPaper(paperInput({ instance: '.' }), deps(prov));
+    expect(out.exitCode).toBe(0);
+    expect(calls.seedBranch).toHaveLength(1);
+  });
+
+  it('the instance lands in pins.yml as instance_repo', async () => {
+    const { prov, calls } = fakeProv();
+    const seedDirs: string[] = [];
+    const d = deps(prov);
+    d.workdir = () => {
+      const dir = tmp('oak-seed-');
+      seedDirs.push(dir);
+      return dir;
+    };
+    await cmdBootstrapPaper(paperInput({ instance: 'me/journal' }), d);
+    expect(calls.seedBranch).toHaveLength(1);
+    const pins = parseDocument(
+      readFileSync(join(seedDirs[0]!, '.github/actions/engine/pins.yml'), 'utf8'),
+    );
+    expect(pins.get('instance_repo')).toBe('me/journal');
+  });
+
+  it('an aborted run says why, and a re-run warns that main will not be re-stamped', async () => {
+    // Two halves of the same UX defect: a bare "aborted" with no reason, printed for a re-run
+    // that would not have changed pins.yml even if confirmed.
+    const { prov } = fakeProv({ repos: new Set(['me/paper']), branches: new Set(['me/paper/main']) });
+    const plans: string[][] = [];
+    const d = deps(prov);
+    d.confirm = async (plan) => {
+      plans.push(plan);
+      return false;
+    };
+    const out = await cmdBootstrapPaper(paperInput(), d);
+    expect(out.result.status).toBe('aborted');
+    expect(String(out.result.reason)).toContain('not confirmed');
+    const plan = plans[0]!.join('\n');
+    expect(plan).toContain('will NOT re-stamp');
+    expect(plan).toContain('pins.yml');
   });
 
   it('protect-main requires "Journal checks" by default; --no-require-checks omits it', async () => {

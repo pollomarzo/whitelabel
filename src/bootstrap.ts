@@ -578,9 +578,36 @@ export async function cmdBootstrapPaper(input: BootstrapPaperInput, deps: Bootst
   const { prov, log } = deps;
   const { repo } = input;
   const mode = input.from ? 'ingest' : 'bare';
+
+  // A paper has no meaning without the journal it is a paper OF, and the ONLY place that
+  // link is recorded is `pins.yml`'s `instance_repo`. Defaulting a missing `--instance` to
+  // `.` (co-located) silently claimed "the journal.yml is in this repo" about a repo the
+  // very same render gives no journal.yml: the CI shim then clones nothing, `oak validate`
+  // and `oak build` hit the no-instance usage error, and the tenant learns about it from a
+  // red Stage 1 minutes after a bootstrap that printed `"status": "ok"`. Ask up front.
+  // `--instance .` stays available as the EXPLICIT co-located opt-in (repo=journal — the
+  // tier `oak bootstrap journal --co-located` stands up, which renders the paper template
+  // itself and never comes through here).
+  if (!input.instance) {
+    return {
+      exitCode: 2,
+      result: {
+        status: 'error',
+        repo,
+        error:
+          'oak bootstrap paper: --instance <owner/instance-config> is required. It names the ' +
+          'journal this paper belongs to and is written into .github/actions/engine/pins.yml ' +
+          'as the `instance_repo` the paper CI clones for the brand/edition extends chain and ' +
+          'the journal.yml `checks:` gate. Without it the repo bootstraps fine and then every ' +
+          'CI run fails with "no instance-config resolved". Pass `--instance .` only for a repo ' +
+          'that carries its own journal.yml (the co-located tier — use ' +
+          '`oak bootstrap journal --co-located` to stand one up).',
+      },
+    };
+  }
   const owner = resolveOwner(input, prov);
 
-  const instanceRepo = input.instance ?? '.';
+  const instanceRepo = input.instance;
   const answers: TemplateAnswers = {
     engineRepo: input.engineRepo,
     instanceRepo,
@@ -599,6 +626,17 @@ export async function cmdBootstrapPaper(input: BootstrapPaperInput, deps: Bootst
     `bootstrap paper (${mode}): ${repo}`,
     repoThere ? '  ✓ repo exists' : `  ○ create repo (${input.private ? 'private' : 'public'})`,
     mainThere ? '  ✓ main seeded' : '  ○ seed main from the frozen shim + starter content',
+    // Idempotency has a sharp edge worth naming: a re-run to CHANGE an answer (a different
+    // --instance, a different --engine-version) does not re-seed, so the earlier pins.yml
+    // survives and the re-run appears to succeed while fixing nothing.
+    ...(mainThere
+      ? [
+          `  ! main is already seeded — this run will NOT re-stamp the frozen shim or pins.yml, so an` +
+            ` instance_repo/engine version written by an earlier bootstrap stays as it is` +
+            ` (this run would set instance_repo: ${instanceRepo}). To change them, run \`oak upgrade\`` +
+            ` or edit .github/actions/engine/pins.yml by PR.`,
+        ]
+      : []),
     ...(mode === 'ingest'
       ? [
           reviewThere ? '  ✓ review branch exists' : `  ○ ingest review branch from ${input.from}@${input.sourceRef ?? 'main'}`,
@@ -608,7 +646,16 @@ export async function cmdBootstrapPaper(input: BootstrapPaperInput, deps: Bootst
     '  ○ provisioning: rulesets + Pages + zenodo-publish env + labels (idempotent)',
     `  ○ secrets: ${SECRET_MAP.filter((s) => input.secrets[s.key]).map((s) => s.name).join(', ') || 'none provided (runbook printed)'}`,
   ];
-  if (!(await deps.confirm(plan))) return { exitCode: 0, result: { status: 'aborted', repo, mode } };
+  if (!(await deps.confirm(plan)))
+    return {
+      exitCode: 0,
+      result: {
+        status: 'aborted',
+        repo,
+        mode,
+        reason: 'the plan above was not confirmed — nothing was created or changed',
+      },
+    };
 
   const actions: Record<string, string> = {};
 
@@ -724,8 +771,25 @@ export async function cmdBootstrapJournal(input: BootstrapJournalInput, deps: Bo
         ? `  ○ enable Pages for the journal site (${siteUrlFor(repo)}); no rulesets/env`
         : '  ○ (--no-site: data-only repo — no site, no rulesets/env)'
       : '  ○ provisioning: rulesets + Pages + zenodo-publish env + labels',
+    // Same sharp edge as the paper path: a re-run never re-seeds, so a changed --name /
+    // --edition / --engine-version does not reach an already-seeded main.
+    ...(mainThere
+      ? [
+          '  ! main is already seeded — this run will NOT re-stamp the scaffold, so a changed' +
+            ' --name/--edition/--engine-version will not reach it. Edit the repo directly.',
+        ]
+      : []),
   ];
-  if (!(await deps.confirm(plan))) return { exitCode: 0, result: { status: 'aborted', repo, tier: input.tier } };
+  if (!(await deps.confirm(plan)))
+    return {
+      exitCode: 0,
+      result: {
+        status: 'aborted',
+        repo,
+        tier: input.tier,
+        reason: 'the plan above was not confirmed — nothing was created or changed',
+      },
+    };
 
   const actions: Record<string, string> = {};
 
