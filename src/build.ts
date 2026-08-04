@@ -113,8 +113,9 @@ export async function materializeDerived(
   const derivedPath = join(paperRoot, DERIVED_CONFIG_FILE);
   const doc = readDoc(authorPath);
 
-  // Raw, pre-extends read of the engine coordinate (the local `yq` equivalent, §6a).
-  const { version: engineVersion, edition } = readEngineCoordinateRaw(doc);
+  // Raw, pre-extends read of the engine coordinate (the local `yq` equivalent, §6a). The path
+  // goes in so a missing coordinate names the file the author has to edit.
+  const { version: engineVersion, edition } = readEngineCoordinateRaw(doc, authorPath);
 
   // --- Pass 1: materialize author config + extends chain into the derived config -----
   // The author's frontmatter lands in the derived file's BASE slot, where myst's base-wins is

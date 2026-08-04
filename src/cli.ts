@@ -14,6 +14,9 @@ import { execFileSync } from 'node:child_process';
 import { parseDocument } from 'yaml';
 import type { UpgradeMode } from './upgrade.js';
 import type { ComposeInput } from './compose.js';
+import type { MaterializeInput } from './build.js';
+import * as msg from './messages.js';
+import { annotate, UserError } from './messages.js';
 
 // dist/cli.cjs is an esbuild CJS bundle ([R51]), so `__dirname` is the bundle's dir
 // (engine/dist). `oak` is only ever run bundled — CI (ci/run.sh) and local both invoke
@@ -132,29 +135,66 @@ function resolveInstanceRoot(
   };
 }
 
+/**
+ * Is this directory the JOURNAL repo rather than a paper?
+ *
+ * `oak build` assumed every target was a paper, and the co-located rung above reads a
+ * `journal.yml` as "the journal settings are in this repo" — which is equally true of the
+ * journal repo itself, where there is no manuscript at all. So a `oak build` typed in a journal
+ * clone sailed past instance resolution and died inside the config read, on a coordinate a
+ * journal repo is never supposed to have (the UX-test crash).
+ *
+ * The discriminator is the ENGINE COORDINATE, not `journal.yml`: a co-located repo is both a
+ * journal and a paper and carries both, while the journal repo's `myst.yml` is the WEBSITE and
+ * carries no `project.options.oaktree-sapling`. A `--no-site` journal has no myst.yml at all.
+ * A myst.yml we cannot parse is not called a journal — that is a different error, and it should
+ * be allowed to speak for itself.
+ */
+function isJournalRepo(root: string): boolean {
+  if (!existsSync(join(root, 'journal.yml'))) return false;
+  const mystPath = join(root, 'myst.yml');
+  if (!existsSync(mystPath)) return true;
+  try {
+    const v = parseDocument(readFileSync(mystPath, 'utf8')).getIn([
+      'project', 'options', 'oaktree-sapling', 'version',
+    ]);
+    return !(typeof v === 'string' && v);
+  } catch {
+    return false;
+  }
+}
+
+/** Everything `materializeDerived` needs except the myst edge — shared by build and start so a
+ *  preview cannot compose from different inputs than the build it is previewing. */
+function materializeInputFrom(argv: string[], paperRoot: string, instanceRoot: string | null): Omit<MaterializeInput, 'edge'> {
+  return {
+    paperRoot,
+    engineRoot: engineRoot(),
+    instanceRoot,
+    engineRepo: flag(argv, 'engine-repo') ?? readEngineRepo(paperRoot),
+    baseUrl: flag(argv, 'base-url') ?? '',
+    assetOverrides: assetOverridesFrom(argv),
+  };
+}
+
 /** Run the two-pass build for a paper; shared by `oak build` and `oak release`. Returns the
  *  resolved paper root (its `_build/exports` now holds the PDF `release` deposits). */
 async function buildPaper(argv: string[]): Promise<{ paperRoot: string; resolvedId?: string }> {
   const paperRoot = resolve(flag(argv, 'paper') ?? '.');
+  if (isJournalRepo(paperRoot)) {
+    process.stderr.write(msg.build.inJournalRepo(paperRoot) + '\n');
+    process.exit(2);
+  }
   const resolved = resolveInstanceRoot(argv, paperRoot, 'build');
   if ('error' in resolved) {
     process.stderr.write(resolved.error + '\n');
     process.exit(2);
   }
-  const instanceRoot = resolved.root;
-  const baseUrl = flag(argv, 'base-url') ?? '';
-  const engineRepo = flag(argv, 'engine-repo') ?? readEngineRepo(paperRoot);
-  const assetOverrides = assetOverridesFrom(argv);
 
   const { runBuild } = await import('./build.js');
   const { createMystEdge } = await import('./myst.js');
   const res = await runBuild({
-    paperRoot,
-    engineRoot: engineRoot(),
-    instanceRoot,
-    engineRepo,
-    baseUrl,
-    assetOverrides,
+    ...materializeInputFrom(argv, paperRoot, resolved.root),
     // --exports-only builds just the typst PDF (offline canary; no network theme).
     // --no-exports builds HTML only (until the typst-template release zip exists).
     buildOpts: has(argv, 'exports-only')
@@ -164,13 +204,13 @@ async function buildPaper(argv: string[]): Promise<{ paperRoot: string; resolved
         : { all: true, html: true },
     edge: createMystEdge(),
   });
-  for (const w of res.warnings) process.stderr.write(`::warning::${w}\n`);
+  for (const w of res.warnings) process.stderr.write(annotate('warning', w) + '\n');
   return { paperRoot, resolvedId: res.resolvedProject.id };
 }
 
 async function cmdBuild(argv: string[]): Promise<number> {
   const { resolvedId } = await buildPaper(argv);
-  process.stderr.write(`oak build: done (id=${resolvedId ?? '?'})\n`);
+  process.stderr.write(msg.build.done(resolvedId ?? '?') + '\n');
   return 0;
 }
 
@@ -284,7 +324,7 @@ async function cmdDeposit(argv: string[]): Promise<number> {
         const url = gh.openDoiPr(resolve(mystPath, '..'), { conceptDoi: String(out.result.concept_doi) });
         process.stderr.write(`deposit prepare: opened DOI PR ${url}\n`);
       } catch (e) {
-        process.stderr.write(`::warning::deposit prepare: DOI PR not opened (${(e as Error).message})\n`);
+        process.stderr.write(annotate('warning', `deposit prepare: DOI PR not opened (${(e as Error).message})`) + '\n');
       }
     }
     return out.exitCode;
@@ -380,7 +420,7 @@ async function cmdRelease(argv: string[]): Promise<number> {
       const sha = await gh.realGitContext.headSha(paperRoot);
       gh.postCommitComment(paperRoot, sha, `Zenodo draft populated: ${out.result.draft_url ?? out.result.version_doi}`);
     } catch (e) {
-      process.stderr.write(`::warning::oak release: gh post-steps failed (${(e as Error).message})\n`);
+      process.stderr.write(annotate('warning', `oak release: gh post-steps failed (${(e as Error).message})`) + '\n');
     }
   } else if (out.exitCode !== 0 && process.env.GH_TOKEN) {
     try {
@@ -543,9 +583,17 @@ function validateSummary(out: {
 async function cmdValidate(argv: string[]): Promise<number> {
   const paperRoot = resolve(flag(argv, 'paper') ?? '.');
   const reportPath = flag(argv, 'report');
+  // Same shape check as `oak build`: without it, a validate typed in the journal clone dies on
+  // the engine coordinate a journal repo never has, and reports it as an engine crash.
+  if (isJournalRepo(paperRoot)) {
+    const text = msg.validate.inJournalRepo(paperRoot);
+    process.stderr.write(text + '\n');
+    writeFailureReport(reportPath, 'oak validate could not run', text);
+    return 2;
+  }
   const resolved = resolveInstanceRoot(argv, paperRoot, 'validate');
   if ('error' in resolved) {
-    process.stderr.write(`::error::${resolved.error}\n`);
+    process.stderr.write(annotate('error', resolved.error) + '\n');
     writeFailureReport(reportPath, 'oak validate could not run', resolved.error);
     return 2;
   }
@@ -588,10 +636,13 @@ async function cmdValidate(argv: string[]): Promise<number> {
     // here is an ENGINE fault, and it must still leave a readable report: the alternative is
     // the bare "engine crash" Stage-1 line, which names neither the fault nor the file.
     process.stdout.write = realStdoutWrite;
-    const message = String((err as Error)?.stack ?? err);
-    process.stderr.write(`::error::oak validate: ${message}\n`);
-    writeFailureReport(reportPath, 'oak validate crashed', message);
-    return 1;
+    // A UserError is a paper that needs fixing, not a crash: report its sentence (and only its
+    // sentence — a stack in a Check Run summary tells an author nothing they can act on).
+    const userFault = err instanceof UserError;
+    const message = userFault ? (err as Error).message : String((err as Error)?.stack ?? err);
+    process.stderr.write(annotate('error', userFault ? message : `oak validate: ${message}`) + '\n');
+    writeFailureReport(reportPath, userFault ? 'oak validate could not run' : 'oak validate crashed', message);
+    return userFault ? 2 : 1;
   } finally {
     process.stdout.write = realStdoutWrite;
   }
@@ -1053,7 +1104,15 @@ async function main(argv: string[]): Promise<number> {
 main(process.argv.slice(2)).then(
   (code) => process.exit(code),
   (err) => {
-    process.stderr.write(`::error::${err?.stack ?? err}\n`);
+    // A UserError was WRITTEN for whoever typed the command: one sentence naming the file and
+    // the fix, exit 2 (a usage failure), no stack — the UX test's worst moment was a missing
+    // config line reported as a five-frame trace through the bundle. Anything else is an engine
+    // bug, and the stack is the only useful thing we have.
+    if (err instanceof UserError) {
+      process.stderr.write(err.message + '\n');
+      process.exit(2);
+    }
+    process.stderr.write(annotate('error', msg.engineCrash(String(err?.stack ?? err))) + '\n');
     process.exit(1);
   },
 );

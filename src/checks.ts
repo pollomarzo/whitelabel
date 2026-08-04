@@ -12,6 +12,7 @@
  */
 import { basename, isAbsolute, relative } from 'node:path';
 import { DERIVED_CONFIG_FILE } from './yaml-io.js';
+import { annotate } from './messages.js';
 import type { ISession } from 'myst-cli';
 import {
   checks as CURVENOTE_DEFINITIONS,
@@ -280,7 +281,7 @@ export function cmdCheckPost(
   } catch (e) {
     const msg = `check-post: Check Run not posted (${(e as Error).message})`;
     warnings.push(msg);
-    process.stderr.write(`::warning::${msg}\n`);
+    process.stderr.write(annotate('warning', msg) + '\n');
   }
 
   if (pr) {
@@ -290,7 +291,7 @@ export function cmdCheckPost(
     } catch (e) {
       const msg = `check-post: comment not posted (${(e as Error).message})`;
       warnings.push(msg);
-      process.stderr.write(`::warning::${msg}\n`);
+      process.stderr.write(annotate('warning', msg) + '\n');
     }
   }
 

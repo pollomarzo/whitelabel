@@ -27,6 +27,7 @@
 import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { readDoc } from './yaml-io.js';
+import { annotate } from './messages.js';
 import { JournalConfig, type PreviewConfig } from './schema.js';
 
 /* --------------------------------------------------------------------------
@@ -281,7 +282,7 @@ export async function cmdDeployPreview(input: DeployPreviewInput, deps: PreviewD
       // reviewer the artifact. This is not error-swallowing — it posts a different, useful
       // comment. A gh failure below is NOT degraded: it throws and fails the run, loudly.
       const msg = (e as Error).message;
-      process.stderr.write(`::warning::deploy-preview: Cloudflare deploy failed, degrading to artifact link (${msg})\n`);
+      process.stderr.write(annotate('warning', `deploy-preview: Cloudflare deploy failed, degrading to artifact link (${msg})`) + '\n');
       deps.gh.sticky(repoRoot, pr, STICKY_PREVIEW, artifactComment(runUrl, `Cloudflare deploy failed: ${msg}`));
       outcome = { preview: 'artifact', reason: `cloudflare-failed: ${msg}` };
     }
@@ -323,14 +324,17 @@ export function runNewVersionReminder(input: NotifyInput, gh: GhPr): Outcome {
   const doi = readProjectDoi(mystPath);
   if (!doi) {
     process.stderr.write(
-      '::error::notify: a v* tag exists on main but project.doi is missing from myst.yml — the ' +
-        'repo is published but unlinked. Fix myst.yml before tagging the next release.\n',
+      annotate(
+        'error',
+        'notify: a v* tag exists on main but project.doi is missing from myst.yml — the ' +
+          'repo is published but unlinked. Fix myst.yml before tagging the next release.',
+      ) + '\n',
     );
     return err(1, 'v* tag present but project.doi missing', { reminder: 'error' });
   }
   const parsed = recordUrlForDoi(doi);
   if ('error' in parsed) {
-    process.stderr.write(`::error::notify: ${parsed.error}\n`);
+    process.stderr.write(annotate('error', `notify: ${parsed.error}`) + '\n');
     return err(1, parsed.error, { reminder: 'error' });
   }
 
