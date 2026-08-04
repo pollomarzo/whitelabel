@@ -73,8 +73,13 @@ npm run build:fixture      # second, standalone render through the freshly-built
 # dist/ and bin/ are gitignored; force-add them into the index, snapshot the index as a tree,
 # and make a detached commit parented on the source commit. HEAD/branches never move — so
 # `main` is not advanced (handoff constraint 1: pushing never forces the developer to pull).
-git config user.name  "${GIT_AUTHOR_NAME:-oak-release-bot}"
-git config user.email "${GIT_AUTHOR_EMAIL:-oak-release-bot@users.noreply.github.com}"
+# Identity for the release commit + tag ONLY. Env vars, not `git config`: a bare `git config`
+# writes .git/config and never unsets it, so a local cut silently re-authors every later commit
+# in the developer's clone as the bot (invisible in CI, where the checkout is throwaway).
+export GIT_AUTHOR_NAME="${GIT_AUTHOR_NAME:-oak-release-bot}"
+export GIT_AUTHOR_EMAIL="${GIT_AUTHOR_EMAIL:-oak-release-bot@users.noreply.github.com}"
+export GIT_COMMITTER_NAME="$GIT_AUTHOR_NAME"
+export GIT_COMMITTER_EMAIL="$GIT_AUTHOR_EMAIL"
 git add -f dist/cli.cjs bin/typst
 tree="$(git write-tree)"
 leaf="$(git commit-tree "$tree" -p "$src_sha" -m "release: $version (engine bundle + typst)")"
