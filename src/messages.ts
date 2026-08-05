@@ -1,7 +1,5 @@
 /**
- * messages.ts — EVERY string `oak` prints to a person, in one file, so it can be reviewed and
- * edited as prose instead of hunted through the code (user decision, 2026-08-04: "every single
- * string shown to the user should be validated by me").
+ * EVERY string `oak` prints to a person. LLM writing is close, but not quite.
  *
  * How to use this file:
  *   - Grouped by SURFACE: the output plumbing first (it decides how the rest is printed), then
@@ -11,7 +9,7 @@
  *     the `${…}` holes and the leading `oak <verb>:` prefixes (the prefix is how a reader knows
  *     which command spoke, and a few tests assert on distinctive fragments).
  *   - Nothing here does any work: no I/O, no imports, no logic beyond choosing between phrasings.
- *     That is deliberate — it is a script, not a module with behaviour.
+ *     Keep it that way.
  *
  * The output rules these strings follow (open-tasks/cli-output-pass.md):
  *   1. Nothing the CLI assumes may be silent — every default or auto-resolved value is declared
@@ -21,39 +19,36 @@
  *   4. An error names the file and the fix, and never shows a stack trace to a tenant.
  *
  * ── The user-visible surface that is NOT in this file ───────────────────────────────────────
- * These cannot import a TS module (they ship as files, or run inside GitHub Actions), so review
- * them in place. Together with this file they are the whole surface:
+ * These cannot import a TS module (they ship as files, or run inside GitHub Actions):
  *
- *   engine/templates/paper/README.md ............ what a paper author reads first in their repo
- *   engine/templates/paper/myst.yml ............. the commented starter config (CHANGE-ME lines)
- *   engine/templates/paper/index.md ............. the starter manuscript
- *   engine/templates/paper/CODEOWNERS ........... its header comment
- *   engine/templates/paper/.github/workflows/*.yml  paper CI job names + `::error::` annotations
- *                                                 (check.yml, check-post.yml, preview.yml,
- *                                                  publish.yml — names show in the Actions tab)
- *   engine/templates/instance/README.md ......... what a journal editor reads first
- *   engine/templates/instance/journal.yml ....... the journal's settings, comments and all
- *   engine/templates/instance/brand/brand.yml ... the branding knobs and their comments
- *   engine/templates/instance/editions/edition.yml  the edition template
- *   engine/templates/instance/registry/papers.yml   the paper list's header comment
- *   engine/templates/site/myst.yml .............. the journal website's config comments
- *   engine/templates/site/pages/index.md ........ the journal website's landing copy
- *   engine/templates/site/.github/workflows/site.yml  the website job + its failure annotation
- *   engine/plugins/gallery.mjs .................. the paper-cards directive's own messages
- *   engine/templates/typst/*.typ ................ the PDF's fixed wording (headers, footers)
- *   engine/ci/run.sh ............................ the shim's own echoes
+ *   engine/templates/paper/README.md ............... what a paper author reads first in their repo
+ *   engine/templates/paper/myst.yml ................ commented starter config (CHANGE-ME lines)
+ *   engine/templates/paper/index.md ................ starter manuscript
+ *   engine/templates/paper/CODEOWNERS .............. header comment
+ *   engine/templates/paper/.github/workflows/*.yml . paper CI job names + `::error::` annotations
+ *                                                    (check.yml, check-post.yml, preview.yml,
+ *                                                    publish.yml — names show in the Actions tab)
+ *   engine/templates/instance/README.md ............ what a journal editor reads first
+ *   engine/templates/instance/journal.yml .......... journal's settings, comments and all
+ *   engine/templates/instance/brand/brand.yml ...... branding knobs and their comments
+ *   engine/templates/instance/editions/edition.yml . edition template
+ *   engine/templates/instance/registry/papers.yml .. paper list's header comment
+ *   engine/templates/site/myst.yml ................. journal website's config comments
+ *   engine/templates/site/pages/index.md ........... journal website's landing copy
+ *   engine/templates/site/.github/workflows/site.yml website job + its failure annotation
+ *   engine/plugins/gallery.mjs ..................... paper-cards directive's own messages
+ *   engine/templates/typst/*.typ ................... PDF's fixed wording (headers, footers)
+ *   engine/ci/run.sh ............................... shim's own echoes
  *
  * Two TS surfaces are deliberately left in place, both read only in a CI log by someone who
  * already knows the system:
- *   src/conformance.ts — `oak conformance` is the maintainer's release harness; a tenant never
+ *   src/conformance.ts . `oak conformance` is the maintainer's release harness; a tenant never
  *                        runs it, and its lines are progress markers for a certification run.
  *   src/zenodo.ts ...... the `[prepare]`/`[publish]` progress markers and the Zenodo API's own
  *                        error bodies, echoed verbatim. The one author-facing line there is the
  *                        skipped-ORCID warning.
  *
- * Wording in the seeded template files is its own pass (open-tasks/seeded-content-pass.md).
- * The check MESSAGES an author sees on a PR come from `@curvenote/check-implementations`, a
- * dependency — not ours to edit; `validate.notes` below is where we speak about them.
+ * The check MESSAGES an author sees on a PR come from `@curvenote/check-implementations`
  */
 
 /* ═══════════════════════════════════════════════════════════════════════════════════════════
