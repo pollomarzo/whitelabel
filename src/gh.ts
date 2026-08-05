@@ -9,6 +9,7 @@
  * are absent (a local sandbox rehearsal), the caller degrades to just the Zenodo work + a
  * working-tree myst.yml write, which is enough for the slice-3 acceptance (a sandbox record).
  */
+import * as msg from './messages.js';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { cpSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -52,11 +53,29 @@ function echoChild(tool: string, text: unknown): void {
 }
 
 /**
+ * Show what is running while it runs, then take the line back.
+ *
+ * Capturing the children's output ([R85]) bought a clean screen and paid for it in silence:
+ * creating a repo, cloning, resolving the newest release are each seconds of nothing, and the
+ * UX test read that as a hang. `spawnSync` blocks the event loop, so a spinner cannot animate —
+ * but a line printed BEFORE the call and erased after needs no timer, and says the true thing.
+ *
+ * TTY only: erasing with `\r` in a redirected log or a workflow log would leave the marker
+ * stranded mid-line, and CI already prints every child's output anyway.
+ */
+function showWorking(tool: string, args: string[]): () => void {
+  if (!process.stderr.isTTY || verboseChildren()) return () => {};
+  process.stderr.write(msg.workflow.working(`${tool} ${args.filter((a) => !a.startsWith('-')).slice(0, 2).join(' ')}`));
+  return () => process.stderr.write('\r\u001b[K');
+}
+
+/**
  * Run `git`/`gh` with both streams captured. `quiet` means "not even on failure" — for the
  * probes that treat a non-zero exit as a valid answer (does this ruleset exist?), where the
  * child's complaint is noise about a question we already answered.
  */
 function run(tool: 'git' | 'gh', args: string[], opts: { input?: string; cwd?: string; quiet?: boolean; env?: NodeJS.ProcessEnv } = {}): string {
+  const done = showWorking(tool, args);
   // spawnSync, not execFileSync: capturing stderr AND being able to replay it needs the
   // stream back in hand, which execFileSync only gives us on the failure path.
   const r = spawnSync(tool, args, {
@@ -66,6 +85,7 @@ function run(tool: 'git' | 'gh', args: string[], opts: { input?: string; cwd?: s
     maxBuffer: 64 * 1024 * 1024,
     ...(opts.env ? { env: opts.env } : {}),
   });
+  done();
   if (r.error) throw r.error;
   if (r.status !== 0) {
     if (!opts.quiet) echoChild(tool, r.stderr || r.stdout);
@@ -292,7 +312,7 @@ export const realPagesDeployer: PagesDeployer = {
       },
     );
     const m = /https?:\/\/[^\s]*\.pages\.dev[^\s]*/.exec(out);
-    if (!m) throw new Error('wrangler did not report a *.pages.dev deployment URL');
+    if (!m) throw new Error(msg.workflow.wranglerNoUrl);
     return m[0];
   },
 };
@@ -495,7 +515,7 @@ export function tempClone(repo: string): string {
 /** Latest engine release tag for `engineRepo` (`gh release list`). */
 export function latestEngineRelease(engineRepo: string): string {
   const tag = gh(['release', 'list', '--repo', engineRepo, '--limit', '1', '--json', 'tagName', '--jq', '.[0].tagName']);
-  if (!tag) throw new Error(`no releases found on ${engineRepo} — pass --to <tag>`);
+  if (!tag) throw new Error(msg.workflow.noReleases(engineRepo));
   return tag;
 }
 

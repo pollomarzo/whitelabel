@@ -13,6 +13,7 @@
  * These schemas are the single source of truth reused by `oak validate`, by compose,
  * and exported to JSON Schema for author-editor autocomplete (see `toJsonSchemas`).
  */
+import * as msg from './messages.js';
 import { z } from 'zod';
 
 /* --------------------------------------------------------------------------
@@ -48,9 +49,7 @@ export function readEngineOptions(
 ): OaktreeSaplingOptions {
   const raw = projectOptions?.['oaktree-sapling'];
   if (raw === undefined) {
-    throw new Error(
-      'project.options["oaktree-sapling"] missing from the resolved myst config',
-    );
+    throw new Error(msg.build.coordinateMissingFromResolved);
   }
   return OaktreeSaplingOptions.parse(raw);
 }
@@ -203,7 +202,7 @@ export function checkIdShape(
     return {
       ok: false,
       severity: 'error',
-      message: `paper id "${id}" is the template placeholder; every paper needs a fresh unique id`,
+      message: msg.validate.idPlaceholder(id),
     };
   }
   if (policy.id_pattern) {
@@ -212,7 +211,7 @@ export function checkIdShape(
       return {
         ok: false,
         severity: 'error',
-        message: `paper id "${id}" does not match the journal id pattern /${policy.id_pattern}/`,
+        message: msg.validate.idPatternMismatch(id, policy.id_pattern),
       };
     }
   }
@@ -235,7 +234,7 @@ export function checkIdUniqueness(
     return {
       ok: false,
       severity: 'warn',
-      message: `registry unavailable; cannot check id "${id}" for uniqueness`,
+      message: msg.validate.idRegistryUnavailable(id),
     };
   }
   const clash = registry.find((e) => e.id === id && e.slug !== self?.slug);
@@ -248,13 +247,13 @@ export function checkIdUniqueness(
       return {
         ok: false,
         severity: 'warn',
-        message: `paper id "${id}" is registered to ${clash.location.repo} (slug ${clash.slug}); cannot confirm it is not this paper's own entry without a repo context`,
+        message: msg.validate.idMaybeOwnEntry(id, clash.location.repo, clash.slug),
       };
     }
     return {
       ok: false,
       severity: 'error',
-      message: `paper id "${id}" already registered to ${clash.location.repo} (slug ${clash.slug})`,
+      message: msg.validate.idTaken(id, clash.location.repo, clash.slug),
     };
   }
   return { ok: true };

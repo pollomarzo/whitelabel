@@ -10,6 +10,8 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseDocument, type Document } from 'yaml';
 import { BRAND_ASSET_KEYS, type OwnOverride } from './compose.js';
+import * as msg from './messages.js';
+import { UserError } from './messages.js';
 
 /**
  * The DERIVED config the engine builds from ([R71]). The author's `myst.yml` is an INPUT —
@@ -48,17 +50,22 @@ export function writeDerivedDoc(path: string, doc: Document): void {
 
 /** Raw read of the engine coordinate straight from the paper's own myst.yml — the local
  *  `oak` equivalent of the shim's `yq` read (design §6a): PRE-extends, so it can run
- *  before the engine/instance are even resolved. Mirrors the composite action exactly. */
+ *  before the engine/instance are even resolved. Mirrors the composite action exactly.
+ *
+ *  `mystPath` is only for the error message, and the error is a {@link UserError}: a missing
+ *  coordinate is a paper that needs a line put back, not an engine fault, so it must reach the
+ *  author as one sentence naming the file — the UX test got the raw stack instead. */
 export function readEngineCoordinateRaw(
   doc: Document,
+  mystPath = 'myst.yml',
 ): { version: string; edition: string } {
   const version = doc.getIn(['project', 'options', 'oaktree-sapling', 'version']);
   const edition = doc.getIn(['project', 'options', 'oaktree-sapling', 'edition']);
   if (typeof version !== 'string' || !version) {
-    throw new Error('project.options["oaktree-sapling"].version missing from myst.yml');
+    throw new UserError(msg.build.missingEngineCoordinate('version', mystPath));
   }
   if (typeof edition !== 'string' || !edition) {
-    throw new Error('project.options["oaktree-sapling"].edition missing from myst.yml');
+    throw new UserError(msg.build.missingEngineCoordinate('edition', mystPath));
   }
   return { version, edition };
 }

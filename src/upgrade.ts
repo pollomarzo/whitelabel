@@ -21,6 +21,7 @@ import { join, dirname, posix } from 'node:path';
 import { readdirSync, statSync } from 'node:fs';
 import { readDoc, writeDoc } from './yaml-io.js';
 import { renderPins, renderCodeowners, type TemplateAnswers } from './bootstrap.js';
+import * as msg from './messages.js';
 
 const PINS_REL = posix.join('.github', 'actions', 'engine', 'pins.yml');
 const CODEOWNERS_REL = 'CODEOWNERS';
@@ -156,7 +157,7 @@ export async function cmdUpgrade(input: UpgradeInput, deps: UpgradeDeps): Promis
   const { repoRoot, mode } = input;
   const answers = readAnswers(repoRoot);
   if (!answers.engineRepo) {
-    return { exitCode: 2, result: { status: 'error', message: `no engine_repo in ${PINS_REL} — is this a paper repo?` } };
+    return { exitCode: 2, result: { status: 'error', message: msg.upgrade.notAPaperRepo(PINS_REL) } };
   }
   // Same rule as bootstrap: a target we picked must say so. "--to v1.2.3" and "whatever is
   // newest right now" are different promises, and only one of them is reproducible.
@@ -178,29 +179,17 @@ export async function cmdUpgrade(input: UpgradeInput, deps: UpgradeDeps): Promis
   const filesChanged = wantFiles && drift.length > 0;
 
   if (!versionChanged && !filesChanged) {
-    deps.log(
-      `up to date at ${target}${targetGiven ? '' : ` (the newest release of ${answers.engineRepo}; no --to given)`} — no PR.`,
-    );
+    deps.log(msg.upgrade.upToDate(target, answers.engineRepo, targetGiven));
     return { exitCode: 0, result: { status: 'ok', target, drift: [], pr: null, up_to_date: true } };
   }
 
   const plan = [
-    `upgrade ${repoRoot} → ${target}`,
-    `  engine version : ${target}${
-      targetGiven
-        ? ' (--to)'
-        : ` — the newest release of ${answers.engineRepo} right now, no --to given (pass --to <tag> to pick one)`
-    }`,
-    ...(versionChanged
-      ? [`  ○ set the engine version in myst.yml: ${answers.version || '(unset)'} → ${target}`]
-      : []),
-    ...(filesChanged
-      ? [
-          `  ○ restore ${drift.length} engine-managed file(s) that no longer match the ${target} template: ${drift.join(', ')}`,
-        ]
-      : []),
-    ...(wantFiles && !filesChanged ? [`  ✓ the engine-managed files already match ${target}`] : []),
-    '  ○ all of the above goes up as a pull request for you to review — nothing is pushed to main',
+    msg.upgrade.planHeader(repoRoot, target),
+    msg.upgrade.planTarget(target, answers.engineRepo, targetGiven),
+    ...(versionChanged ? [msg.upgrade.planBumpVersion(answers.version, target)] : []),
+    ...(filesChanged ? [msg.upgrade.planResync(drift.length, target, drift.join(', '))] : []),
+    ...(wantFiles && !filesChanged ? [msg.upgrade.planFilesMatch(target)] : []),
+    msg.upgrade.planAsPr,
   ];
   if (!(await deps.confirm(plan)))
     return {
@@ -208,7 +197,7 @@ export async function cmdUpgrade(input: UpgradeInput, deps: UpgradeDeps): Promis
       result: {
         status: 'aborted',
         target,
-        reason: 'the plan above was not confirmed — nothing was changed and no PR was opened',
+        reason: msg.prompt.abortedNoPr,
       },
     };
 
@@ -224,11 +213,11 @@ export async function cmdUpgrade(input: UpgradeInput, deps: UpgradeDeps): Promis
 
   const url = deps.pr.open(repoRoot, {
     branch: `oak/upgrade-${target}`,
-    title: `Upgrade engine to ${target}`,
+    title: msg.upgrade.prTitle(target),
     body: upgradeBody(target, versionChanged, drift),
     paths,
   });
-  deps.log(`opened upgrade PR ${url}`);
+  deps.log(msg.upgrade.logPrOpened(url));
   return {
     exitCode: 0,
     result: { status: 'ok', target, drift, version_bumped: versionChanged, pr: url, paths },
@@ -236,12 +225,12 @@ export async function cmdUpgrade(input: UpgradeInput, deps: UpgradeDeps): Promis
 }
 
 function upgradeBody(target: string, versionChanged: boolean, drift: string[]): string {
-  const lines = [`Moves this repo to engine \`${target}\`.`, ''];
-  if (versionChanged) lines.push(`- sets \`project.options.oaktree-sapling.version\` → \`${target}\` in myst.yml`);
+  const lines = [msg.upgrade.prBodyHeader(target), ''];
+  if (versionChanged) lines.push(msg.upgrade.prBodyVersion(target));
   if (drift.length) {
-    lines.push(`- restores these engine-managed files to their ${target} version (a code owner must approve changes under \`.github/\`):`);
+    lines.push(msg.upgrade.prBodyFiles(target));
     for (const d of drift) lines.push(`  - \`${d}\``);
   }
-  lines.push('', '_Opened by `oak upgrade`. Review the preview build before merging._');
+  lines.push('', msg.upgrade.prBodyFooter);
   return lines.join('\n');
 }

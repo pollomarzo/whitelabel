@@ -8,7 +8,7 @@
  */
 import { describe, it, expect, beforeAll } from 'vitest';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, copyFileSync } from 'node:fs';
+import { mkdtempSync, copyFileSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -21,8 +21,16 @@ const fixtureInstance = join(engineDir, 'test', 'fixture-instance');
 /** The repo the fixture paper is registered to (id-uniqueness passes only under it). */
 const fixtureRepo = 'open-scholar-nexus/fixture-sample-paper';
 
+/**
+ * Run the bundle as a TENANT's terminal sees it. `CI`/`GITHUB_ACTIONS` are cleared deliberately:
+ * they switch the output to GitHub annotations, and this suite is the contract for the human
+ * side — inheriting them would make these assertions pass locally and fail in our own CI.
+ */
 function oak(args: string[]): { code: number; stdout: string; stderr: string } {
-  const r = spawnSync('node', [bundlePath, ...args], { encoding: 'utf8' });
+  const env = { ...process.env };
+  delete env.CI;
+  delete env.GITHUB_ACTIONS;
+  const r = spawnSync('node', [bundlePath, ...args], { encoding: 'utf8', env });
   return { code: r.status ?? 1, stdout: r.stdout ?? '', stderr: r.stderr ?? '' };
 }
 
@@ -118,6 +126,59 @@ describe.skipIf(bundleState() === 'absent')('--json gates the machine envelope',
     expect(stdout.trim()).toBe('');
     expect(stderr).not.toContain('"status"');
     expect(stderr).toContain('pins.yml');
+  });
+});
+
+describe.skipIf(bundleState() === 'absent')('a broken paper gets a sentence, never a stack', () => {
+  beforeAll(assertBundleNotStale);
+
+  /** A journal repo: journal.yml + a myst.yml that is the WEBSITE (no engine coordinate). */
+  function journalRepo(): string {
+    const dir = mkdtempSync(join(tmpdir(), 'oak-journal-'));
+    writeFileSync(join(dir, 'journal.yml'), 'name: A Journal\nid_pattern: ".*"\n');
+    writeFileSync(join(dir, 'myst.yml'), 'version: 1\nproject:\n  title: A Journal\nsite:\n  template: book-theme\n');
+    return dir;
+  }
+
+  it('oak build in the JOURNAL repo says so instead of dying on the engine coordinate', () => {
+    // The UX-test crash, exactly: `oak build` in the journal clone. The co-located rung read
+    // its journal.yml as "the settings are here", so the run reached the paper-only config read.
+    const dir = journalRepo();
+    const { code, stderr } = oak(['build', '--paper', dir]);
+    expect(code).toBe(2);
+    expect(stderr).toContain('is the journal repo, not a paper');
+    expect(stderr).toContain('--paper');
+    // No stack, and no GitHub annotation syntax outside CI.
+    expect(stderr).not.toContain('::error::');
+    expect(stderr).not.toMatch(/\bat \w+ \(/);
+    expect(stderr).not.toContain('cli.cjs:');
+  });
+
+  it('oak validate in the JOURNAL repo refuses the same way', () => {
+    const { code, stderr } = oak(['validate', '--paper', journalRepo()]);
+    expect(code).toBe(2);
+    expect(stderr).toContain('is the journal repo, not a paper');
+    expect(stderr).not.toContain('::error::');
+  });
+
+  it('a paper whose myst.yml lost its engine version names the file and the fix', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'oak-nocoord-'));
+    for (const f of ['bib.bib', 'index.md', 'myst.yml']) copyFileSync(join(fixturePaper, f), join(dir, f));
+    const authorPath = join(dir, 'myst.yml');
+    writeFileSync(authorPath, readFileSync(authorPath, 'utf8').replace(/\n\s*version: .*/, ''));
+
+    const { code, stderr } = oak(['build', '--paper', dir, '--no-instance']);
+    expect(code).toBe(2);
+    expect(stderr).toContain(authorPath);
+    expect(stderr).toContain('project.options.oaktree-sapling');
+    expect(stderr).not.toContain('::error::');
+    expect(stderr).not.toContain('cli.cjs:');
+  }, 60_000);
+
+  it('usage lists oak start next to oak build', () => {
+    const { stderr } = oak([]);
+    expect(stderr).toMatch(/oak start/);
+    expect(stderr).toContain('preview the paper in a browser');
   });
 });
 

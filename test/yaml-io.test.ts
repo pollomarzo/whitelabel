@@ -22,9 +22,15 @@ describe('readEngineCoordinateRaw (local yq equivalent, §6a)', () => {
     expect(c).toEqual({ version: 'v0.3.0', edition: 'fixture-edition' });
   });
 
-  it('throws clearly when the coordinate is absent', () => {
+  it('throws clearly when the coordinate is absent — naming the file and the fix', () => {
     const doc = parseDocument('version: 1\nproject:\n  id: x\n');
-    expect(() => readEngineCoordinateRaw(doc)).toThrow(/missing/);
+    // A tenant-facing sentence (printed without a stack), not a bare internal message.
+    expect(() => readEngineCoordinateRaw(doc, '/papers/one/myst.yml')).toThrow(
+      /\/papers\/one\/myst\.yml has no engine version/,
+    );
+    expect(() => readEngineCoordinateRaw(doc, '/papers/one/myst.yml')).toThrow(
+      /project\.options\.oaktree-sapling/,
+    );
   });
 });
 
