@@ -1,0 +1,79 @@
+name: docs
+
+# Builds the documentation site (docs/) and deploys it to GitHub Pages.
+#
+# A pull request BUILDS but does not deploy; only main deploys. The build is the gate that
+# makes the `(label)=` discipline real: docs/myst.yml promotes reference-target-resolves and
+# identifier-is-unique to errors, so a renamed label fails here instead of silently becoming a
+# broken link in CLI output that a tenant hits two years from now.
+#
+# `--check-links` is deliberately absent. It fetches every outbound URL at error severity, so a
+# rate-limited host would fail an unrelated docs build. If we want it, it runs on a schedule.
+#
+# Actions are pinned by full commit SHA at a close-to-latest major, the same SHAs the seeded
+# site workflow and the paper shim use.
+
+on:
+  pull_request:
+    paths: ['docs/**', '.github/workflows/docs.yml']
+  push:
+    branches: [main]
+    paths: ['docs/**', '.github/workflows/docs.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+
+      # Resolves where Pages actually serves this repo. `base_path` is `/<repo>` for a project
+      # site and EMPTY for a user/org site or a custom domain — which is exactly MyST's
+      # BASE_URL contract, and the only reason this file needs no edit when the engine moves to
+      # its canonical home: the path segment changes from /whitelabel to /oaktree-sapling and
+      # GitHub reports the new one. Hardcoding either would break on the move.
+      #
+      # It runs on pull requests too. Nothing is deployed there, but the build must exercise
+      # the same BASE_URL it will deploy under, or subpath asset bugs only appear after merge.
+      - id: pages
+        uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5.0.0
+
+      # mystmd is PINNED, and the pin must stay in step with the `myst-cli` range in
+      # package.json — the engine bundles myst-cli to build papers, and docs built by a
+      # different MyST than the engine ships would document behaviour we don't produce.
+      # There is no docs/package.json on purpose: this project has no plugins, so it needs no
+      # local node_modules for imports to resolve (the seeded journal site does, and installs).
+      - name: Build
+        working-directory: docs
+        env:
+          BASE_URL: ${{ steps.pages.outputs.base_path }}
+        run: npx -y mystmd@1.10.1 build --html --strict
+
+      - if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: docs/_build/html
+
+  deploy:
+    needs: build
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.d.outputs.page_url }}
+    steps:
+      - id: d
+        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0
