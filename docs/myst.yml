@@ -3,7 +3,15 @@ version: 1
 # The oaktree-sapling documentation site.
 #
 # This is a plain MyST project, not a journal: no engine, no checks, no editions, no papers.
-# `myst build --html` is the whole build, and `myst start` previews it.
+#
+# From the engine root:
+#
+#     npm run docs         preview at http://localhost:3000, reloading as you edit
+#     npm run docs:build   the same build CI runs, including --strict
+#
+# Both pin the MyST version in package.json, so a page that builds for you builds in CI. Do
+# not set BASE_URL locally — `npm run docs` serves at the root, and a base path would send
+# every asset request somewhere that isn't being served.
 #
 # SUBPATH. This site is served under a path segment, `/oaktree-sapling/` (the base it is
 # published at is `DOCS_BASE` in `src/assets.ts` — the one place that URL is written down). MyST
