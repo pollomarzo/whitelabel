@@ -21,7 +21,7 @@
  * invariant replaces a standing `PAPER_EXCLUDE`-style policy list.
  */
 import { describe, it, expect } from 'vitest';
-import { stampedFiles } from '../src/bootstrap.js';
+import { stampedFiles, listFiles } from '../src/bootstrap.js';
 
 const PAPER_ROOT = 'templates/paper';
 const INSTANCE_ROOT = 'templates/instance';
@@ -40,4 +40,22 @@ describe('template disjointness invariant', () => {
   it('--external: the site and instance stamps write disjoint root-relative paths', () => {
     expect(overlap(SITE_ROOT, INSTANCE_ROOT)).toEqual([]);
   });
+});
+
+/**
+ * npm strips a leading-dot `.gitignore` from every tarball it builds, with no opt-out. A
+ * template holding one therefore seeds correctly from a git checkout and silently seeds
+ * NOTHING from an npm install — the tenant then commits `_build/` and `node_modules/`.
+ * The templates hold `gitignore`; `stampRel` puts the dot back at write time.
+ */
+describe('templates survive npm packaging', () => {
+  for (const root of [PAPER_ROOT, SITE_ROOT]) {
+    it(`${root} ships no dotted .gitignore (npm would strip it)`, () => {
+      expect(listFiles(root)).not.toContain('.gitignore');
+    });
+
+    it(`${root} still stamps a .gitignore`, () => {
+      expect(stampedFiles(root)).toContain('.gitignore');
+    });
+  }
 });
