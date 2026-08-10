@@ -10,9 +10,19 @@
     "test": "npm run bundle && vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
-    "bundle": "esbuild src/cli.ts --bundle --platform=node --format=cjs --outfile=dist/cli.cjs",
-    "build:fixture": "node scripts/build-fixture.mjs"
+    "bundle": "esbuild src/cli.ts --bundle --platform=node --format=cjs --minify-whitespace --outfile=dist/cli.cjs",
+    "build:fixture": "node scripts/build-fixture.mjs",
+    "prepublishOnly": "npm run typecheck && npm run bundle"
   },
+  "files": [
+    "dist/cli.cjs",
+    "templates/",
+    "ci/",
+    "plugins/",
+    "paper-base.yml",
+    "typst.version",
+    "RELEASING.md"
+  ],
   "dependencies": {
     "@curvenote/check-definitions": "^0.16.5",
     "@curvenote/check-implementations": "^0.16.5",
