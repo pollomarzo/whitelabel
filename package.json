@@ -1,6 +1,6 @@
 {
   "name": "oaktree-sapling",
-  "version": "0.0.0-dev",
+  "version": "0.0.1",
   "description": "White-label journal engine: MyST + GitHub + Zenodo. All platform logic, referenced by version.",
   "type": "module",
   "bin": {
