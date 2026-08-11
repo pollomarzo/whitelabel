@@ -22,11 +22,11 @@
   "files": [
     "dist/cli.cjs",
     "templates/",
+    "!templates/*/README.md",
     "ci/",
     "plugins/",
     "paper-base.yml",
-    "typst.version",
-    "RELEASING.md"
+    "typst.version"
   ],
   "dependencies": {
     "@curvenote/check-definitions": "^0.16.5",
