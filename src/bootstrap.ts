@@ -108,19 +108,28 @@ export function listFiles(dir: string, prefix = ''): string[] {
 }
 
 /**
- * Template files stamped under a different name than they ship under.
+ * Basenames a template file ships under → the basename it is stamped as.
  *
  * `.gitignore` is the whole list, and npm is the reason: a leading-dot `.gitignore` is
  * stripped from EVERY npm tarball, unconditionally and with no opt-out. Shipping it as-is
  * means an engine installed from npm seeds repos with no `.gitignore` at all — so a tenant
  * commits `_build/` and `node_modules/` — while a git checkout of the engine seeds it fine.
  * The templates therefore hold `gitignore`, and the stamp puts the dot back.
+ *
+ * The VALUES are therefore exactly the basenames npm would strip, which is what the
+ * `templates survive npm packaging` test asserts against — one list, not two that must
+ * agree. Keyed on the basename, not the whole rel path, so a template file added in a
+ * SUBDIRECTORY is covered too: npm strips it at any depth.
  */
-const STAMP_RENAME: Record<string, string> = { gitignore: '.gitignore' };
+export const STAMP_RENAME: Record<string, string> = { gitignore: '.gitignore' };
 
 /** A template-source rel path → the rel path it is written to in the tenant's repo. */
 export function stampRel(rel: string): string {
-  return STAMP_RENAME[rel] ?? rel;
+  const parts = rel.split('/');
+  const renamed = STAMP_RENAME[parts[parts.length - 1]!];
+  if (!renamed) return rel;
+  parts[parts.length - 1] = renamed;
+  return parts.join('/');
 }
 
 /** The relative paths a render would actually stamp from `root` (all files minus the engine

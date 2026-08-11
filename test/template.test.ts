@@ -21,11 +21,12 @@
  * invariant replaces a standing `PAPER_EXCLUDE`-style policy list.
  */
 import { describe, it, expect } from 'vitest';
-import { stampedFiles, listFiles } from '../src/bootstrap.js';
+import { stampedFiles, listFiles, STAMP_RENAME } from '../src/bootstrap.js';
 
 const PAPER_ROOT = 'templates/paper';
 const INSTANCE_ROOT = 'templates/instance';
 const SITE_ROOT = 'templates/site';
+const TYPST_ROOT = 'templates/typst';
 
 const overlap = (a: string, b: string) => {
   const first = new Set(stampedFiles(a));
@@ -47,13 +48,23 @@ describe('template disjointness invariant', () => {
  * template holding one therefore seeds correctly from a git checkout and silently seeds
  * NOTHING from an npm install — the tenant then commits `_build/` and `node_modules/`.
  * The templates hold `gitignore`; `stampRel` puts the dot back at write time.
+ *
+ * Stated as "no template file ships under a strippable name", not "no file is called
+ * `.gitignore`": the assertion is derived from `STAMP_RENAME` and scans every shipped root
+ * at every depth, so it guards the failure MODE. A second strippable name added to the map,
+ * or a `.gitignore` added three directories down, is caught without touching this file.
  */
 describe('templates survive npm packaging', () => {
-  for (const root of [PAPER_ROOT, SITE_ROOT]) {
-    it(`${root} ships no dotted .gitignore (npm would strip it)`, () => {
-      expect(listFiles(root)).not.toContain('.gitignore');
-    });
+  const STRIPPED = new Set(Object.values(STAMP_RENAME));
 
+  for (const root of [PAPER_ROOT, INSTANCE_ROOT, SITE_ROOT, TYPST_ROOT]) {
+    it(`${root} ships no file npm would strip from the tarball`, () => {
+      const offenders = listFiles(root).filter((rel) => STRIPPED.has(rel.split('/').pop()!));
+      expect(offenders).toEqual([]);
+    });
+  }
+
+  for (const root of [PAPER_ROOT, SITE_ROOT]) {
     it(`${root} still stamps a .gitignore`, () => {
       expect(stampedFiles(root)).toContain('.gitignore');
     });
