@@ -27,9 +27,11 @@ live.
 :::
 
 :::{card} Write a paper
-Editing, previewing and submitting a manuscript.
+[Your paper repository](start/paper.md) — what is in it, what to fill in, how to submit.
 
-Not written yet.
+[Editorial checks](guide/checks.md) — what your submission is held to.
+
+The reference for writing the manuscript itself is not written yet.
 :::
 
 :::{card} Understand how it works
