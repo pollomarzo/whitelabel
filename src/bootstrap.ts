@@ -107,15 +107,42 @@ export function listFiles(dir: string, prefix = ''): string[] {
   return out;
 }
 
+/**
+ * Basenames a template file ships under → the basename it is stamped as.
+ *
+ * `.gitignore` is the whole list, and npm is the reason: a leading-dot `.gitignore` is
+ * stripped from EVERY npm tarball, unconditionally and with no opt-out. Shipping it as-is
+ * means an engine installed from npm seeds repos with no `.gitignore` at all — so a tenant
+ * commits `_build/` and `node_modules/` — while a git checkout of the engine seeds it fine.
+ * The templates therefore hold `gitignore`, and the stamp puts the dot back.
+ *
+ * The VALUES are therefore exactly the basenames npm would strip, which is what the
+ * `templates survive npm packaging` test asserts against — one list, not two that must
+ * agree. Keyed on the basename, not the whole rel path, so a template file added in a
+ * SUBDIRECTORY is covered too: npm strips it at any depth.
+ */
+export const STAMP_RENAME: Record<string, string> = { gitignore: '.gitignore' };
+
+/** A template-source rel path → the rel path it is written to in the tenant's repo. */
+export function stampRel(rel: string): string {
+  const parts = rel.split('/');
+  const renamed = STAMP_RENAME[parts[parts.length - 1]!];
+  if (!renamed) return rel;
+  parts[parts.length - 1] = renamed;
+  return parts.join('/');
+}
+
 /** The relative paths a render would actually stamp from `root` (all files minus the engine
- *  README). Shared by the disjointness invariant test so it checks real stamped output, not
- *  raw source files. Subpaths are preserved (no basename flatten). */
+ *  README), under their STAMPED names. Shared by the disjointness invariant test so it checks
+ *  real stamped output, not raw source files. Subpaths are preserved (no basename flatten). */
 export function stampedFiles(root: string): string[] {
-  return listFiles(root).filter((rel) => !EXCLUDE_FROM_STAMP.has(rel.split('/')[0]!));
+  return listFiles(root)
+    .filter((rel) => !EXCLUDE_FROM_STAMP.has(rel.split('/')[0]!))
+    .map(stampRel);
 }
 
 function writeRel(destRoot: string, rel: string, contents: string | Buffer): void {
-  const abs = join(destRoot, rel);
+  const abs = join(destRoot, stampRel(rel));
   mkdirSync(dirname(abs), { recursive: true });
   writeFileSync(abs, contents);
 }
@@ -164,7 +191,7 @@ export function renderPaperTemplate(paperRoot: string, destRoot: string, answers
       writeRel(destRoot, rel, renderCodeowners(readFileSync(join(paperRoot, rel), 'utf8'), answers.owner));
     else if (rel === RENDER_MYST) writeRel(destRoot, rel, renderMyst(paperRoot, answers));
     else copyRel(paperRoot, destRoot, rel);
-    written.push(rel);
+    written.push(stampRel(rel));
   }
   return written.sort();
 }
@@ -191,7 +218,7 @@ export function renderInstanceTemplate(instanceRoot: string, destRoot: string, a
     } else {
       copyFileBytes(join(instanceRoot, rel), join(destRoot, rel));
     }
-    written.push(rel);
+    written.push(stampRel(rel));
   }
   return written.sort();
 }
@@ -264,13 +291,13 @@ export function renderSiteTemplate(
     } else {
       copyRel(siteRoot, destRoot, rel);
     }
-    written.push(rel);
+    written.push(stampRel(rel));
   }
   return written.sort();
 }
 
 function copyRel(srcRoot: string, destRoot: string, rel: string): void {
-  copyFileBytes(join(srcRoot, rel), join(destRoot, rel));
+  copyFileBytes(join(srcRoot, rel), join(destRoot, stampRel(rel)));
 }
 function copyFileBytes(src: string, dest: string): void {
   mkdirSync(dirname(dest), { recursive: true });
