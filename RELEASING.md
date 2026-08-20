@@ -102,6 +102,44 @@ The accepted cost is that a floating branch is **not** runnable in CI — an unr
 loud in the shim. That is deliberate, and it also removes most of the ref-trust surface, since only
 tags ever run.
 
+## The npm package (`oaktree-sapling`, 0.x)
+
+A second delivery path, and **not yet the one CI uses** — papers still run the engine by checkout,
+exactly as above. What follows is what the package is and is not, so nobody infers a guarantee from
+its existence.
+
+**Two coordinate systems, deliberately.** `package.json`'s `version` (`0.0.1`) is independent of the
+release tag (`vX.Y.Z-dev.N`), which `cut-engine-release.sh` takes as an argument. npm versions are
+effectively permanent (72 h unpublish window) and must be real semver, so they cannot follow the
+disposable dev tags. **Nothing currently keeps the two in step** — the cut script has no npm step —
+so a published version does not name a tag and cannot be mapped back to one. Closing that is the
+job of the eventual publish-from-CI step, folded into the cut, with npm trusted publishing (OIDC)
+in the canonical repo; until then, treat the npm version as naming a *source state*, not a ref.
+
+**`repository` points at the interim home** (`pollomarzo/whitelabel`). It is per-version metadata,
+not a name: it changes with the canonical move and later versions carry the new URL. `--provenance`
+requires it to match the repo whose Actions run publishes, so it must never be moved ahead of the
+publisher.
+
+**`files` is an allowlist**, so anything unlisted is excluded by construction. It carries what the
+CLI reads at runtime — `dist/cli.cjs`, `templates/`, `paper-base.yml`, `typst.version` — plus
+`ci/run.sh` and `plugins/gallery.mjs`, which are consumed from the checkout and a pinned raw URL
+rather than the package, but are small enough that shipping them keeps the tarball a faithful
+subset. `prepack` (not `prepublishOnly`) runs typecheck + bundle: `dist/` is gitignored and a
+missing file is *silently omitted* from a tarball rather than erroring, and `prepack` is the only
+hook that fires on both `npm pack` and `npm publish`.
+
+**Two things an npm-installed engine cannot do**, both because it is a package rather than a
+checkout:
+
+- **No PDF.** `bin/typst` rides the tag leaf and is not in the tarball (per-platform binaries have
+  no clean npm answer — `optionalDependencies` or a postinstall download, both real design work).
+  `ci/run.sh` adds `$engine/bin` to `PATH` only `if [ -x ]`, so an install without a system typst
+  degrades silently to no export.
+- **No `engine.zip`.** `oak deposit` builds it with `git archive` over the engine root
+  (`zenodo.ts`), and `node_modules/oaktree-sapling` is not a git repository. Latent while deposits
+  run in CI from a tag checkout; a hard failure the moment they do not.
+
 Mechanics: `scripts/cut-engine-release.sh` (its header comment explains each step) and
 `.github/workflows/cut-engine-release.yml` — one path, runnable locally and by CI. The design
 ledger records this as **[R57]** (delivery) and **[R66]** (typst + deposit self-containment); those

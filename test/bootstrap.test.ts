@@ -140,8 +140,10 @@ describe('renderSiteTemplate', () => {
     // a POSITIVE signal — the plugin's own name in the build log.
     expect(wf).toContain('Paper Gallery.*loaded');
 
+    // Ships as `gitignore`, stamped as `.gitignore` — npm strips the dotted name from every
+    // tarball, so an npm-installed engine would otherwise seed a repo without one.
     expect(readFileSync(join(dest, '.gitignore'), 'utf8')).toBe(
-      readFileSync(join(SITE_ROOT, '.gitignore'), 'utf8'),
+      readFileSync(join(SITE_ROOT, 'gitignore'), 'utf8'),
     );
     expect(existsSync(join(dest, 'README.md'))).toBe(false); // one repo, one README
   });
