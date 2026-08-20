@@ -1,0 +1,65 @@
+version: 1
+
+# The oaktree-sapling documentation site.
+#
+# This is a plain MyST project, not a journal: no engine, no checks, no editions, no papers.
+#
+# From the engine root:
+#
+#     npm run docs         preview at http://localhost:3000, reloading as you edit
+#     npm run docs:build   the same build CI runs, including --strict
+#
+# Both pin the MyST version in package.json, so a page that builds for you builds in CI. Do
+# not set BASE_URL locally — `npm run docs` serves at the root, and a base path would send
+# every asset request somewhere that isn't being served.
+#
+# SUBPATH. This site is served under a path segment, `/oaktree-sapling/` (the base it is
+# published at is `DOCS_BASE` in `src/assets.ts` — the one place that URL is written down). MyST
+# has to be told about the segment or every stylesheet, script and image is requested from the
+# domain root and 404s. It reads the value from the BASE_URL environment variable and from
+# nowhere else — there is no config key for it — so build with:
+#
+#     BASE_URL=/oaktree-sapling npx myst build --html
+#
+# In a GitHub Pages workflow, `actions/configure-pages` reports the correct value as its
+# `base_path` output; pass that through rather than hardcoding the path.
+#
+# LINKS INTO THIS SITE. The CLI prints documentation URLs built from `src/docs-links.ts`,
+# whose anchors are the explicit `(label)=` targets on these pages. That makes a renamed
+# label a broken published link, which is why the two rules below are promoted to errors:
+# `myst build --strict` then fails the build instead of logging a warning nobody reads.
+# External link checking (`--check-links`) is deliberately NOT part of that gate — it fetches
+# every outbound URL, so one rate-limited host would fail an unrelated build.
+
+project:
+  id: oaktree-sapling-docs
+  title: Oaktree Sapling
+  description: Documentation for the oaktree-sapling journal engine.
+  error_rules:
+    - rule: reference-target-resolves
+      severity: error
+    - rule: identifier-is-unique
+      severity: error
+  toc:
+    - file: index.md
+    - title: Start
+      children:
+        - file: start/journal.md
+    - title: Guides
+      children:
+        - file: guide/journal-yml.md
+        - file: guide/branding.md
+        - file: guide/checks.md
+        - file: guide/pins.md
+    - title: Reference
+      children:
+        - file: reference/files.md
+
+site:
+  template: book-theme
+  options:
+    logo_text: Oaktree Sapling
+    # URLs keep the folder they live in: /guide/journal-yml, not /journal-yml. Without this
+    # MyST flattens every page to its basename, which is both ambiguous and unstable — and the
+    # URLs in `src/docs-links.ts` are baked into CLI output, so they cannot move.
+    folders: true

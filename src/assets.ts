@@ -19,6 +19,17 @@
 export const THEME_REPO = 'impact-scholars/myst-theme';
 export const THEME_VERSION = 'v0.2.0';
 
+/**
+ * Where the tenant-facing documentation is published. The ONE place a docs URL is written
+ * down: everything else names a TOPIC (`docs-links.ts`) and builds the URL from this base,
+ * so moving the site — or a fork pointing at its own — is a one-line edit and never a grep.
+ *
+ * A URL printed by the CLI or stamped into a seeded file outlives the engine that wrote it,
+ * so treat these paths as a published interface: pages may be rewritten, but the path and
+ * its anchors should keep resolving. No trailing slash (`docsUrl` adds the separator).
+ */
+export const DOCS_BASE = 'https://scholar.nexus/oaktree-sapling';
+
 /** Typst template zip attached to each engine release (design dec. 2, §7). */
 export function typstTemplateUrl(engineRepo: string, engineVersion: string): string {
   return `https://github.com/${engineRepo}/releases/download/${engineVersion}/typst-template.zip`;
