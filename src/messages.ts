@@ -8,8 +8,12 @@
  *   - Fixed strings are consts; parameterized ones are functions. Edit the words freely; keep
  *     the `${…}` holes and the leading `oak <verb>:` prefixes (the prefix is how a reader knows
  *     which command spoke, and a few tests assert on distinctive fragments).
- *   - Nothing here does any work: no I/O, no imports, no logic beyond choosing between phrasings.
- *     Keep it that way.
+ *   - Nothing here does any work: no I/O, no logic beyond choosing between phrasings. The one
+ *     import is the docs link table, which is constants only — keep it that way.
+ *   - A message that links to documentation writes `docsUrl(DOCS.<topic>)`, never a URL. The
+ *     domain lives in `assets.ts`; the page it lands on is `docs-links.ts`'s problem. Link
+ *     where the page says more than a sentence can and the reader is stuck; a URL on every
+ *     line is noise, and most of these messages already name the file and the fix.
  *
  * The output rules these strings follow (open-tasks/cli-output-pass.md):
  *   1. Nothing the CLI assumes may be silent — every default or auto-resolved value is declared
@@ -50,6 +54,8 @@
  *
  * The check MESSAGES an author sees on a PR come from `@curvenote/check-implementations`
  */
+
+import { DOCS, docsUrl } from './docs-links.js';
 
 /* ═══════════════════════════════════════════════════════════════════════════════════════════
  * Output plumbing — not prose, but it decides HOW the prose is printed.
@@ -234,7 +240,8 @@ export const bootstrap = {
     'and the checks it wants run. Without it the repo bootstraps fine and then every CI ' +
     'run fails with "no instance-config resolved". Pass `--instance .` only for a repo ' +
     'that carries its own journal.yml (use `oak bootstrap journal --co-located` to stand ' +
-    'one up).',
+    'one up). What the paper gets out of that connection: ' +
+    docsUrl(DOCS.paperJournalLink),
 
   editionRequired: (instance: string): string =>
     "oak bootstrap paper: --edition <id> is required. It says which of the journal's " +
@@ -243,7 +250,8 @@ export const bootstrap = {
     'are the filenames under editions/ in ' +
     (instance === '.' ? 'this repo' : `https://github.com/${instance}`) +
     ' (`oak bootstrap journal` creates the first one). Defaulting it would only move the ' +
-    'failure into the first CI run.',
+    'failure into the first CI run. What an edition file holds: ' +
+    docsUrl(DOCS.fileEditions),
 
   noSiteNeedsExternal:
     '--no-site is only meaningful with --external: a co-located journal never gets a ' +
@@ -350,7 +358,8 @@ export const bootstrap = {
   runbookStartHere: (repo: string): string =>
     `Start here: edit journal.yml (your journal's name and the rules papers are checked against) ` +
     `and brand/ (logo + colours). Papers read both at build time, so a change here reaches ` +
-    `every paper's next build. Clone it with: git clone https://github.com/${repo}.git`,
+    `every paper's next build. Clone it with: git clone https://github.com/${repo}.git\n` +
+    `The whole first pass, in order: ${docsUrl(DOCS.journalStart)}`,
 
   runbookNoProtection:
     'This repo has no branch protection: adding a paper to the list, or changing the branding, ' +
@@ -364,7 +373,9 @@ export const bootstrap = {
     'give it a moment and reload. Every file in it is yours to edit: the engine writes them ' +
     'once and never touches them again, so upgrading the engine will not overwrite your ' +
     'design. Three version pins you bump by hand when you want newer: the gallery plugin URL ' +
-    'and `site.template` in myst.yml, and `mystmd` in package.json.',
+    'and `site.template` in myst.yml, and `mystmd` in package.json — what each one moves, and ' +
+    'how to tell a bump worked: ' +
+    docsUrl(DOCS.pins),
 
   runbookSiteFailure:
     'If a website build ever fails, the version already published keeps serving — a bad entry ' +
@@ -428,7 +439,8 @@ export const build = {
     `publishes it to GitHub Pages. To look at it before you push, run \`npm install\` once in ` +
     `this repo and then \`oak start\`.\n` +
     `To build a paper, run oak build inside that paper's checkout, or pass ` +
-    `--paper <path to the paper>.`,
+    `--paper <path to the paper>.\n` +
+    `What this repo is for: ${docsUrl(DOCS.journalStart)}`,
 
   /**
    * The engine coordinate a paper carries (`project.options.oaktree-sapling.version|edition`)
@@ -458,7 +470,8 @@ export const build = {
     `journal.yml at ${paperRoot}.\n` +
     `If this paper belongs to a journal, set instance_repo in pins.yml to that journal's ` +
     `owner/repo (\`oak bootstrap paper --instance\` writes it for you). Running locally, ` +
-    `pass --instance <path to a checkout of the journal repo>.`,
+    `pass --instance <path to a checkout of the journal repo>.\n` +
+    `Which journal to clone, and where to put it: ${docsUrl(DOCS.paperPreviewLocally)}`,
 
   preflightFailed: (findings: string): string =>
     `oak build: pre-flight validation failed:\n${findings}`,
@@ -528,11 +541,17 @@ export const validate = {
 
   // ── brand ──────────────────────────────────────────────────────────────────────────────
   brandNoFavicon:
-    'brand declares no favicon: the built site fails to render its pages without one — set `favicon` in brand.yml',
+    'brand declares no favicon: the built site fails to render its pages without one — set ' +
+    '`favicon` in brand.yml (' +
+    docsUrl(DOCS.branding) +
+    ')',
   brandFaviconUnresolved: (favicon: string): string =>
     `brand favicon "${favicon}" does not resolve to a file`,
   brandNoWatermark:
-    'brand declares no watermark image (project.options.logo in brand.yml): the PDF renders without one',
+    'brand declares no watermark image (project.options.logo in brand.yml): the PDF renders ' +
+    'without one (' +
+    docsUrl(DOCS.pdfLogo) +
+    ')',
   brandWatermarkIsUrl: (logo: string): string =>
     `brand watermark "${logo}" is a URL: the PDF renderer cannot fetch it, so it must be a file committed in the journal repo`,
   brandWatermarkUnresolved: (logo: string): string =>
@@ -547,9 +566,11 @@ export const validate = {
 
   // ── the paper's id (checked against the journal's policy) ──────────────────────────────
   idPlaceholder: (id: string): string =>
-    `paper id "${id}" is the template placeholder; every paper needs a fresh unique id`,
+    `paper id "${id}" is the template placeholder; every paper needs a fresh unique id — ` +
+    `${docsUrl(DOCS.idPattern)}`,
   idPatternMismatch: (id: string, pattern: string): string =>
-    `paper id "${id}" does not match the journal id pattern /${pattern}/`,
+    `paper id "${id}" does not match the journal id pattern /${pattern}/ — ` +
+    `${docsUrl(DOCS.idPattern)}`,
   idRegistryUnavailable: (id: string): string =>
     `registry unavailable; cannot check id "${id}" for uniqueness`,
   idMaybeOwnEntry: (id: string, repo: string, slug: string): string =>
@@ -575,7 +596,8 @@ export const validate = {
   templateNameAmbiguous: (tenantTemplate: string): string =>
     `journal.yml typst_template "${tenantTemplate}" is being used as a myst template ` +
     `NAME, but "${tenantTemplate}" also exists in instance-config. If you meant the ` +
-    `directory, write "./${tenantTemplate}" — only ./ and ../ values are treated as paths.`,
+    `directory, write "./${tenantTemplate}" — only ./ and ../ values are treated as paths. ` +
+    `See ${docsUrl(DOCS.typstTemplate)}`,
 
   // ── the extends layers must not race each other ────────────────────────────────────────
   layersOverlap: (clashes: string): string =>
@@ -634,10 +656,12 @@ export const pr = {
 
   checksHeadline: (pass: boolean, title: string): string =>
     `### ${pass ? '✅' : '❌'} ${pass ? 'Journal checks passed' : 'Journal checks failed'} — ${title}`,
-  checksFooter: '_Updated on every push to this PR._',
+  checksFooter: `[What these checks are](${docsUrl(DOCS.checks)}) · _Updated on every push to this PR._`,
   checkRunTitle: (passed: number, failed: number): string => `${passed} passed, ${failed} failed`,
   checkRunTitleShimTouched: (title: string): string => `⚠️ CI shim modified — ${title}`,
-  unknownCheckId: (id: string): string => `unknown check id "${id}"`,
+  unknownCheckId: (id: string): string =>
+    `unknown check id "${id}" — the ids the journal can ask for, and how to change the set: ` +
+    `${docsUrl(DOCS.checksChanging)}`,
   checkTableHeader: '| Check | Status | Detail |\n| --- | --- | --- |',
 
   /** A PR that edits the files the checks run from — an advisory, never a gate (legitimate
