@@ -323,10 +323,10 @@ describe('cmdBootstrapPaper', () => {
     expect(plan).toContain('journal repo   : me/instance-config');
     expect(plan).toContain('edition        : ed-2026');
     // The auto-resolved ones say so, and say which flag pins them.
-    expect(plan).toMatch(/engine version : v1\.2\.3 — the newest engine release right now/);
+    expect(plan).toMatch(/engine version : v1\.2\.3: the newest engine release right now/);
     expect(plan).toContain('--engine-version');
-    expect(plan).toMatch(/engine repo    : me\/engine — built-in default/);
-    expect(plan).toMatch(/review owner   : @alice — your own GitHub login/);
+    expect(plan).toMatch(/engine repo    : me\/engine: built-in default/);
+    expect(plan).toMatch(/review owner   : @alice: your own GitHub login/);
   });
 
   it('a value that WAS passed is declared as passed, not as a default', async () => {
@@ -586,7 +586,7 @@ describe('cmdBootstrapJournal', () => {
       d,
     );
     const plan = plans[0]!.join('\n');
-    expect(plan).toMatch(/edition        : edition — placeholder, no --edition given/);
+    expect(plan).toMatch(/edition        : edition \(placeholder; no --edition given\)/);
     expect(plan).toContain('editions/edition.yml');
     expect(existsSync(join(seedDirs[0]!, 'editions/edition.yml'))).toBe(true);
   });
