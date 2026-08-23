@@ -66,7 +66,7 @@ describe.skipIf(bundleState() === 'absent')('usage opens with what oak is and wh
   it('leads with a description and the first command a newcomer runs', () => {
     const { stderr } = oak([]);
     const head = stderr.split('\n').slice(0, 8).join('\n');
-    expect(head).toMatch(/^oak: a mystmd-based toolkit for running a small journal/);
+    expect(head).toMatch(/^oak: a mystmd-based engine for running a small journal/);
     expect(head).toContain('oak bootstrap journal');
     // ...and the verb list still comes after, not instead.
     expect(stderr).toContain('oak validate');
