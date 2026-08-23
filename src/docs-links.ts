@@ -21,6 +21,13 @@ export const DOCS = {
   /** Why the journal website 404s for a few minutes after the first push. */
   journalFirstDeploy: 'start/journal#first-deploy',
 
+  /** What to do with a paper repo an editor has just created — the author's first read. */
+  paperStart: 'start/paper',
+  /** How a paper repo reaches the journal's settings: `pins.yml`, resolved at build time. */
+  paperJournalLink: 'start/paper#paper-journal-link',
+  /** Previewing a paper locally, and why `--instance` has to be given a path. */
+  paperPreviewLocally: 'start/paper#paper-preview-locally',
+
   /** `journal.yml` field by field. */
   journalYml: 'guide/journal-yml',
   /** The paper-id rule: what it gates, how to change it, how a failure reads. */

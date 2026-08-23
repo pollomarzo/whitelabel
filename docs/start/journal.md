@@ -121,5 +121,6 @@ this repository, and the website builds itself in CI.
 ## What comes next
 
 Adding papers means creating a paper repository per submission (`oak bootstrap paper`) and
-adding an entry to `registry/papers.yml` when one is published. Both are documented on their
-own pages, which are not written yet.
+adding an entry to `registry/papers.yml` when one is published. What the author finds in that
+repository, and how their submission reaches you, is [the paper page](paper.md); the editor's
+side of creating and publishing one is not written yet.

@@ -45,6 +45,7 @@ project:
     - title: Start
       children:
         - file: start/journal.md
+        - file: start/paper.md
     - title: Guides
       children:
         - file: guide/journal-yml.md
