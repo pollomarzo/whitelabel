@@ -100,14 +100,10 @@ export class UserError extends Error {
  * and it is not inferable from the words.
  */
 export const usage = (): string =>
-  `oak: a mystmd-based toolkit for running a small journal. It sets up the journal
-` +
-  `(its branding, editions and list of papers) and the repos its papers live in, then
-` +
-  `builds, checks, previews and publishes each paper with the journal's settings. It
-` +
-  `drives git and gh (the GitHub CLI) under the hood; anything that changes a repo
-` +
+  `oak: a mystmd-based engine for running a small journal. It sets up the journal\n` +
+  `(its branding, editions and list of papers) and the repos its papers live in, then\n` +
+  `builds, checks, previews and publishes each paper with the journal's settings. It\n` +
+  `drives git and gh (the GitHub CLI) under the hood; anything that changes a repo\n` +
   `prints a plan and asks before it does it.\n` +
   `\n` +
   `Starting from nothing? Create the journal, then a repo per paper:\n` +
@@ -397,7 +393,7 @@ export const bootstrap = {
 export const upgrade = {
   missingTarget: 'oak upgrade: pass --paper <dir> or --repo <owner/name>',
 
-  notAPaperRepo: (pinsRel: string): string => `no engine_repo in ${pinsRel}: is this a paper repo?`,
+  notAPaperRepo: (pinsRel: string): string => `no engine_repo in ${pinsRel}. Is this a paper repo?`,
 
   upToDate: (target: string, engineRepo: string, targetGiven: boolean): string =>
     `up to date at ${target}${targetGiven ? '' : ` (the newest release of ${engineRepo}; no --to given)`}; no PR.`,
@@ -455,7 +451,7 @@ export const build = {
    * to work.
    */
   missingEngineCoordinate: (field: 'version' | 'edition', mystPath: string): string =>
-    `oak: ${mystPath} has no engine ${field}: add the \`${field}:\` line back under ` +
+    `oak: ${mystPath} has no engine ${field}. Add the \`${field}:\` line back under ` +
     `\`project.options.oaktree-sapling\` (\`oak bootstrap paper\` writes ` +
     `${field === 'version' ? 'it and the edition' : 'it and the version'} when it creates a ` +
     `paper, and \`oak upgrade\` is what changes the version afterwards).\n` +
