@@ -66,7 +66,7 @@ describe.skipIf(bundleState() === 'absent')('usage opens with what oak is and wh
   it('leads with a description and the first command a newcomer runs', () => {
     const { stderr } = oak([]);
     const head = stderr.split('\n').slice(0, 8).join('\n');
-    expect(head).toMatch(/^oak — the journal engine/);
+    expect(head).toMatch(/^oak: a mystmd-based engine for running a small journal/);
     expect(head).toContain('oak bootstrap journal');
     // ...and the verb list still comes after, not instead.
     expect(stderr).toContain('oak validate');
@@ -75,7 +75,7 @@ describe.skipIf(bundleState() === 'absent')('usage opens with what oak is and wh
   it('explains --external and --co-located in plain words', () => {
     const { stderr } = oak([]);
     expect(stderr).toMatch(/--external\s+the journal gets its own public repo/);
-    expect(stderr).toMatch(/--co-located\s+one single repo is both the journal and its paper/);
+    expect(stderr).toMatch(/--co-located\s+one repo holds the journal and its single paper/);
   });
 
   it('documents the two cross-cutting flags this pass introduced', () => {
@@ -178,7 +178,7 @@ describe.skipIf(bundleState() === 'absent')('a broken paper gets a sentence, nev
   it('usage lists oak start next to oak build', () => {
     const { stderr } = oak([]);
     expect(stderr).toMatch(/oak start/);
-    expect(stderr).toContain('preview the paper in a browser');
+    expect(stderr).toContain("mystmd's live preview");
   });
 });
 
