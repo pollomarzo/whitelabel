@@ -61,6 +61,6 @@ npm run typecheck
 
 ## License
 
-BSD 3-Clause, copyright Neuromatch. See `LICENSE`.
+BSD 3-Clause, copyright Neuromatch, Inc. See `LICENSE`.
 
 One subtree is not covered by it: `templates/typst/` is the [LaPreprint](https://github.com/curvenote/lapreprint) typst template, MIT-licensed and copyright Rowan Cockett. It keeps its own `LICENSE` alongside it, which ships with the package and with every release tag.
