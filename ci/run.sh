@@ -20,7 +20,14 @@ if [ ! -f "$engine/dist/cli.cjs" ]; then
 fi
 
 # typst — prefer a binary shipped with the engine tag ([R34]); else rely on PATH.
-if [ -x "$engine/bin/typst" ]; then export PATH="$engine/bin:$PATH"; fi
+# Test that it RUNS, not that its executable bit is set. The shipped binary is
+# linux-x86_64 (musl); on macOS or arm64 a Linux ELF still passes `-x`, and prepending it
+# there would SHADOW a working system typst with one that cannot exec — inverting the
+# fallback this line exists to provide. CI is always ubuntu-latest, so the probe costs one
+# spawn and changes nothing there; it is the tag-checkout-on-a-laptop case it fixes.
+if [ -x "$engine/bin/typst" ] && "$engine/bin/typst" --version >/dev/null 2>&1; then
+  export PATH="$engine/bin:$PATH"
+fi
 
 extra=()
 
