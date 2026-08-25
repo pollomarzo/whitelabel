@@ -89,8 +89,13 @@ export function siteTemplateRoot(engineRoot: string): string {
 export function engineMystRange(engineRoot: string): string {
   const pkg = JSON.parse(readFileSync(join(engineRoot, 'package.json'), 'utf8')) as {
     dependencies?: Record<string, string>;
+    devDependencies?: Record<string, string>;
   };
-  const range = pkg.dependencies?.['myst-cli'];
+  // myst-cli is a DEV dependency: it ships inlined in `dist/cli.cjs`, so the published package
+  // declares nothing to install ([R51]). npm keeps `devDependencies` in the published
+  // package.json verbatim, so the range is readable from the installed package either way —
+  // and `dependencies` stays accepted so a fork that declares it there still resolves.
+  const range = pkg.dependencies?.['myst-cli'] ?? pkg.devDependencies?.['myst-cli'];
   if (!range) throw new Error('bootstrap: engine package.json declares no myst-cli dependency');
   return range;
 }
