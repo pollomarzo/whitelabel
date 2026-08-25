@@ -512,10 +512,30 @@ export function tempClone(repo: string): string {
   return tmp;
 }
 
-/** Latest engine release tag for `engineRepo` (`gh release list`). */
+/**
+ * Latest STABLE engine release tag for `engineRepo`.
+ *
+ * Deliberately the `releases/latest` API and not `gh release list --limit 1`: the latter sorts
+ * by date and includes pre-releases, so every dev cut became what `oak bootstrap` handed new
+ * papers and what the scheduled `oak upgrade --version-only` floated existing ones onto. That
+ * silently contradicted RELEASING.md ("marked pre-release, so `version: latest` never resolves
+ * to one") and pointed tenants at dev tags the same document says will be DELETED when pruned.
+ *
+ * `releases/latest` is GitHub's own definition of the invariant — newest non-draft,
+ * non-prerelease — so the rule now lives in one place instead of being reimplemented here.
+ * A pre-release stays reachable, but only by naming it: `--engine-version` / `--to`.
+ *
+ * 404 when the repo has no stable release at all (only dev cuts, or none) — that is an answer,
+ * not a failure, so the probe is quiet and the caller gets a message that says how to proceed.
+ */
 export function latestEngineRelease(engineRepo: string): string {
-  const tag = gh(['release', 'list', '--repo', engineRepo, '--limit', '1', '--json', 'tagName', '--jq', '.[0].tagName']);
-  if (!tag) throw new Error(msg.workflow.noReleases(engineRepo));
+  let tag = '';
+  try {
+    tag = gh(['api', `repos/${engineRepo}/releases/latest`, '--jq', '.tag_name'], { quiet: true });
+  } catch {
+    throw new Error(msg.workflow.noStableRelease(engineRepo));
+  }
+  if (!tag) throw new Error(msg.workflow.noStableRelease(engineRepo));
   return tag;
 }
 
