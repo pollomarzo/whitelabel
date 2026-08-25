@@ -160,10 +160,16 @@ describe('renderSiteTemplate', () => {
 
 describe('engineMystRange', () => {
   it('copies the engine package.json myst-cli range VERBATIM (no parsing/normalizing)', () => {
+    // myst-cli sits in devDependencies (it ships inlined in the bundle, so the published
+    // package installs nothing); npm publishes that block verbatim, so the range is still
+    // there to read. Either block counts — the point is the range is copied, not parsed.
     const pkg = JSON.parse(readFileSync('package.json', 'utf8')) as {
-      dependencies: Record<string, string>;
+      dependencies?: Record<string, string>;
+      devDependencies?: Record<string, string>;
     };
-    expect(engineMystRange('.')).toBe(pkg.dependencies['myst-cli']);
+    const declared = pkg.dependencies?.['myst-cli'] ?? pkg.devDependencies?.['myst-cli'];
+    expect(declared).toBeTruthy();
+    expect(engineMystRange('.')).toBe(declared);
   });
 });
 
