@@ -735,8 +735,13 @@ export const workflow = {
 
   // bootstrap / conformance argument errors
   bootstrapNoRepo: 'oak bootstrap: --repo <owner/name> is required',
+  /** The engine repo has pre-releases but no stable one. Saying "no release" would be a lie a
+   *  tenant can see through — they are looking at a releases page full of dev tags — so name
+   *  the distinction and the flag that reaches one. */
   bootstrapNoRelease:
-    'oak bootstrap: pass --engine-version <tag> (no release resolvable on the engine repo)',
+    'oak bootstrap: the engine repo has no stable release to default to. Pass ' +
+    '--engine-version <tag> to name one; a pre-release (a tag like v1.2.0-dev.4) has to be ' +
+    'named explicitly, because it can be deleted and would take your papers with it.',
   bootstrapUsage: 'oak bootstrap: usage: oak bootstrap <paper|journal> --repo <owner/name> [...]',
   bootstrapJournalTier: 'oak bootstrap journal: pass exactly one of --external | --co-located',
   conformanceResetArgs: 'oak conformance reset: --repo <owner/name> is required',
@@ -751,7 +756,11 @@ export const workflow = {
   working: (what: string): string => `  … ${what}`,
 
   // the engine-release resolver + the wrangler deploy (gh.ts)
-  noReleases: (engineRepo: string): string => `no releases found on ${engineRepo}; pass --to <tag>`,
+  /** Same distinction as bootstrapNoRelease: pre-releases are deliberately not candidates for
+   *  "latest", so a repo can have many releases and still have nothing to float onto. */
+  noStableRelease: (engineRepo: string): string =>
+    `no stable release on ${engineRepo} to move to. Pass --to <tag> to name one; ` +
+    `pre-releases are excluded from "latest" on purpose, since a dev tag can be deleted.`,
   wranglerNoUrl: 'wrangler did not report a *.pages.dev deployment URL',
 };
 
