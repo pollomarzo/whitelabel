@@ -83,6 +83,15 @@ So a checked-out engine tag is immediately runnable *including the PDF export*. 
 `engine.zip` is a `git archive` of that checkout, which is what makes a DOI'd PDF re-renderable on
 linux-x86_64 + node with nothing fetched.
 
+⚑ **`bin/typst` is `linux-x86_64` (musl) only** — one hardcoded asset, no matrix
+(`cut-engine-release.sh`). That is deliberate and sufficient: every workflow here and in the seeded
+templates is `runs-on: ubuntu-latest`, so the CI hot path always matches, and it is why the
+re-renderability claim above names a platform. The consequence is for a tag checked out anywhere
+else — macOS, arm64 — where the PDF export falls back to a system typst. `ci/run.sh` probes that
+the shipped binary *runs* before putting it on `PATH`, precisely so it cannot shadow a working one:
+a Linux ELF keeps its executable bit on macOS, so testing `-x` alone used to prepend a binary that
+dies with `Exec format error`.
+
 The rule for what earns a place at the tag leaf: things that are reproducibility-critical for the
 DOI'd artifact **and** not controlled by us — today exactly `bin/typst`. Our own assets
 (`book-theme.zip`, `typst-template.zip`) stay fetched-at-build. A typst bump = edit `typst.version`
@@ -134,8 +143,8 @@ checkout:
 
 - **No PDF.** `bin/typst` rides the tag leaf and is not in the tarball (per-platform binaries have
   no clean npm answer — `optionalDependencies` or a postinstall download, both real design work).
-  `ci/run.sh` adds `$engine/bin` to `PATH` only `if [ -x ]`, so an install without a system typst
-  degrades silently to no export.
+  `ci/run.sh` adds `$engine/bin` to `PATH` only if the shipped binary runs, so an install without
+  a system typst degrades silently to no export.
 - **No `engine.zip`.** `oak deposit` builds it with `git archive` over the engine root
   (`zenodo.ts`), and `node_modules/oaktree-sapling` is not a git repository. Latent while deposits
   run in CI from a tag checkout; a hard failure the moment they do not.
