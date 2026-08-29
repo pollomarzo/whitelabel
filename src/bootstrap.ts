@@ -496,8 +496,8 @@ export interface ResolvedFlags {
 /**
  * The plan's opening block: every value this run will use, and for each one whether it came
  * from a flag or from us. A default nobody was told about is a decision made on the tenant's
- * behalf, and `Proceed? [y/N]` is only consent if the assumptions are on the screen above it
- *, most of these end up stamped into files that are awkward to change afterwards.
+ * behalf, and `Proceed? [y/N]` is only consent if the assumptions are on the screen above it; most of these
+ * end up stamped into files that are awkward to change afterwards.
  */
 function declaredValues(v: {
   engineVersion: string;

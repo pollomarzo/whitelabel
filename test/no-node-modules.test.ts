@@ -7,8 +7,8 @@
  * minutes it took while myst-cli and friends were still declared as production deps.
  *
  * The failure this exists to catch is silent and one-directional. Nothing in a type check, a
- * unit suite, or the other bundle-driven suites notices a `require` that esbuild left external
- *, every one of them runs from inside the engine checkout, where the repo's own `node_modules`
+ * unit suite, or the other bundle-driven suites notices a `require` that esbuild left external:
+ * every one of them runs from inside the engine checkout, where the repo's own `node_modules`
  * (installed for the dev toolchain) satisfies the stray require and the run goes green. Only a
  * user on a clean machine, or a paper's CI, hits the `MODULE_NOT_FOUND`. So this suite stages
  * the package the way npm publishes it, somewhere the module resolver cannot walk up into any

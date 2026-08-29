@@ -4,8 +4,8 @@
  * The shim runs `engine/ci/run.sh` at a ref read from the paper's own
  * `options.oaktree-sapling.version` (design §6a). For a *public* engine that accepts
  * PRs, "resolves inside the engine repo" (the [R9] guarantee from a pinned
- * `actions/checkout repository:`) also matches `refs/pull/N/merge` of any UNMERGED PR
- *, i.e. arbitrary contributor code. So the trust boundary is repo + ref-CLASS, not
+ * `actions/checkout repository:`) also matches `refs/pull/N/merge` of any UNMERGED PR,
+ * i.e. arbitrary contributor code. So the trust boundary is repo + ref-CLASS, not
  * the repo alone (dec. 23, [R41]).
  *
  * This module is the *pure, syntactic* half of the policy: classify a ref and decide
