@@ -20,11 +20,11 @@ project:
     logo: ./logo.svg
 ```
 
-Two namespaces, two consumers: **`site:` is the website theme** (HTML — the journal's pages and
+Two namespaces, two consumers: **`site:` is the website theme** (HTML: the journal's pages and
 each paper's pages), **`project:` is the PDF**. A key in the wrong one does nothing.
 
 (logo-text)=
-## logo_text — the words at the top of every page
+## logo_text: the words at the top of every page
 
 `site.options.logo_text` is the short text the site theme shows next to the logo in the header
 of every page, on the journal website and on each paper's site.
@@ -37,7 +37,7 @@ first thing to fix.
 
 `site.options.logo`
 : The mark in the site header, beside `logo_text`. A fresh `brand.yml` ships this key commented
-  out, so out of the box the header shows `logo_text` and no image — `brand/logo.svg` reaches
+  out, so out of the box the header shows `logo_text` and no image; `brand/logo.svg` reaches
   the PDF only, through `project.options.logo` below. The two namespaces are read
   independently: setting one does not fill in the other.
 
@@ -52,17 +52,17 @@ first thing to fix.
 : Where clicking the logo goes. Without it, the logo links to the site's own front page.
 
 `site.options.style`
-: A CSS file — see [colours](#colours).
+: A CSS file. See [colours](#colours).
 
 Paths in these fields are relative to the `brand/` directory, so `./logo.svg` is
 `brand/logo.svg`; the engine rewrites them to absolute paths at build time so they still
-resolve when a paper in another repository builds. These four may also be full URLs — the site
+resolve when a paper in another repository builds. These four may also be full URLs; the site
 build fetches them.
 
 (colours)=
 ## Colours
 
-There is no colour key in `brand.yml`, and the site theme has no colour option — its options are
+There is no colour key in `brand.yml`, and the site theme has no colour option: its options are
 the images above plus layout switches. Colour comes from two different places depending on what
 you are colouring.
 
@@ -80,7 +80,7 @@ paper site, so it is the one place to restyle the whole journal.
 
 **The PDF** has an accent colour of its own: the engine's PDF template takes a `theme` option,
 which colours the title, links, cross-references, and the labels on the margin notes and the
-abstract. Body headings are not affected — they are set in smallcaps and italics, not in
+abstract. Body headings are not affected: they are set in smallcaps and italics, not in
 colour. It is a [typst](https://typst.app) colour expression, and the default is
 `blue.darken(30%)`:
 
@@ -97,7 +97,7 @@ project:
 `project.options.logo` is the one the seeded comments call "the typst PDF watermark", which
 undersells and mis-describes it. Concretely: the engine's PDF template places this image at the
 **top of the first page, in the left margin, at about a quarter of the text width**. It is a
-publisher's mark on page one — not a tint behind the text, and it appears on that page only.
+publisher's mark on page one, not a tint behind the text, and it appears on that page only.
 This is the one field a fresh `brand.yml` sets, pointing at `brand/logo.svg`. Using the same
 file in the site header takes a second entry, `site.options.logo`.
 
@@ -119,5 +119,5 @@ Brand edits are visible without pushing anything. In a paper checkout:
 oak start --instance <path to your journal clone>
 ```
 
-previews that paper with your journal's branding applied — the same configuration its CI
+previews that paper with your journal's branding applied: the same configuration its CI
 builds. In the journal repository, `oak start` previews the website itself.

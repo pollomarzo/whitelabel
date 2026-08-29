@@ -1,10 +1,10 @@
 /**
- * assets.ts — version-matched asset URLs the committed paper/instance files never carry.
+ * assets.ts: version-matched asset URLs the committed paper/instance files never carry.
  *
  * compose() injects these so the single `options.oaktree-sapling.version` coordinate is
  * the only knob (design §6, §7). Two of them fix live bugs:
  *  - Typst template: today the *edition* config hardcodes a floating git URL
- *    (isp-micropublication-2025.yml:12, `…isp-lapreprint-typst.git` @ default branch) —
+ *    (isp-micropublication-2025.yml:12, `…isp-lapreprint-typst.git` @ default branch):
  *    finding 2 / [R5]. The engine owns it as a zip attached to each engine tag; the
  *    edition config drops `template:` and compose sets it here.
  *  - Theme zip: the myst-theme fork, kept for now (design §7), referenced by its own
@@ -12,7 +12,7 @@
  *    version selects), so it lives here as an engine constant, not in tenant files.
  */
 
-/** myst-theme fork release pinned by THIS engine version (design §7 — dropped once
+/** myst-theme fork release pinned by THIS engine version (design §7, dropped once
  *  upstream book-theme color customization lands). The fork currently lives at
  *  `impact-scholars/myst-theme` (the only real release zip, per the website's nexus.yml);
  *  a neutral home is TBD with the fork drop. Bump on an engine release. */
@@ -22,7 +22,7 @@ export const THEME_VERSION = 'v0.2.0';
 /**
  * Where the tenant-facing documentation is published. The ONE place a docs URL is written
  * down: everything else names a TOPIC (`docs-links.ts`) and builds the URL from this base,
- * so moving the site — or a fork pointing at its own — is a one-line edit and never a grep.
+ * so moving the site (or a fork pointing at its own) is a one-line edit and never a grep.
  *
  * A URL printed by the CLI or stamped into a seeded file outlives the engine that wrote it,
  * so treat these paths as a published interface: pages may be rewritten, but the path and

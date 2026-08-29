@@ -1,14 +1,14 @@
 version: 1
 
 # Engine-owned base config every paper extends (design §5). Carries ZERO
-# journal-specific bytes — brand, venue, funding, license live in INSTANCE-CONFIG
+# journal-specific bytes: brand, venue, funding, license live in INSTANCE-CONFIG
 # editions/brand.
 #
 # The COMPLETE typst export lives here, not split across paper-base + edition ([R52]):
 # myst merges `exports` by `id`, whole-entry, base-wins with NO field merge, so a
 # skeleton here + `articles:` in the edition would race and drop one set of fields. So
 # the canonical single-article export (index.md, the n=1 default) is declared whole here;
-# editions declare NO exports. It carries no `template:` — compose() injects the
+# editions declare NO exports. It carries no `template:`, compose() injects the
 # engine-pinned zip URL (finding 2 / [R5]) so the template rides the engine tag. A
 # multi-article paper overrides this whole entry in its own myst.yml (own wins by id).
 project:

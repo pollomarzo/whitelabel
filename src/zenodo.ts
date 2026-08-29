@@ -1,10 +1,10 @@
 /**
- * zenodo.ts — the Zenodo deposit port (slice 3). A faithful port of
+ * zenodo.ts: the Zenodo deposit port (slice 3). A faithful port of
  * `isp-actions-config/scripts/zenodo-deposit.py` (prepare / publish / status), with the
  * design's corrections baked in:
  *
  *  - **Tenant bytes leave the code ([R19]).** The hardcoded ISP description blurb and the
- *    `neuromatch` community move to `journal.yml` `zenodo:` (both optional — a fresh tenant
+ *    `neuromatch` community move to `journal.yml` `zenodo:` (both optional, a fresh tenant
  *    has neither). See `loadJournalZenodo`.
  *  - **Every lookup paginates ([R20]/[R35.1]).** The python capped at `size=100` in three
  *    places (both `find_by_github` calls + `latest_version_dep_id`); past 100 depositions
@@ -19,14 +19,14 @@
  *  - **Provenance's review PR uses `gh api` ([R35.2])**, injected via `GitContext.reviewPr`,
  *    not a commit-subject `#\d+` regex.
  *
- * Kept from the python: the single-JSON result envelope (`status` field — the workflows'
+ * Kept from the python: the single-JSON result envelope (`status` field, the workflows'
  * error-reporting contract), idempotent draft reuse, `--sandbox` endpoint switch, and the
  * publish metadata-overwrite guarantee ([R22]).
  *
  * SEAMS (so the deposit logic is unit-testable with no network / no git): the Zenodo HTTP
  * transport (`ZenodoTransport`) and the git/gh side (`GitContext`) are injected. The real
  * transport is `createFetchTransport()` (global `fetch`, Node 24); the real git context lives
- * in `gh.ts`. This module does NOT import myst-cli — the abstract text is read from the myst
+ * in `gh.ts`. This module does NOT import myst-cli; the abstract text is read from the myst
  * HTML build's JSON artifacts on disk (keeping myst.ts the only myst-cli importer).
  */
 import { readFileSync, writeFileSync, existsSync, mkdirSync, rmSync, copyFileSync, readdirSync, statSync } from 'node:fs';
@@ -51,7 +51,7 @@ const ZENODO_EXTRA_PART = 'zenodo_extra_description';
 export const RESERVED_BUNDLE_NAMES = ['paper.pdf', 'source.zip', 'myst.yml', 'publication-provenance.json', 'engine.zip'];
 
 /** The CONDITIONAL sixth file: the resolved typst template's bytes, added only when the
- *  template is not already inside `engine.zip` ([R76] — a tenant's or an author's). It is
+ *  template is not already inside `engine.zip` ([R76], a tenant's or an author's). It is
  *  reserved against `deposit/` collisions but deliberately NOT in RESERVED_BUNDLE_NAMES,
  *  which is the always-present set the conformance harness asserts. */
 export const TEMPLATE_BUNDLE_NAME = 'template.zip';
@@ -97,7 +97,7 @@ export interface ZenodoTransport {
   ): Promise<TransportResponse>;
 }
 
-/** The real transport: global `fetch` (Node 24). Mirrors the python `request` helper —
+/** The real transport: global `fetch` (Node 24). Mirrors the python `request` helper:
  *  the access token rides as a query param, and a non-2xx logs the body to stderr. */
 export function createFetchTransport(): ZenodoTransport {
   return {
@@ -141,10 +141,10 @@ export interface GitContext {
 }
 
 /* --------------------------------------------------------------------------
- * Zenodo API (all lookups paginate — [R20]/[R35.1])
+ * Zenodo API (all lookups paginate, [R20]/[R35.1])
  * ------------------------------------------------------------------------ */
 
-// Depositions are loosely typed — Zenodo owns the shape, we read a few fields by name.
+// Depositions are loosely typed: Zenodo owns the shape, we read a few fields by name.
 export type Deposition = Record<string, any>;
 
 export class ZenodoError extends Error {
@@ -171,7 +171,7 @@ export class ZenodoApi {
     return res;
   }
 
-  /** Paginated listing — walks `page=1..` at `size=100` until a short page. Replaces the
+  /** Paginated listing: walks `page=1..` at `size=100` until a short page. Replaces the
    *  python's single unpaginated `size=100` fetch at all three lookup call sites ([R20]). */
   async listMyDepositions(opts: { q?: string } = {}): Promise<Deposition[]> {
     const size = 100;
@@ -211,7 +211,7 @@ export class ZenodoApi {
   }
 
   /** id-first, github-URL fallback ([R7]). Targeted `q` queries first (each paginated); a
-   *  full unfiltered scan runs only when BOTH targeted queries came back empty — mirroring
+   *  full unfiltered scan runs only when BOTH targeted queries came back empty, mirroring
    *  the python's `if not items:` fallback, but keyed on the id URN before the github URL. */
   async findDeposit(opts: { paperId?: string; githubUrl: string }): Promise<Deposition | null> {
     const urn = opts.paperId ? paperUrn(opts.paperId) : null;
@@ -236,7 +236,7 @@ export class ZenodoApi {
     return null;
   }
 
-  /** Newest deposition for a concept DOI (paginated — the third [R35.1] site). */
+  /** Newest deposition for a concept DOI (paginated, the third [R35.1] site). */
   async latestVersionDepId(conceptDoi: string): Promise<number | null> {
     let items = await this.listMyDepositions({ q: `conceptdoi:"${conceptDoi}"` });
     if (items.length === 0) {
@@ -326,7 +326,7 @@ export const zenodoExtraParagraphs = (repoRoot: string): string[] | null =>
   partParagraphs(repoRoot, ZENODO_EXTRA_PART);
 
 /* --------------------------------------------------------------------------
- * Metadata builder — tenant bytes now come from journal.yml ([R19])
+ * Metadata builder: tenant bytes now come from journal.yml ([R19])
  * ------------------------------------------------------------------------ */
 
 function escapeHtml(s: string): string {
@@ -383,7 +383,7 @@ export function buildMetadata(input: MetadataInput): Record<string, unknown> {
   const desc: string[] = [];
   if (abstractParas) desc.push(...abstractParas.map((p) => `<p>${escapeHtml(p)}</p>`));
   // The ISP "created as part of the Neuromatch Impact Scholars Program" blurb was hardcoded
-  // in the python; it is now an OPTIONAL per-tenant field ([R19]) — a fresh tenant has none.
+  // in the python; it is now an OPTIONAL per-tenant field ([R19]); a fresh tenant has none.
   if (zenodo.description_blurb) desc.push(`<p>${escapeHtml(zenodo.description_blurb)}</p>`);
   if (extraDescParas) desc.push(...extraDescParas.map((p) => `<p>${escapeHtml(p)}</p>`));
   const yt = youtubeUrl(project);
@@ -415,7 +415,7 @@ export function buildMetadata(input: MetadataInput): Record<string, unknown> {
     related_identifiers: related,
     access_right: 'open',
   };
-  // Community is now optional per-tenant ([R19]) — the hardcoded `neuromatch` is gone.
+  // Community is now optional per-tenant ([R19]); the hardcoded `neuromatch` is gone.
   if (zenodo.community) md.communities = [{ identifier: zenodo.community }];
   if (keywords.length) md.keywords = keywords;
   if (version !== undefined) md.version = version;
@@ -425,7 +425,7 @@ export function buildMetadata(input: MetadataInput): Record<string, unknown> {
 }
 
 /* --------------------------------------------------------------------------
- * Bundle assembly — `deposit/` folder replaces the root glob ([R28])
+ * Bundle assembly: `deposit/` folder replaces the root glob ([R28])
  * ------------------------------------------------------------------------ */
 
 export interface BundleProvenance {
@@ -451,12 +451,12 @@ export class TemplateArchiveError extends Error {}
 
 /**
  * The typst template the build actually used, read from the DERIVED config compose stamped
- * (`myst.oak.yml`, which the build leaves beside `myst.yml` — [R71]). Reading the stamped
+ * (`myst.oak.yml`, which the build leaves beside `myst.yml`, [R71]). Reading the stamped
  * value rather than re-running the precedence chain is deliberate: the deposit must archive
  * what was rendered, not what would be rendered now.
  *
  * Falls back to the author's `myst.yml` when there is no derived config (a deposit run
- * against a tree that was never built here), and to null when neither declares one — which
+ * against a tree that was never built here), and to null when neither declares one, which
  * means the engine's own default, already inside `engine.zip`.
  */
 export function readStampedTemplate(paperRoot: string): string | null {
@@ -476,7 +476,7 @@ export function readStampedTemplate(paperRoot: string): string | null {
 }
 
 /**
- * Where myst materialized a template reference on disk — a mirror of `myst-templates`'
+ * Where myst materialized a template reference on disk, a mirror of `myst-templates`'
  * `resolveInputs` (`download.js:71-103`), which is a pure, documented mapping we can restate
  * in ten lines rather than import (myst.ts stays the sole myst-cli importer, and this module
  * deliberately holds no myst dependency).
@@ -492,7 +492,7 @@ export function resolveTemplateDir(template: string, paperRoot: string): string 
   //
   // Probed against the PAPER ROOT, not this process's cwd. myst's `resolveInputs` probes
   // `existsSync(template)` relative to cwd, and myst.ts chdirs into the paper root for the
-  // build — so the paper root is the directory an author's relative `./my-template` was
+  // build, so the paper root is the directory an author's relative `./my-template` was
   // resolved against when the PDF was rendered. The deposit runs from wherever `oak` was
   // invoked, so probing cwd here would miss a perfectly valid local template, fall through
   // to the name branch, and refuse a deposit that was actually fine.
@@ -527,7 +527,7 @@ export function resolveTemplateDir(template: string, paperRoot: string): string 
  * conformance harness asserts) untouched.
  *
  * Otherwise the bytes MUST be archived: a tenant's or an author's template rides in no other
- * artifact, so without this the DOI'd PDF quietly stops being reproducible (§7 / [R66]) —
+ * artifact, so without this the DOI'd PDF quietly stops being reproducible (§7 / [R66]),
  * which is why unlocatable bytes are a hard error rather than a warning. This is the real
  * cost of template precedence, and the reason it cannot ship half-built.
  */
@@ -544,7 +544,7 @@ export function templateArchiveDir(paperRoot: string, engineRoot: string): strin
     throw new TemplateArchiveError(
       `typst template "${template}" resolves to "${dir}", which does not exist, so the ` +
         `deposit cannot archive the template it rendered with. A non-engine template rides ` +
-        `in no other deposit artifact — publishing without it would give a DOI'd PDF that ` +
+        `in no other deposit artifact; publishing without it would give a DOI'd PDF that ` +
         `cannot be reproduced. Run the build in this working tree before depositing.`,
     );
   }
@@ -563,7 +563,7 @@ export function templateArchiveDir(paperRoot: string, engineRoot: string): strin
  * self-contained for re-rendering the PDF (linux-x86_64 + node + the deposit, nothing fetched).
  *
  * Plus a CONDITIONAL sixth file, `template.zip` ([R76]): when the rendered typst template is
- * NOT the engine's own — a tenant's or an author's, local or remote — it rides in no other
+ * NOT the engine's own (a tenant's or an author's, local or remote) it rides in no other
  * artifact, so its resolved bytes are archived here. Self-containment was previously an
  * accident of the template happening to sit inside what `engine.zip` already captured; with
  * template precedence it becomes an explicit rule. See {@link templateArchiveDir}.
@@ -585,7 +585,7 @@ export async function buildBundle(
   if (collisions.length) {
     throw new BundleCollisionError(
       `deposit/ file(s) collide with engine-reserved names: ${collisions.join(', ')}. ` +
-        `Rename them — ${reserved.join(', ')} are added by the engine.`,
+        `Rename them: ${reserved.join(', ')} are added by the engine.`,
     );
   }
 
@@ -622,7 +622,7 @@ export class BundleCollisionError extends Error {}
  * ------------------------------------------------------------------------ */
 
 /** Read the tenant's `zenodo:` block from `<instanceRoot>/journal.yml`. A fresh tenant (or
- *  a build with no instance) has neither blurb nor community — return the empty defaults. */
+ *  a build with no instance) has neither blurb nor community, return the empty defaults. */
 export function loadJournalZenodo(instanceRoot: string | null): ZenodoConfig {
   if (!instanceRoot) return JournalConfig.parse({ name: 'x' }).zenodo;
   const path = join(instanceRoot, 'journal.yml');
@@ -638,7 +638,7 @@ export function loadJournalZenodo(instanceRoot: string | null): ZenodoConfig {
 
 export interface Outcome {
   exitCode: number;
-  /** Always carries `status: 'ok' | 'error'` — the workflows' error-reporting contract. */
+  /** Always carries `status: 'ok' | 'error'`, the workflows' error-reporting contract. */
   result: Record<string, unknown>;
 }
 
@@ -667,7 +667,7 @@ export interface PrepareInput {
 }
 
 /**
- * `oak deposit prepare` — reserve (or reuse) a draft and stamp `project.doi/github/date`
+ * `oak deposit prepare`: reserve (or reuse) a draft and stamp `project.doi/github/date`
  * into the working-tree myst.yml ([R22]: the diff is three fields, not one). The DOI PR
  * itself is opened by the CLI over this working-tree write (§1d, [R3]).
  *
@@ -749,7 +749,7 @@ export interface PublishInput {
 }
 
 /** The engine's pinned typst version, for deposit provenance. `null` if the pin file is
- *  absent (best-effort — provenance records what it can, never blocks the deposit). */
+ *  absent (best-effort: provenance records what it can, never blocks the deposit). */
 function readTypstVersion(engineRoot: string): string | null {
   const path = join(engineRoot, 'typst.version');
   if (!existsSync(path)) return null;
@@ -758,7 +758,7 @@ function readTypstVersion(engineRoot: string): string | null {
 }
 
 /**
- * `oak deposit publish` (also the core of `oak release`) — populate the reserved draft with
+ * `oak deposit publish` (also the core of `oak release`), populate the reserved draft with
  * the final metadata + files and leave it as an unsubmitted draft. Env is DERIVED from the
  * committed DOI prefix (a tag can't hit the wrong env, [R4]); `--sandbox` must agree with it.
  */
@@ -768,7 +768,7 @@ export async function cmdPublish(input: PublishInput): Promise<Outcome> {
   const project = projectOf(doc);
 
   const conceptDoi: string | undefined = project.doi;
-  if (!conceptDoi) return err(2, 'project.doi missing — run prepare and merge that PR before tagging.');
+  if (!conceptDoi) return err(2, 'project.doi missing; run prepare and merge that PR before tagging.');
   if (isSandboxDoi(conceptDoi) !== sandbox) {
     return err(2, `DOI prefix says sandbox=${isSandboxDoi(conceptDoi)} but --sandbox=${sandbox}.`);
   }
@@ -778,7 +778,7 @@ export async function cmdPublish(input: PublishInput): Promise<Outcome> {
   if (!existsSync(pdf)) return err(2, `--pdf not found: ${pdf}`);
 
   const githubUrl: string | undefined = project.github;
-  if (!githubUrl) return err(2, 'project.github missing — should have been set by prepare.');
+  if (!githubUrl) return err(2, 'project.github missing; should have been set by prepare.');
 
   const latestId = await api.latestVersionDepId(conceptDoi);
   if (latestId === null) {
@@ -877,7 +877,7 @@ export async function cmdStatus(input: StatusInput): Promise<Outcome> {
   };
 
   if (!conceptDoi) {
-    out.state = 'no doi yet — prepare not run or PR not merged';
+    out.state = 'no doi yet: prepare not run or PR not merged';
     return { exitCode: 0, result: out };
   }
   if (isSandboxDoi(conceptDoi) !== sandbox) {

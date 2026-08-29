@@ -1,5 +1,5 @@
 /**
- * zenodo.test.ts — the deposit port's logic, exercised through a FAKE transport (no
+ * zenodo.test.ts: the deposit port's logic, exercised through a FAKE transport (no
  * network) and a FAKE git context (no git/gh). Proves the slice-3 corrections:
  * pagination past 100 ([R20]/[R35.1]), id-first identity ([R7]), tenant bytes from
  * journal.yml ([R19]), the `deposit/` folder + collision guard ([R28]), and the
@@ -80,7 +80,7 @@ const dep = (over: Partial<Deposition> = {}): Deposition => ({
 });
 
 /* --------------------------------------------------------------------------
- * Pagination — [R20]/[R35.1]
+ * Pagination: [R20]/[R35.1]
  * ------------------------------------------------------------------------ */
 
 describe('listMyDepositions pagination', () => {
@@ -101,7 +101,7 @@ describe('listMyDepositions pagination', () => {
 });
 
 /* --------------------------------------------------------------------------
- * Identity — id-first, github fallback ([R7])
+ * Identity: id-first, github fallback ([R7])
  * ------------------------------------------------------------------------ */
 
 describe('findDeposit', () => {
@@ -153,7 +153,7 @@ describe('findDeposit', () => {
 });
 
 /* --------------------------------------------------------------------------
- * Metadata — tenant bytes from journal.yml ([R19]) + id anchor ([R7])
+ * Metadata: tenant bytes from journal.yml ([R19]) + id anchor ([R7])
  * ------------------------------------------------------------------------ */
 
 describe('buildMetadata', () => {
@@ -198,7 +198,7 @@ describe('buildMetadata', () => {
 });
 
 /* --------------------------------------------------------------------------
- * Bundle — deposit/ folder + collision guard ([R28])
+ * Bundle: deposit/ folder + collision guard ([R28])
  * ------------------------------------------------------------------------ */
 
 describe('buildBundle', () => {
@@ -293,7 +293,7 @@ describe('buildBundle', () => {
   it("archives an author's RELATIVE template, resolved against the paper root", async () => {
     // Caught by a real end-to-end run, not by construction: myst resolves an author's
     // `./my-template` against the build cwd (the paper root), but the deposit runs from
-    // wherever `oak` was invoked — probing cwd here refused a perfectly valid deposit.
+    // wherever `oak` was invoked: probing cwd here refused a perfectly valid deposit.
     const { paper, engine } = paperAndEngine();
     mkdirSync(join(paper, 'my-template'));
     writeFileSync(join(paper, 'my-template', 'template.yml'), 'kind: typst');
@@ -328,7 +328,7 @@ describe('buildBundle', () => {
 
   it('REFUSES to deposit when a non-engine template’s bytes cannot be found', async () => {
     const { paper, engine } = paperAndEngine();
-    stamp(paper, 'https://example.org/t.zip'); // never materialized — nothing was built here
+    stamp(paper, 'https://example.org/t.zip'); // never materialized; nothing was built here
 
     // A DOI'd PDF nobody can re-render is worse than a failed deposit.
     await expect(
@@ -393,7 +393,7 @@ describe('readStampedTemplate / resolveTemplateDir ([R76])', () => {
 });
 
 /* --------------------------------------------------------------------------
- * prepare / publish — envelope, working-tree write, [R29]
+ * prepare / publish: envelope, working-tree write, [R29]
  * ------------------------------------------------------------------------ */
 
 function paperRepo(mystBody: string): string {

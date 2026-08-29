@@ -1,7 +1,7 @@
-# Pins — the trust boundary (design §6a, dec. 21, [R37]). The engine repo (org/repo) is
+# Pins: the trust boundary (design §6a, dec. 21, [R37]). The engine repo (org/repo) is
 # pinned here; only the *ref* (project.options.oaktree-sapling.version in myst.yml) floats.
 # Read by BOTH the CI shim (yq, in action.yml) and local `oak`, so CI and local share one
-# source of truth and can't drift. Covered by the broad `.github/` CODEOWNERS gate — no
+# source of truth and can't drift. Covered by the broad `.github/` CODEOWNERS gate: no
 # new gated path. `oak bootstrap` / copier fills these; editing them is CODEOWNERS-gated
 # because an instance/edition config can name MyST plugins (JS run at build time), so the
 # instance repo is a code-adjacent source (same trust argument as the engine source).

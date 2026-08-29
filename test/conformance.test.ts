@@ -1,5 +1,5 @@
 /**
- * conformance.test.ts — `oak conformance` orchestration through a FAKE `ConformanceGh` seam
+ * conformance.test.ts: `oak conformance` orchestration through a FAKE `ConformanceGh` seam
  * (no gh/git). Slice C0: `reset` closes labelled PRs + deletes `cert-*` branches + `*-cert-*`
  * tags, is idempotent (a second run is a no-op), and leaves unrelated refs untouched.
  */
@@ -73,7 +73,7 @@ describe('cmdConformanceReset', () => {
       prs: [
         { number: 1, headRef: `${CERT_BRANCH_PREFIX}101`, label: CONFORMANCE_LABEL },
         { number: 2, headRef: 'secondacct:conformance-fork', label: CONFORMANCE_LABEL }, // fork PR, non-cert head
-        { number: 3, headRef: 'feature/unrelated' }, // no label — an author PR, must survive
+        { number: 3, headRef: 'feature/unrelated' }, // no label: an author PR, must survive
       ],
       branches: [`${CERT_BRANCH_PREFIX}101`, `${CERT_BRANCH_PREFIX}102`, 'main', 'gh-pages'],
       tags: [`v0.0.0${CERT_TAG_MARKER}101`, 'v0.0.1', 'v0.0.2'],
@@ -97,7 +97,7 @@ describe('cmdConformanceReset', () => {
     expect(gh.tags).toEqual(['v0.0.1', 'v0.0.2']);
   });
 
-  it('is idempotent — a second reset is a no-op with changed: 0', async () => {
+  it('is idempotent: a second reset is a no-op with changed: 0', async () => {
     const gh = fakeGh({
       prs: [{ number: 1, headRef: `${CERT_BRANCH_PREFIX}101`, label: CONFORMANCE_LABEL }],
       branches: [`${CERT_BRANCH_PREFIX}101`],
@@ -128,7 +128,7 @@ describe('cmdConformanceReset', () => {
 });
 
 /* --------------------------------------------------------------------------
- * cmdConformanceCertify (C1 — install V + push→main)
+ * cmdConformanceCertify (C1: install V + push→main)
  * ------------------------------------------------------------------------ */
 
 const TAG = 'v0.0.0-dev.9';
@@ -143,7 +143,7 @@ const PREVIEW_COMMENT = '<!-- oak-sticky: oak-preview -->\n**Preview deployed** 
 /** Full seam for certify. Reset methods are inert (a certify run resets a clean fixture in
  *  tests); the C1/C2/C3 methods are driven by `over`. Records label/merge/close/tag/approve/
  *  release calls. The default publish run on the deposit tag sha ('main-sha') is observed
- *  `waiting` on the first poll (the required-reviewer gate) then `completed`/`success` after —
+ *  `waiting` on the first poll (the required-reviewer gate) then `completed`/`success` after,
  *  so the happy path exercises the approve→conclude transition without stateful `over`. */
 function fakeCertGh(over: {
   workflowRuns?: (sha: string) => WorkflowRun[];
@@ -174,7 +174,7 @@ function fakeCertGh(over: {
   const openedForkPr: [string, string][] = []; // [forkRepo, branch]
   const deletedForkBranches: string[] = [];
   const approvedRuns: number[] = [];
-  let resetSweeps = 0; // reset() calls listOpenPrs first — count sweeps to prove teardown ran
+  let resetSweeps = 0; // reset() calls listOpenPrs first, count sweeps to prove teardown ran
   let publishPolls = 0;
   const defaultWorkflowRuns = (sha: string): WorkflowRun[] => {
     const runs = [...SUCCESS_CI];
@@ -281,7 +281,7 @@ describe('cmdConformanceCertify', () => {
     expect(gh.pushedTags).toEqual([[CERT_DEPOSIT_TAG, 'main-sha']]); // reserved clean-semver tag
     expect(gh.approvals).toEqual([[3, 'zenodo-publish']]); // approved the waiting deployment gate
     expect(gh.deletedReleases).toContain(CERT_DEPOSIT_TAG); // pre-push idempotency + post-success cleanup
-    // The optional fork phase is skipped without a fork — three paths, no fork methods touched.
+    // The optional fork phase is skipped without a fork, three paths, no fork methods touched.
     expect((out.result.paths as string[]).length).toBe(3);
     expect(out.result).not.toHaveProperty('forkPr');
     expect(gh.openedForkPr).toEqual([]);
@@ -383,7 +383,7 @@ describe('cmdConformanceCertify', () => {
     expect(gh.merged).toEqual([7]); // push→main still happened; preview is the failing phase
   });
 
-  it('is INCONCLUSIVE (not failed) when the preview URL persistently 5xxs — a third-party outage', async () => {
+  it('is INCONCLUSIVE (not failed) when the preview URL persistently 5xxs, a third-party outage', async () => {
     const gh = fakeCertGh();
     const out = await cmdConformanceCertify(
       { repo: REPO, tag: TAG },
@@ -422,7 +422,7 @@ describe('cmdConformanceCertify', () => {
     expect(out.result).toMatchObject({ status: 'failed', path: 'deposit' });
     expect(out.result.failure).toContain('sandbox DOI');
     expect(gh.merged).toEqual([7]); // push→main + preview succeeded; deposit is the failing phase
-    expect(gh.pushedTags).toEqual([]); // never tagged — the precondition failed first
+    expect(gh.pushedTags).toEqual([]); // never tagged; the precondition failed first
   });
 
   it('fails at the deposit phase when the committed DOI is production, not sandbox', async () => {

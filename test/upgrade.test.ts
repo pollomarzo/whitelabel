@@ -1,5 +1,5 @@
 /**
- * upgrade.test.ts — `oak upgrade` drift + orchestration (slice 5), through FAKE seams (no
+ * upgrade.test.ts: `oak upgrade` drift + orchestration (slice 5), through FAKE seams (no
  * gh/git). Proves: computeDrift's 2-way reset-to-template semantics (clean / changed-template
  * / hand-edited-repo); --version-only writes only myst.yml; --files-only overwrites only the
  * drifted frozen files; --both; a clean repo opens no PR; the PR branch + paths are

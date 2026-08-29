@@ -1,5 +1,5 @@
 /**
- * preview.test.ts — the deploy-preview / notify logic ([R69]), exercised through FAKE seams
+ * preview.test.ts: the deploy-preview / notify logic ([R69]), exercised through FAKE seams
  * (no Cloudflare, no git/gh). Proves the degrade-never-fail contract ([R16]), the `.pr-number`
  * strip ([R26]), journal-driven CF config ([R27]), and the new-version reminder ([R23]).
  */
@@ -187,7 +187,7 @@ describe('loadJournalPreview', () => {
 });
 
 /* --------------------------------------------------------------------------
- * Orchestration — cmdDeployPreview
+ * Orchestration: cmdDeployPreview
  * ------------------------------------------------------------------------ */
 
 const baseInput = (siteDir: string, over: Record<string, unknown> = {}) => ({
@@ -215,7 +215,7 @@ describe('cmdDeployPreview', () => {
     expect(existsSync(join(dir, '.pr-number'))).toBe(false); // stripped
   });
 
-  it('degrades to an artifact comment when the CF deploy throws — never fails ([R16])', async () => {
+  it('degrades to an artifact comment when the CF deploy throws, never fails ([R16])', async () => {
     const dir = siteWithPr('7');
     const { gh, stickies } = fakeGh();
     const out = await cmdDeployPreview(baseInput(dir, { instanceRoot: instanceCf(dir) }), {
@@ -253,7 +253,7 @@ describe('cmdDeployPreview', () => {
     expect(stickies).toHaveLength(0);
   });
 
-  it('runs the new-version reminder inline ([R16]) — posts on an already-published paper', async () => {
+  it('runs the new-version reminder inline ([R16]), posts on an already-published paper', async () => {
     const dir = siteWithPr('7');
     const mystPath = join(dir, 'myst.yml');
     writeFileSync(mystPath, 'project:\n  doi: 10.5281/zenodo.55\n');
@@ -287,7 +287,7 @@ function instanceCf(near: string): string {
 }
 
 /* --------------------------------------------------------------------------
- * Orchestration — runNewVersionReminder
+ * Orchestration: runNewVersionReminder
  * ------------------------------------------------------------------------ */
 
 describe('runNewVersionReminder', () => {
@@ -317,7 +317,7 @@ describe('runNewVersionReminder', () => {
     expect(gh.labels).toHaveLength(1);
   });
 
-  it('hard-errors (exit 1) when a v* tag exists but the DOI is missing — published but unlinked', () => {
+  it('hard-errors (exit 1) when a v* tag exists but the DOI is missing, published but unlinked', () => {
     const { input: i, gh } = input(mystWith(undefined), ['v2.0.0']);
     const out = runNewVersionReminder(i, gh.gh);
     expect(out.exitCode).toBe(1);

@@ -1,8 +1,8 @@
 /**
- * integration.test.ts — the fixture build through the REAL bundled CLI (slice-0
+ * integration.test.ts: the fixture build through the REAL bundled CLI (slice-0
  * release-safety canary, design §12 step 0). Drives `node dist/cli.cjs` rather than
  * importing myst-cli in-process, because unbundled myst-cli crashes on Node 24 (the
- * docx interop bug the esbuild bundle papers over — spike, [R51]). So this exercises
+ * docx interop bug the esbuild bundle papers over, spike, [R51]). So this exercises
  * the exact artifact the shim runs.
  *
  * Skipped unless the bundle + typst + the in-engine template are all present (so the
@@ -74,7 +74,7 @@ describe.skipIf(!runnable)('fixture build through the bundled CLI', () => {
     expect(readFileSync(join(tmp, 'myst.yml')).equals(authorBefore)).toBe(true);
 
     // the two-pass wrote the complete typst entry (articles + engine template) to the DERIVED
-    // config — never the author's.
+    // config, never the author's.
     const doc = parseDocument(readFileSync(join(tmp, DERIVED_CONFIG_FILE), 'utf8'));
     expect(doc.getIn(['project', 'exports', 0, 'template'])).toBe(template);
     // articles took effect (the [R53] regression this canary exists for), asserted on the

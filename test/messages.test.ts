@@ -1,5 +1,5 @@
 /**
- * messages.test.ts — the guard that keeps `src/messages.ts` worth reviewing.
+ * messages.test.ts: the guard that keeps `src/messages.ts` worth reviewing.
  *
  * The user reviews the wording in ONE file; that only stays true if new prose cannot quietly
  * appear beside the code that prints it. So this suite scans the tenant-facing modules for a
@@ -7,7 +7,7 @@
  * / `error:` / `reason:` field of a result) and fails on any it finds.
  *
  * It is a lint, not a proof: a message assembled from variables slips through. It catches the
- * common case — someone adding `log('  ✓ done')` — which is exactly how the catalog would rot.
+ * common case (someone adding `log('  ✓ done')`) which is exactly how the catalog would rot.
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';

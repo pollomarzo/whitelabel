@@ -24,15 +24,15 @@ oak
 
 Setting up repos:
 
-- `oak bootstrap journal` — create the journal repo (settings, branding, paper list)
-- `oak bootstrap paper` — create a paper repo pointing at a journal
-- `oak upgrade` — move a paper repo to a newer engine version, as a pull request
+- `oak bootstrap journal`: create the journal repo (settings, branding, paper list)
+- `oak bootstrap paper`: create a paper repo pointing at a journal
+- `oak upgrade`: move a paper repo to a newer engine version, as a pull request
 
 Working on a paper:
 
-- `oak validate` — run the journal's checks over a manuscript
-- `oak build` — build the paper's website and PDF into `_build/`
-- `oak start` — preview it in a browser with the journal's settings applied
+- `oak validate`: run the journal's checks over a manuscript
+- `oak build`: build the paper's website and PDF into `_build/`
+- `oak start`: preview it in a browser with the journal's settings applied
 
 The rest (`check-post`, `deploy-preview`, `deposit`, `release`, `notify`, `conformance`) are run by the generated workflows and are rarely typed by hand.
 
@@ -47,7 +47,7 @@ Both are being worked on. Until then, CI uses release tags.
 
 ## Editorial checks
 
-`oak validate` runs two kinds of check. The engine's own invariants are built in. The editorial checks a journal selects — authors exist, have ORCIDs, have valid CRediT roles, abstract exists, keywords defined — come from the MIT-licensed [`@curvenote/check-implementations`](https://www.npmjs.com/package/@curvenote/check-implementations) and [`@curvenote/check-definitions`](https://www.npmjs.com/package/@curvenote/check-definitions). The engine supplies the runner and the GitHub Check Run reporter.
+`oak validate` runs two kinds of check. The engine's own invariants are built in. The editorial checks a journal selects (authors exist, have ORCIDs, have valid CRediT roles, abstract exists, keywords defined) come from the MIT-licensed [`@curvenote/check-implementations`](https://www.npmjs.com/package/@curvenote/check-implementations) and [`@curvenote/check-definitions`](https://www.npmjs.com/package/@curvenote/check-definitions). The engine supplies the runner and the GitHub Check Run reporter.
 
 ## Development
 

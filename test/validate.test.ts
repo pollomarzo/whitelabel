@@ -121,7 +121,7 @@ describe('checkThumbnail ([R81])', () => {
   });
 });
 
-describe('isFloatingTemplate ([R76] — the [R5] hygiene lint, not a remoteness lint)', () => {
+describe('isFloatingTemplate ([R76], the [R5] hygiene lint, not a remoteness lint)', () => {
   it('treats pinned remote references as fine', () => {
     expect(isFloatingTemplate('https://github.com/o/r/releases/download/v1.2.3/t.zip')).toBe(false);
     expect(isFloatingTemplate('https://github.com/o/r/archive/refs/tags/v1.2.3.zip')).toBe(false);
@@ -154,7 +154,7 @@ describe('isFloatingTemplate ([R76] — the [R5] hygiene lint, not a remoteness 
 describe('checkTemplates ([R76])', () => {
   const ids = (f: ReturnType<typeof checkTemplates>) => f.map((x) => x.check);
 
-  it('flags an author template that overrides the journal’s — as a WARN, never an error', () => {
+  it('flags an author template that overrides the journal’s, as a WARN, never an error', () => {
     const f = checkTemplates(
       { instanceRoot: '/i', authorTemplate: './mine', tenantTemplate: './journal' },
       allFalse,
@@ -207,7 +207,7 @@ describe('checkTemplates ([R76])', () => {
   });
 });
 
-describe('runValidate — exit codes over the fixture instance', () => {
+describe('runValidate: exit codes over the fixture instance', () => {
   const goodProject = {
     id: 'fixture-2026-sample-paper',
     authors: [{ name: 'Ada Fixture', orcid: '0000-0002-1825-0097', roles: ['software'] }],
@@ -238,7 +238,7 @@ describe('runValidate — exit codes over the fixture instance', () => {
     expect(out.checkRun.conclusion).toBe('failure');
   });
 
-  it('a bad id (identity) does NOT short-circuit Layer B — editorial checks still run, id still gates (exit 1)', async () => {
+  it('a bad id (identity) does NOT short-circuit Layer B, editorial checks still run, id still gates (exit 1)', async () => {
     // id-gate-relocation: an id error is `identity`, not `structural`, so myst can still process
     // and the author gets the full fix-list. Old behavior skipped Layer B on any Layer-A error.
     const bad = { id: 'fixture-template-placeholder', authors: [], abstract: '', keywords: [] };
@@ -286,7 +286,7 @@ describe('runValidate — exit codes over the fixture instance', () => {
     expect(out.checkRun.conclusion).toBe('success');
   });
 
-  // The edge throws when Layer B runs — stands in for `processProject` failing on an unbuildable
+  // The edge throws when Layer B runs: stands in for `processProject` failing on an unbuildable
   // project (e.g. a missing index.md). Regression guard for the crash where such a throw took the
   // whole validator down with no report.
   const edgeThrowingInLayerB = (project: unknown): MystEdge => ({
@@ -337,7 +337,7 @@ describe('runValidate — exit codes over the fixture instance', () => {
   });
 });
 
-describe('checkLayerDisjointness — extends layers must own disjoint keys ([R72])', () => {
+describe('checkLayerDisjointness: extends layers must own disjoint keys ([R72])', () => {
   const paperBase = {
     project: { thumbnail: 'thumbnails/thumbnail.png', exports: [{ id: 'typst-pdf' }] },
     site: { options: { hide_toc: true } },
@@ -360,7 +360,7 @@ describe('checkLayerDisjointness — extends layers must own disjoint keys ([R72
     ).toEqual([]);
   });
 
-  it('does NOT flag site.options siblings — that map merges field-wise ([R68])', () => {
+  it('does NOT flag site.options siblings: that map merges field-wise ([R68])', () => {
     // paper-base owns site.options.hide_toc, brand owns site.options.logo. Comparing
     // `site.options` as a unit (rather than per leaf) would falsely flag these.
     const out = checkLayerDisjointness([
@@ -413,8 +413,8 @@ describe('checkLayerDisjointness — extends layers must own disjoint keys ([R72
 
 describe('the author template is RAW-LIFTED, never read from the composed project ([R82])', () => {
   // The regression this whole mechanism exists to prevent. Once validate reads the COMPOSED
-  // config, the typst export always carries a template — compose stamps `flag ?? author ??
-  // tenant ?? engine` — so digging `authorTemplate` out of `project.exports` would make EVERY
+  // config, the typst export always carries a template, compose stamps `flag ?? author ??
+  // tenant ?? engine`, so digging `authorTemplate` out of `project.exports` would make EVERY
   // paper look like it overrode the journal's template.
   const composedProject = {
     id: 'j-2026-x',
@@ -427,7 +427,7 @@ describe('the author template is RAW-LIFTED, never read from the composed projec
   };
   const tenantInstance = () => {
     // `allTrue` probes claim every path exists, so the instance must really carry the files
-    // runLayerA reads (journal + registry) — otherwise the read throws before the assertion.
+    // runLayerA reads (journal + registry), otherwise the read throws before the assertion.
     const dir = tmpDir({ 'journal.yml': 'name: J\ntypst_template: ./tenant-template\n' });
     mkdirSync(join(dir, 'registry'), { recursive: true });
     writeFileSync(join(dir, 'registry', 'papers.yml'), '[]\n');
@@ -456,7 +456,7 @@ describe('the author template is RAW-LIFTED, never read from the composed projec
   });
 });
 
-describe('splitUnrunnableChecks — a check whose precondition is unmet is REPORTED, not run ([R82])', () => {
+describe('splitUnrunnableChecks: a check whose precondition is unmet is REPORTED, not run ([R82])', () => {
   const selected = [{ id: 'authors-exist' }, { id: 'exports-exist' }];
 
   it('holds exports-exist back when there are no build artifacts, with a cause', () => {
@@ -476,7 +476,7 @@ describe('splitUnrunnableChecks — a check whose precondition is unmet is REPOR
   it('marks it OPTIONAL even when the journal selected it as blocking', () => {
     // The merge-gate invariant. `_build/exports` is never present in CI (gitignored, fresh
     // checkout, no build step in check.yml), so a blocking held-back result would fail the
-    // Check Run on every PR of every paper, with nothing an AUTHOR could do — only the tenant
+    // Check Run on every PR of every paper, with nothing an AUTHOR could do, only the tenant
     // can edit journal.yml. And it would pass locally, where a previous build left the dir.
     const { unrunnable } = splitUnrunnableChecks([{ id: 'exports-exist' }], '/paper', allFalse);
     expect(unrunnable[0]!.optional).toBe(true);
@@ -484,7 +484,7 @@ describe('splitUnrunnableChecks — a check whose precondition is unmet is REPOR
   });
 });
 
-describe('runValidate — degrading when there is nothing to compose ([R82])', () => {
+describe('runValidate: degrading when there is nothing to compose ([R82])', () => {
   it('still reports, and SAYS it ran uncomposed', async () => {
     const out = await runValidate(
       { paperRoot: '/paper', instanceRoot, edge: edgeReturning({ id: 'fixture-2026-sample-paper' }) },
@@ -505,7 +505,7 @@ describe('runValidate — degrading when there is nothing to compose ([R82])', (
   it('a compose FAILURE is a gating finding, not just a note', async () => {
     // The merge-gate hole this closes: with an engine checkout AND an instance present,
     // everything compose needs was supplied, so a throw means the paper's own config broke
-    // composition — a typo'd `edition:`, a missing coordinate, the [R36] cross-check. `oak
+    // composition: a typo'd `edition:`, a missing coordinate, the [R36] cross-check. `oak
     // build` hits the identical throw, so a green gate here ships a paper that cannot build.
     // A REAL paper root: materializeDerived reads the author's myst.yml off disk (and needs a
     // parseable engine coordinate) before the edge is ever consulted, so a fake path would
@@ -517,7 +517,7 @@ describe('runValidate — degrading when there is nothing to compose ([R82])', (
         '    oaktree-sapling:\n      version: v0.0.0-dev.1\n      edition: typo\n',
     );
     const edge: MystEdge = {
-      // Exactly how myst fails on an `extends:` entry that isn't there — the typo'd edition.
+      // Exactly how myst fails on an `extends:` entry that isn't there: the typo'd edition.
       loadProject: async (_dir: string, configFile?: string) => {
         if (configFile) throw new Error('Cannot find config file: editions/typo.yml');
         return { id: 'fixture-2026-sample-paper' };
@@ -532,7 +532,7 @@ describe('runValidate — degrading when there is nothing to compose ([R82])', (
     );
     const compose = out.errors.find((e) => e.check === 'compose');
     expect(compose?.severity).toBe('error');
-    expect(compose?.klass).toBe('config'); // not `structural` — layer B still runs
+    expect(compose?.klass).toBe('config'); // not `structural`, layer B still runs
     expect(compose?.message).toMatch(/editions\/typo\.yml/);
     expect(out.status).toBe('error');
     expect(out.exitCode).toBe(1);

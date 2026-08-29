@@ -1,9 +1,9 @@
-# test — advisory PR feedback for engine changes.
+# test: advisory PR feedback for engine changes.
 #
 # The RELEASE gate lives in scripts/cut-engine-release.sh (§12 step 0 / dec. 8): it runs this
 # same suite plus the pinned bin/typst + fixture render before a tag can exist, and that is the
 # gate a bad engine tag must not pass. This workflow exists only to surface the same failures at
-# PR time instead of at cut time — it is deliberately NOT a required status check, so it never
+# PR time instead of at cut time; it is deliberately NOT a required status check, so it never
 # blocks a merge.
 name: test
 

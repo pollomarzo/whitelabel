@@ -13,7 +13,7 @@ runs:
   using: composite
   steps:
     # --- resolve the engine ref from the paper's own myst.yml (raw, pre-extends) ------
-    # Quoted key form ["oaktree-sapling"] — an unquoted hyphenated key is yq-version
+    # Quoted key form ["oaktree-sapling"]: an unquoted hyphenated key is yq-version
     # sensitive ([R14]); explicit guard so a missing options block fails LOUDLY, not as a
     # baffling downstream checkout error.
     - id: ref

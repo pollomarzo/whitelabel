@@ -1,5 +1,5 @@
 /**
- * schema.ts — the engine's data contracts (zod).
+ * schema.ts: the engine's data contracts (zod).
  *
  * Scope discipline (design §12, decisions 12/24):
  *  - We validate ONLY the engine-owned coordinates: the `oaktree-sapling` key inside
@@ -23,7 +23,7 @@ import { z } from 'zod';
 /**
  * The one knob (design §6). Rides in myst's untyped `options` passthrough at
  * `project.options["oaktree-sapling"]`, so it coexists with sibling option keys
- * a paper already uses (e.g. `options.youtube`, live in suheylgulenc) — we must
+ * a paper already uses (e.g. `options.youtube`, live in suheylgulenc); we must
  * validate this subkey without touching its siblings.
  *
  * `.loose()` tolerates future engine option keys on a paper pinned to a newer
@@ -32,7 +32,7 @@ import { z } from 'zod';
 export const OaktreeSaplingOptions = z
   .object({
     /** Engine ref: a released tag (`vX.Y.Z`), the engine default branch, a SHA, or
-     *  a `refs/pull/N/merge` (the last two gated to non-fork/allowlist — see ref.ts). */
+     *  a `refs/pull/N/merge` (the last two gated to non-fork/allowlist, see ref.ts). */
     version: z.string().min(1),
     /** Per-paper edition coordinate (dec. 22): selects `editions/<edition>.yml`.
      *  Required in the repo=paper (n=1) path we build first; a repo=journal build
@@ -55,12 +55,12 @@ export function readEngineOptions(
 }
 
 /* --------------------------------------------------------------------------
- * 2. journal.yml — the instance manifest (engine-owned, additive-only)
+ * 2. journal.yml: the instance manifest (engine-owned, additive-only)
  * ------------------------------------------------------------------------ */
 
 export const PreviewConfig = z
   .object({
-    /** 'cloudflare' | 'artifact' — 'artifact' degrades to a build-artifact link when
+    /** 'cloudflare' | 'artifact': 'artifact' degrades to a build-artifact link when
      *  the tenant has no Cloudflare secrets ([R6], the hidden 4th human-floor item). */
     provider: z.enum(['cloudflare', 'artifact']).default('artifact'),
     cf_project_name: z.string().optional(),
@@ -72,7 +72,7 @@ export type PreviewConfig = z.infer<typeof PreviewConfig>;
 
 export const ZenodoConfig = z
   .object({
-    /** Optional Zenodo community identifier — a fresh tenant has none ([R19]). */
+    /** Optional Zenodo community identifier; a fresh tenant has none ([R19]). */
     community: z.string().optional(),
     /** Optional description paragraph appended to every deposit ([R19]); the ISP
      *  "created as part of the Neuromatch Impact Scholars Program" blurb lived
@@ -104,12 +104,12 @@ export const JournalConfig = z
      *  forward contract so a repo=journal instance is detected, not assumed. */
     tier: z.enum(['paper', 'edition', 'journal']).default('paper'),
     /** The template's placeholder `id:` that `oak validate` must reject on real
-     *  papers (finding 1: the sentinel is instance-defined, not a global constant —
+     *  papers (finding 1: the sentinel is instance-defined, not a global constant:
      *  ISP's is `isp-micropublication-template`). */
     id_sentinel: z.string().optional(),
     /** Anchored regex a paper `id:` must match (SciPy-style id-pattern, [R7]). */
     id_pattern: z.string().optional(),
-    /** The journal's own typst template ([R76]) — `name | path | URL`, where only a
+    /** The journal's own typst template ([R76]), `name | path | URL`, where only a
      *  `./`/`../` value is a path relative to the instance-config root. Sits between the
      *  author's own `exports[].template` (which outranks it, with a warning) and the
      *  engine's default. Absent → the engine's template, as before. */
@@ -123,7 +123,7 @@ export const JournalConfig = z
 export type JournalConfig = z.infer<typeof JournalConfig>;
 
 /* --------------------------------------------------------------------------
- * 3. registry/papers.yml — the paper registry (engine-owned, additive-only)
+ * 3. registry/papers.yml: the paper registry (engine-owned, additive-only)
  *
  * Finding 1: `id`, `slug`, and `location` are THREE distinct coordinates, not one.
  * Real ids are `isp-`-prefixed and sometimes semantic (suheylgulenc →
@@ -154,7 +154,7 @@ export const RegistryEntry = z
      * Where the paper is PUBLISHED, when it isn't where we'd guess. The gallery
      * (`plugins/gallery.mjs`) otherwise derives `https://<owner>.github.io/<name>` from
      * `location.repo`; set this for a custom domain or non-Pages hosting. Optional and
-     * additive (dec. 24) — the registry stays a thin pointer list ([S4]), so display
+     * additive (dec. 24): the registry stays a thin pointer list ([S4]), so display
      * metadata (title, keywords) is still fetched per paper, never cached here.
      */
     site_url: z.string().optional(),
@@ -167,7 +167,7 @@ export const Registry = z.array(RegistryEntry);
 export type Registry = z.infer<typeof Registry>;
 
 /* --------------------------------------------------------------------------
- * 4. pins.yml — the trust boundary (design §6a, dec. 21, [R37])
+ * 4. pins.yml: the trust boundary (design §6a, dec. 21, [R37])
  * Read by BOTH the CI shim (yq) and local `oak`, so they can't drift.
  * ------------------------------------------------------------------------ */
 
@@ -182,7 +182,7 @@ export const Pins = z
 export type Pins = z.infer<typeof Pins>;
 
 /* --------------------------------------------------------------------------
- * 5. Paper-id validation (design dec. 20 — two checks, different locality)
+ * 5. Paper-id validation (design dec. 20, two checks, different locality)
  * ------------------------------------------------------------------------ */
 
 export type IdCheckResult =
@@ -190,7 +190,7 @@ export type IdCheckResult =
   | { ok: false; severity: 'error' | 'warn'; message: string };
 
 /**
- * Check A — sentinel + id-pattern. A pure function of the paper's own id and the
+ * Check A: sentinel + id-pattern. A pure function of the paper's own id and the
  * journal's policy; hard-fails everywhere, needs no registry. This is the check
  * that catches the live geetha bug (`id: isp-micropublication-template`, [R12]).
  */
@@ -219,7 +219,7 @@ export function checkIdShape(
 }
 
 /**
- * Check B — registry uniqueness. Needs `registry/papers.yml`, so it hard-fails in
+ * Check B: registry uniqueness. Needs `registry/papers.yml`, so it hard-fails in
  * CI and any local build (instance present) and soft-warns in a bare local validate
  * with no instance (dec. 20). `self` is the paper's own registry slug, excluded so a
  * paper doesn't collide with its own entry.
@@ -239,8 +239,8 @@ export function checkIdUniqueness(
   }
   const clash = registry.find((e) => e.id === id && e.slug !== self?.slug);
   if (clash) {
-    // Self-exclusion keys off the paper's repo (findSelf). Without a repo context — an
-    // offline/local build with no GITHUB_REPOSITORY and a temp or non-origin checkout — we
+    // Self-exclusion keys off the paper's repo (findSelf). Without a repo context, an
+    // offline/local build with no GITHUB_REPOSITORY and a temp or non-origin checkout, we
     // cannot tell our OWN registry entry from a real duplicate, so we must not hard-gate:
     // downgrade to a warning. CI always sets GITHUB_REPOSITORY, so the gate stays hard there.
     if (opts.selfIdentifiable === false) {

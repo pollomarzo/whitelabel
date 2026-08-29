@@ -1,5 +1,5 @@
 /**
- * bootstrap.test.ts — `oak bootstrap` rendering + orchestration (slice 5), through FAKE
+ * bootstrap.test.ts: `oak bootstrap` rendering + orchestration (slice 5), through FAKE
  * provisioning seams (no gh/git). Proves: pins.yml/CODEOWNERS/myst.yml render + byte-copy of
  * the rest; the new-model ingest restoring the whole editor-side `.github/`; idempotent
  * GET-then-act; secrets set-if-provided else a printed runbook; org-team vs personal bypass;
@@ -103,7 +103,7 @@ describe('renderSiteTemplate', () => {
 
     const myst = parseDocument(readFileSync(join(dest, 'myst.yml'), 'utf8'));
     expect(myst.getIn(['project', 'title'])).toBe('Test Journal');
-    // Rendered FROM the constant, not duplicated — so there is no drift to test for.
+    // Rendered FROM the constant, not duplicated, so there is no drift to test for.
     expect(myst.getIn(['site', 'template'])).toBe(themeZipUrl());
     expect(myst.getIn(['project', 'plugins', 0])).toBe(galleryPluginUrl('me/engine', 'v1.2.3'));
     // The brand stays a LOCAL single-entry extends chain (no siblings to race, [R72]).
@@ -121,7 +121,7 @@ describe('renderSiteTemplate', () => {
     expect(pkg.dependencies['mystmd']).toBe(MYST_RANGE);
     expect(pkg.dependencies['js-yaml']).toBeTruthy(); // resolvable from THIS repo's node_modules
 
-    // Byte-copied — no `{{token}}` of ours survives because there are none left to render.
+    // Byte-copied: no `{{token}}` of ours survives because there are none left to render.
     // (It DOES contain `${{ … }}`: those are GitHub Actions expressions, not our tokens.)
     const wf = readFileSync(join(dest, '.github/workflows/site.yml'), 'utf8');
     expect(wf).toBe(readFileSync(join(SITE_ROOT, '.github/workflows/site.yml'), 'utf8'));
@@ -137,10 +137,10 @@ describe('renderSiteTemplate', () => {
     expect(wf).toContain('BASE_URL: ${{ steps.pages.outputs.base_path }}');
     // A plugin that never loads does NOT fail --strict (verified live): myst logs
     // "Unknown plugin" + "unknown directive" and exits 0. The workflow must therefore assert
-    // a POSITIVE signal — the plugin's own name in the build log.
+    // a POSITIVE signal: the plugin's own name in the build log.
     expect(wf).toContain('Paper Gallery.*loaded');
 
-    // Ships as `gitignore`, stamped as `.gitignore` — npm strips the dotted name from every
+    // Ships as `gitignore`, stamped as `.gitignore`, npm strips the dotted name from every
     // tarball, so an npm-installed engine would otherwise seed a repo without one.
     expect(readFileSync(join(dest, '.gitignore'), 'utf8')).toBe(
       readFileSync(join(SITE_ROOT, 'gitignore'), 'utf8'),
@@ -162,7 +162,7 @@ describe('engineMystRange', () => {
   it('copies the engine package.json myst-cli range VERBATIM (no parsing/normalizing)', () => {
     // myst-cli sits in devDependencies (it ships inlined in the bundle, so the published
     // package installs nothing); npm publishes that block verbatim, so the range is still
-    // there to read. Either block counts — the point is the range is copied, not parsed.
+    // there to read. Either block counts; the point is the range is copied, not parsed.
     const pkg = JSON.parse(readFileSync('package.json', 'utf8')) as {
       dependencies?: Record<string, string>;
       devDependencies?: Record<string, string>;
@@ -282,7 +282,7 @@ describe('cmdBootstrapPaper', () => {
 
   it('refuses an instance-less bootstrap up front instead of shipping pins.yml instance_repo: .', async () => {
     // The UX-test defect: without --instance the paper seeded `instance_repo: .`, which claims
-    // a co-located journal.yml this render never writes — so the repo bootstrapped "ok" and the
+    // a co-located journal.yml this render never writes, so the repo bootstrapped "ok" and the
     // first CI run died on "no instance-config resolved". Fail here, where the flag is.
     const { prov, calls } = fakeProv();
     const out = await cmdBootstrapPaper(paperInput({ instance: undefined }), deps(prov));
@@ -290,7 +290,7 @@ describe('cmdBootstrapPaper', () => {
     expect(out.result.status).toBe('error');
     expect(String(out.result.error)).toContain('--instance');
     expect(String(out.result.error)).toContain('pins.yml');
-    // Nothing was touched — the check precedes every effect.
+    // Nothing was touched: the check precedes every effect.
     expect(calls.createRepo).toHaveLength(0);
     expect(calls.seedBranch).toHaveLength(0);
   });
@@ -577,7 +577,7 @@ describe('cmdBootstrapJournal', () => {
 
   it('a defaulted --edition is DECLARED, and names the file it will write', async () => {
     // The journal path may default the edition (unlike a paper: the same value names the
-    // editions/<id>.yml this very run writes, so it is self-consistent) — but the tenant is
+    // editions/<id>.yml this very run writes, so it is self-consistent), but the tenant is
     // told, because every paper will have to spell that id back.
     const { prov } = fakeProv();
     const seedDirs: string[] = [];

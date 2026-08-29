@@ -1,5 +1,5 @@
 /**
- * no-node-modules.test.ts — the guard that keeps `npx oaktree-sapling` a download, not an install.
+ * no-node-modules.test.ts: the guard that keeps `npx oaktree-sapling` a download, not an install.
  *
  * `dist/cli.cjs` is an esbuild bundle that inlines every runtime dependency ([R51]), so the
  * published package declares NO `dependencies`: npx fetches the tarball and runs it, with no
@@ -8,7 +8,7 @@
  *
  * The failure this exists to catch is silent and one-directional. Nothing in a type check, a
  * unit suite, or the other bundle-driven suites notices a `require` that esbuild left external
- * — every one of them runs from inside the engine checkout, where the repo's own `node_modules`
+ *, every one of them runs from inside the engine checkout, where the repo's own `node_modules`
  * (installed for the dev toolchain) satisfies the stray require and the run goes green. Only a
  * user on a clean machine, or a paper's CI, hits the `MODULE_NOT_FOUND`. So this suite stages
  * the package the way npm publishes it, somewhere the module resolver cannot walk up into any
@@ -29,7 +29,7 @@ const engineDir = fileURLToPath(new URL('..', import.meta.url));
 const fixturePaper = join(engineDir, 'test', 'fixture-paper');
 const fixtureInstance = join(engineDir, 'test', 'fixture-instance');
 
-/** Every ancestor of `dir`, innermost first — the exact chain node's resolver walks. */
+/** Every ancestor of `dir`, innermost first: the exact chain node's resolver walks. */
 function ancestors(dir: string): string[] {
   const chain: string[] = [];
   for (let d = dir; ; d = dirname(d)) {
@@ -41,7 +41,7 @@ function ancestors(dir: string): string[] {
 /**
  * Stage the published package: the `files` entries from package.json, copied into a fresh temp
  * dir. `engineRoot()` finds its assets by walking up from the bundle for `paper-base.yml`, so
- * the layout — not just the bundle — has to be the real one.
+ * the layout (not just the bundle) has to be the real one.
  */
 function stagePackage(): string {
   const dir = mkdtempSync(join(tmpdir(), 'oak-nonodemod-'));
@@ -67,7 +67,7 @@ describe.skipIf(bundleState() === 'absent')('the bundle runs with no node_module
   });
 
   it('stages somewhere the resolver cannot reach a node_modules', () => {
-    // If this ever fails the suite below is worthless — it would be proving nothing, because a
+    // If this ever fails the suite below is worthless; it would be proving nothing, because a
     // stray require would resolve from up the tree exactly as it does inside the repo.
     const reachable = ancestors(dir).filter((d) => existsSync(join(d, 'node_modules')));
     expect(
@@ -77,7 +77,7 @@ describe.skipIf(bundleState() === 'absent')('the bundle runs with no node_module
     expect(existsSync(join(dir, 'node_modules'))).toBe(false);
   });
 
-  it('runs `validate` end to end — myst-cli session, Curvenote checks, exit 0', () => {
+  it('runs `validate` end to end: myst-cli session, Curvenote checks, exit 0', () => {
     const r = spawnSync(
       'node',
       [

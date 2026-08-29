@@ -10,7 +10,7 @@ describe('classifyRef', () => {
   });
 });
 
-describe('decideRef (dec. 23 / [R41] — repo + ref-class trust)', () => {
+describe('decideRef (dec. 23 / [R41], repo + ref-class trust)', () => {
   it('accepts a tag but flags it for the CI ancestry check', () => {
     const d = decideRef('v0.3.0', { isFork: true });
     expect(d.allowed).toBe(true);

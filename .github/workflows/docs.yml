@@ -41,7 +41,7 @@ jobs:
           node-version: '22'
 
       # Resolves where Pages actually serves this repo. `base_path` is `/<repo>` for a project
-      # site and EMPTY for a user/org site or a custom domain — which is exactly MyST's
+      # site and EMPTY for a user/org site or a custom domain, which is exactly MyST's
       # BASE_URL contract, and the only reason this file needs no edit when the engine moves to
       # its canonical home: the path segment changes from /whitelabel to /oaktree-sapling and
       # GitHub reports the new one. Hardcoding either would break on the move.
@@ -53,7 +53,7 @@ jobs:
 
       # Runs the SAME script a contributor runs (`npm run docs:build`), so CI cannot build the
       # docs with a different MyST than the person editing them. The mystmd pin lives once, in
-      # package.json, and must stay in step with the `myst-cli` range beside it — the engine
+      # package.json, and must stay in step with the `myst-cli` range beside it; the engine
       # bundles myst-cli to build papers, and docs built by a different MyST than the engine
       # ships would document behaviour we don't produce.
       #

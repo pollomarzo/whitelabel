@@ -1,5 +1,5 @@
 /**
- * bootstrap.ts — `oak bootstrap paper` + `oak bootstrap journal` (slice 5). Stands up a
+ * bootstrap.ts: `oak bootstrap paper` + `oak bootstrap journal` (slice 5). Stands up a
  * paper repo (bare or ingest) or a journal/tenant (external instance-config, or co-located
  * flagship) from the frozen `templates/paper/` + `templates/instance/`. Ports the ISP
  * `create-submission-target.sh`
@@ -9,15 +9,15 @@
  *  - **The paper template is the frozen shim + a starter myst.yml/index.md/bib.bib.** Only
  *    `pins.yml` (engine_repo/instance_repo) and `CODEOWNERS` (owner) are RENDERED; every
  *    other frozen file is byte-copied. The starter `myst.yml` gets the engine coordinate.
- *  - **Ingest restores the ENTIRE `.github/` from `main`** — including
+ *  - **Ingest restores the ENTIRE `.github/` from `main`**, including
  *    `.github/actions/engine/pins.yml`, not just workflows + CODEOWNERS as the script did.
  *    In the new model `pins.yml` carries the trust-boundary `engine_repo` pin, so author-side
  *    `FETCH_HEAD` content must never supply it (see `buildReviewTree`).
  *  - **Idempotent, GET-then-act**: every step reads state first, so a re-run repairs a partial
- *    bootstrap. Every mutation is a provisioning call or a PR — never a silent content push
+ *    bootstrap. Every mutation is a provisioning call or a PR, never a silent content push
  *    past the CODEOWNERS gate.
  *  - **Secrets are set-if-provided only** ([R25] floor). Absent ones are skipped and the exact
- *    remaining runbook is printed (which secret, where) — never a value in a log.
+ *    remaining runbook is printed (which secret, where), never a value in a log.
  *
  * SEAMS: all GitHub/git effects go through the injected `Provisioner` (real impl in gh.ts,
  * faked in tests); rendering is pure fs. This module does NOT import myst-cli.
@@ -61,7 +61,7 @@ const RENDER_MYST = 'myst.yml';
 const RENDER_SITE_INDEX = posix.join('pages', 'index.md');
 const RENDER_SITE_PKG = 'package.json';
 /** Top-level template entries that are engine-side docs, never stamped into a tenant repo.
- *  Applies to both templates (each ships its own README). Not a role-partition list — the
+ *  Applies to both templates (each ships its own README). Not a role-partition list: the
  *  paper/instance split is now structural (separate source trees), so this is only the
  *  README carve-out, guarded by the disjointness invariant (test/template.test.ts). */
 const EXCLUDE_FROM_STAMP = new Set(['README.md']);
@@ -82,7 +82,7 @@ export function siteTemplateRoot(engineRoot: string): string {
  * The engine's own `myst-cli` range, copied VERBATIM into the site scaffold's
  * `package.json` as its `mystmd` dependency ([R80]). No parsing, no normalizing: the site should render with
  * roughly the myst the engine bundles, so the gallery plugin and the theme behave the same
- * in both builds. This is hygiene, not correctness — the site is not the reproducibility
+ * in both builds. This is hygiene, not correctness; the site is not the reproducibility
  * anchor (the Zenodo deposit is, design §7), so a caret range is enough and a
  * resolved-version pin would be false precision.
  */
@@ -93,7 +93,7 @@ export function engineMystRange(engineRoot: string): string {
   };
   // myst-cli is a DEV dependency: it ships inlined in `dist/cli.cjs`, so the published package
   // declares nothing to install ([R51]). npm keeps `devDependencies` in the published
-  // package.json verbatim, so the range is readable from the installed package either way —
+  // package.json verbatim, so the range is readable from the installed package either way,
   // and `dependencies` stays accepted so a fork that declares it there still resolves.
   const range = pkg.dependencies?.['myst-cli'] ?? pkg.devDependencies?.['myst-cli'];
   if (!range) throw new Error('bootstrap: engine package.json declares no myst-cli dependency');
@@ -117,12 +117,12 @@ export function listFiles(dir: string, prefix = ''): string[] {
  *
  * `.gitignore` is the whole list, and npm is the reason: a leading-dot `.gitignore` is
  * stripped from EVERY npm tarball, unconditionally and with no opt-out. Shipping it as-is
- * means an engine installed from npm seeds repos with no `.gitignore` at all — so a tenant
- * commits `_build/` and `node_modules/` — while a git checkout of the engine seeds it fine.
+ * means an engine installed from npm seeds repos with no `.gitignore` at all, so a tenant
+ * commits `_build/` and `node_modules/`, while a git checkout of the engine seeds it fine.
  * The templates therefore hold `gitignore`, and the stamp puts the dot back.
  *
  * The VALUES are therefore exactly the basenames npm would strip, which is what the
- * `templates survive npm packaging` test asserts against — one list, not two that must
+ * `templates survive npm packaging` test asserts against: one list, not two that must
  * agree. Keyed on the basename, not the whole rel path, so a template file added in a
  * SUBDIRECTORY is covered too: npm strips it at any depth.
  */
@@ -228,7 +228,7 @@ export function renderInstanceTemplate(instanceRoot: string, destRoot: string, a
   return written.sort();
 }
 
-/** The engine tag's raw URL for the gallery plugin. It must be REMOTE because it is code —
+/** The engine tag's raw URL for the gallery plugin. It must be REMOTE because it is code:
  *  a `.mjs` body cannot be stamped into YAML, and vendoring a copy is the copy-rot the
  *  engine exists to kill. Pinned to the tag, so the site takes engine updates only when the
  *  tenant bumps it. */
@@ -236,7 +236,7 @@ export function galleryPluginUrl(engineRepo: string, engineVersion: string): str
   return `https://raw.githubusercontent.com/${engineRepo}/${engineVersion}/plugins/gallery.mjs`;
 }
 
-/** The journal site's Pages URL for `owner/repo` — a PROJECT site, hence the subpath ([S8]). */
+/** The journal site's Pages URL for `owner/repo`, a PROJECT site, hence the subpath ([S8]). */
 export function siteUrlFor(repo: string): string {
   const [owner, name] = repo.split('/');
   return `https://${owner}.github.io/${name}/`;
@@ -247,15 +247,15 @@ export function siteUrlFor(repo: string): string {
  * instance-config scaffold for `--external`: [S8]'s variant A′ makes the site and the
  * instance-config ONE repo, so the registry PR that adds a paper is also the deploy trigger.
  *
- * ONE-SHOT — the tenant owns every byte of this outright ([S3]). It is not frozen, not
+ * ONE-SHOT: the tenant owns every byte of this outright ([S3]). It is not frozen, not
  * covered by `oak upgrade`, and the engine re-reads none of it. Exactly FOUR values are
  * rendered; everything else is byte-copied:
  *
  *   1. the gallery plugin URL (engine repo + tag),
- *   2. `site.template` from `themeZipUrl()` — rendered FROM the constant, not duplicated,
+ *   2. `site.template` from `themeZipUrl()`, rendered FROM the constant, not duplicated,
  *      so there is nothing for a drift test to catch,
  *   3. the journal name (myst.yml `project.title` + the `pages/index.md` heading),
- *   4. the `myst-cli` range, into the scaffold's `package.json` — where `js-yaml` is pinned
+ *   4. the `myst-cli` range, into the scaffold's `package.json`, where `js-yaml` is pinned
  *      too, so the site has ONE dependency list. The workflow just runs `npm install` +
  *      `npx myst`, and is byte-copied. (An earlier shape pinned MyST via `npx -y mystmd@…`
  *      in the workflow, which meant two pinning mechanisms and two installs for one site;
@@ -310,7 +310,7 @@ function copyFileBytes(src: string, dest: string): void {
 }
 
 /* --------------------------------------------------------------------------
- * Ingest tree (pure) — new-model: restore the ENTIRE .github/ from main
+ * Ingest tree (pure): new-model: restore the ENTIRE .github/ from main
  * ------------------------------------------------------------------------ */
 
 /**
@@ -347,7 +347,7 @@ function isEditorControlled(path: string): boolean {
  * ------------------------------------------------------------------------ */
 
 export interface Provisioner {
-  /** 'Organization' | 'User' for an owner login — decides team-grant vs repo-admin bypass. */
+  /** 'Organization' | 'User' for an owner login, decides team-grant vs repo-admin bypass. */
   ownerType(owner: string): 'Organization' | 'User';
   repoExists(repo: string): boolean;
   createRepo(repo: string, opts: { private: boolean; description: string }): void;
@@ -375,7 +375,7 @@ export interface Provisioner {
   createBranchPolicy(repo: string, env: string, name: string, type: string): void;
   createLabel(repo: string, name: string, opts: { color?: string; description?: string }): void;
   setSecret(repo: string, name: string, value: string): void;
-  /** `owner/repo` visibility (public/private) — used to enforce public instance-config. */
+  /** `owner/repo` visibility (public/private), used to enforce public instance-config. */
   repoVisibility(repo: string): 'public' | 'private';
   setRepoPublic(repo: string): void;
 }
@@ -401,7 +401,7 @@ function protectMainBody(requireChecks: boolean): unknown {
     },
   ];
   // Require the Journal-checks Check Run to pass before merge. This is the gate the id relies
-  // on now that id-shape no longer blocks the build (id-gate-relocation) — without it, an
+  // on now that id-shape no longer blocks the build (id-gate-relocation); without it, an
   // invalid id could merge to main. Default-on; `--no-require-checks` opts out. NB a solo repo
   // admin can still bypass required checks on a personal account (PROVISIONING §3.3).
   if (requireChecks) {
@@ -462,11 +462,11 @@ const SECRET_MAP: Array<{ key: keyof SecretInputs; name: string }> = [
 
 export interface BootstrapDeps {
   prov: Provisioner;
-  /** `templates/paper/` of the engine checkout — the frozen shim + starter content. */
+  /** `templates/paper/` of the engine checkout, the frozen shim + starter content. */
   paperTemplateRoot: string;
-  /** `templates/instance/` of the engine checkout — the instance-config scaffold. */
+  /** `templates/instance/` of the engine checkout, the instance-config scaffold. */
   instanceTemplateRoot: string;
-  /** `templates/site/` of the engine checkout — the journal-site scaffold ([R80]). */
+  /** `templates/site/` of the engine checkout, the journal-site scaffold ([R80]). */
   siteTemplateRoot: string;
   /** The engine's own `myst-cli` range, stamped into the site workflow ({@link engineMystRange}). */
   mystRange: string;
@@ -497,7 +497,7 @@ export interface ResolvedFlags {
  * The plan's opening block: every value this run will use, and for each one whether it came
  * from a flag or from us. A default nobody was told about is a decision made on the tenant's
  * behalf, and `Proceed? [y/N]` is only consent if the assumptions are on the screen above it
- * — most of these end up stamped into files that are awkward to change afterwards.
+ *, most of these end up stamped into files that are awkward to change afterwards.
  */
 function declaredValues(v: {
   engineVersion: string;
@@ -558,7 +558,7 @@ function declaredValues(v: {
 
 export interface BootstrapPaperInput {
   repo: string; // owner/name
-  from?: string; // author url (ingest mode) — bare when absent
+  from?: string; // author url (ingest mode); bare when absent
   sourceRef?: string;
   instance?: string; // owner/instance-config; '.' co-located
   /** The journal edition this paper belongs to. REQUIRED (see cmdBootstrapPaper). */
@@ -689,7 +689,7 @@ export async function cmdBootstrapPaper(input: BootstrapPaperInput, deps: Bootst
   // very same render gives no journal.yml: the CI shim then clones nothing, `oak validate`
   // and `oak build` hit the no-instance usage error, and the tenant learns about it from a
   // red Stage 1 minutes after a bootstrap that printed `"status": "ok"`. Ask up front.
-  // `--instance .` stays available as the EXPLICIT co-located opt-in (repo=journal — the
+  // `--instance .` stays available as the EXPLICIT co-located opt-in (repo=journal, the
   // tier `oak bootstrap journal --co-located` stands up, which renders the paper template
   // itself and never comes through here).
   if (!input.instance) {
@@ -704,7 +704,7 @@ export async function cmdBootstrapPaper(input: BootstrapPaperInput, deps: Bootst
   }
   // Same shape as --instance, and for the same reason. The edition id is written into the
   // paper's myst.yml, and the journal must already have an `editions/<id>.yml` under that
-  // exact name — so a defaulted literal `edition` is not a convenience, it is a guaranteed
+  // exact name, so a defaulted literal `edition` is not a convenience, it is a guaranteed
   // failure the tenant meets in CI rather than here. (`bootstrap journal` may default it:
   // there the SAME value names the edition file it writes, so it is self-consistent.)
   if (!input.edition) {
@@ -743,7 +743,7 @@ export async function cmdBootstrapPaper(input: BootstrapPaperInput, deps: Bootst
       ownerGiven: Boolean(input.owner),
       ownerUsed: true,
       edition: input.edition,
-      editionGiven: true, // required for papers — never defaulted
+      editionGiven: true, // required for papers, never defaulted
       instanceRepo,
       resolved: input.resolved,
     }),
@@ -830,7 +830,7 @@ export async function cmdBootstrapPaper(input: BootstrapPaperInput, deps: Bootst
 }
 
 /** The placeholder edition id when `--edition` is not given. Self-consistent (it also names
- *  the `editions/<id>.yml` this run writes) and declared in the plan — unlike the paper path,
+ *  the `editions/<id>.yml` this run writes) and declared in the plan, unlike the paper path,
  *  where the same default would name an edition file some OTHER repo has to already have. */
 const DEFAULT_EDITION = 'edition';
 
@@ -850,7 +850,7 @@ export interface BootstrapJournalInput {
    *  design keeps the site optional, §2). Passing `site: false` with `--co-located` is a
    *  usage ERROR, not a no-op: that tier never gets a site (repo=journal's index is the
    *  deferred `assemble()` work, [S7]), so a flag that reads as "turn the site off" would
-   *  be silently meaningless — and silently meaningless flags teach the wrong model. */
+   *  be silently meaningless, and silently meaningless flags teach the wrong model. */
   site?: boolean;
   secrets: SecretInputs;
   /** Provenance of the defaulted values, for the plan's declaration block. */
@@ -894,7 +894,7 @@ export async function cmdBootstrapJournal(input: BootstrapJournalInput, deps: Bo
       engineRepo: input.engineRepo,
       owner: owner.ownerToken,
       ownerGiven: Boolean(input.owner),
-      // An external journal repo gets no CODEOWNERS file and no team grant — nothing here
+      // An external journal repo gets no CODEOWNERS file and no team grant; nothing here
       // consumes the owner, so the plan must not claim it does.
       ownerUsed: !external,
       edition,

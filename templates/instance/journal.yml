@@ -1,4 +1,4 @@
-# INSTANCE-CONFIG manifest (design §3) — the tenant's journal identity. Data only, no
+# INSTANCE-CONFIG manifest (design §3): the tenant's journal identity. Data only, no
 # engine logic. `oak bootstrap journal` stamps this; additive-only (dec. 24), so an older
 # pinned engine ignores keys it doesn't know. MUST stay in a PUBLIC repo ([R32], dec. 16):
 # Stage-1 fork-PR builds clone it with no token.
@@ -8,13 +8,13 @@ name: CHANGE-ME Journal
 tier: paper
 
 # id policy (design dec. 20). `id_sentinel` is the one id `oak validate` rejects (the
-# template placeholder). `id_pattern` is an anchored regex every real paper id must match —
+# template placeholder). `id_pattern` is an anchored regex every real paper id must match:
 # customize to your journal's convention.
 id_sentinel: CHANGE-ME-template-placeholder
 id_pattern: "^[a-z0-9]+-\\d{4}-[a-z0-9-]+$"
 
 # Your journal's typst PDF template. Omit it to use the engine's default template (the
-# usual case — the engine template is already brandable by parameter: watermark, colors).
+# usual case; the engine template is already brandable by parameter: watermark, colors).
 #
 # Accepts myst's three template forms, and the difference between two of them is the one
 # thing worth reading twice:
@@ -27,7 +27,7 @@ id_pattern: "^[a-z0-9]+-\\d{4}-[a-z0-9-]+$"
 #
 # ONLY `./` and `../` mean "a directory in my instance-config". A bare `typst-template`
 # with no `./` is a template NAME, even if a directory of that name sits right next to
-# this file — one string always means one thing, whatever happens to be on disk. If you
+# this file: one string always means one thing, whatever happens to be on disk. If you
 # meant the directory, write `./typst-template`. (`oak validate` warns when a bare value
 # shadows a real directory here, which is the one case you'd guess wrong.)
 #
@@ -42,13 +42,13 @@ preview:
   provider: artifact
   branch_pattern: paper-{repo}-{pr}
 
-# Optional per-tenant Zenodo config ([R19]) — a fresh journal has neither.
+# Optional per-tenant Zenodo config ([R19]); a fresh journal has neither.
 zenodo: {}
   # community: your-zenodo-community
   # description_blurb: >-
   #   Created as part of the CHANGE-ME Journal.
 
-# Journal-controlled editorial checks (slice 4 Layer B). The author cannot weaken this set —
+# Journal-controlled editorial checks (slice 4 Layer B). The author cannot weaken this set:
 # it lives here in instance-config; `oak validate` runs it and the PR check gates on it.
 checks:
   - id: authors-exist

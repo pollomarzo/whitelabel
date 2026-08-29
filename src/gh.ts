@@ -1,5 +1,5 @@
 /**
- * gh.ts — the git / GitHub side effects for the deposit verbs, kept out of zenodo.ts so the
+ * gh.ts: the git / GitHub side effects for the deposit verbs, kept out of zenodo.ts so the
  * deposit logic stays a pure, network-free unit under test. Implements `GitContext` (used by
  * the publish bundle) with plain `git` + `gh api`, and exposes the CLI-level GitHub effects
  * the port inherits from the workflows: the DOI PR ([R3]/§1d), the release bundle asset
@@ -26,12 +26,12 @@ import type { ConformanceGh } from './conformance.js';
  * All git/gh chatter is CAPTURED, not inherited. `execFileSync` otherwise forwards the child's
  * stderr straight to ours, and the result was a bootstrap transcript where "Cloning into
  * '/tmp/oak-seed-…'", "warning: You appear to have cloned an empty repository" and our own
- * plan lines were indistinguishable — the reader cannot tell what the tool did from what a
+ * plan lines were indistinguishable: the reader cannot tell what the tool did from what a
  * tool it called said about itself.
  *
  * So: quiet on success, and on FAILURE the captured text is replayed with the tool's name in
  * front of every line, because that is exactly when it is the most useful thing on screen.
- * `--verbose` (via `OAK_VERBOSE`) replays it on success too, and CI is verbose by default —
+ * `--verbose` (via `OAK_VERBOSE`) replays it on success too, and CI is verbose by default:
  * a workflow log is read after the fact, by someone who cannot re-run it with a flag.
  */
 function verboseChildren(): boolean {
@@ -57,7 +57,7 @@ function echoChild(tool: string, text: unknown): void {
  *
  * Capturing the children's output ([R85]) bought a clean screen and paid for it in silence:
  * creating a repo, cloning, resolving the newest release are each seconds of nothing, and the
- * UX test read that as a hang. `spawnSync` blocks the event loop, so a spinner cannot animate —
+ * UX test read that as a hang. `spawnSync` blocks the event loop, so a spinner cannot animate,
  * but a line printed BEFORE the call and erased after needs no timer, and says the true thing.
  *
  * TTY only: erasing with `\r` in a redirected log or a workflow log would leave the marker
@@ -70,7 +70,7 @@ function showWorking(tool: string, args: string[]): () => void {
 }
 
 /**
- * Run `git`/`gh` with both streams captured. `quiet` means "not even on failure" — for the
+ * Run `git`/`gh` with both streams captured. `quiet` means "not even on failure", for the
  * probes that treat a non-zero exit as a valid answer (does this ruleset exist?), where the
  * child's complaint is noise about a question we already answered.
  */
@@ -125,14 +125,14 @@ function ghOk(args: string[]): boolean {
   }
 }
 
-/** `gh` run under a DIFFERENT token (the fork account's PAT) — same shape as `gh()`, but the
+/** `gh` run under a DIFFERENT token (the fork account's PAT), same shape as `gh()`, but the
  *  child sees `GH_TOKEN=token`. The conformance fork phase owns a second-account fork; base-repo
  *  ops keep using `gh()` (the ambient primary token), fork-repo ops use `ghAs(forkToken, …)`. */
 function ghAs(token: string, args: string[], opts: { input?: string; cwd?: string; quiet?: boolean } = {}): string {
   return run('gh', args, { ...opts, env: { ...process.env, GH_TOKEN: token } });
 }
 
-/** Tolerant `ghAs` — the fork-token twin of `ghOk` (an already-absent ref DELETE is a no-op). */
+/** Tolerant `ghAs`: the fork-token twin of `ghOk` (an already-absent ref DELETE is a no-op). */
 function ghOkAs(token: string, args: string[]): boolean {
   try {
     execFileSync('gh', args, { stdio: 'ignore', env: { ...process.env, GH_TOKEN: token } });
@@ -142,7 +142,7 @@ function ghOkAs(token: string, args: string[]): boolean {
   }
 }
 
-/** Commit-as-bot identity flags (a CI runner has no git identity — see openDoiPr). */
+/** Commit-as-bot identity flags (a CI runner has no git identity; see openDoiPr). */
 const BOT_ID = [
   '-c', 'user.name=github-actions[bot]',
   '-c', 'user.email=41898282+github-actions[bot]@users.noreply.github.com',
@@ -163,7 +163,7 @@ export const realGitContext: GitContext = {
     if (!repo) return null;
     try {
       // NOT quiet: "commit has no PR" exits 0 with empty output, so this catch is reached only
-      // on a genuine gh failure (auth / network / rate limit) — and review_pr is deposited into
+      // on a genuine gh failure (auth / network / rate limit), and review_pr is deposited into
       // provenance, so that failure must stay visible rather than silently becoming null.
       const out = gh(['api', `repos/${repo}/commits/${sha}/pulls`, '--jq', '.[0].number // empty']);
       return out || null;
@@ -211,7 +211,7 @@ export function openDoiPr(repoRoot: string, opts: { conceptDoi: string }): strin
   ]);
 }
 
-/** Attach the deposit bundle files to the tag's GitHub Release ([R24] — durable past the
+/** Attach the deposit bundle files to the tag's GitHub Release ([R24], durable past the
  *  30-day artifact retention, and puts the exact deposited bytes next to the tag). */
 export function uploadReleaseAsset(repoRoot: string, tag: string, files: string[]): void {
   const repo = originRepo(repoRoot);
@@ -239,7 +239,7 @@ export function openFailureIssue(repoRoot: string, title: string, body: string):
 }
 
 /* --------------------------------------------------------------------------
- * preview.ts seams — the deploy-preview / notify GitHub effects ([R69])
+ * preview.ts seams: the deploy-preview / notify GitHub effects ([R69])
  * ------------------------------------------------------------------------ */
 
 /** The real git/gh PR context injected into `cmdDeployPreview` / the new-version reminder.
@@ -257,7 +257,7 @@ export const realGhPr: GhPr = {
         '--jq', `[.[] | select(.body | startswith("${marker}"))] | last | .id // empty`,
       ]);
     } catch {
-      /* no comments / no read access — fall through to create */
+      /* no comments / no read access: fall through to create */
     }
     if (existingId) {
       gh(['api', '--method', 'PATCH', `repos/${repo}/issues/comments/${existingId}`, '-F', 'body=@-'], { input: body });
@@ -275,13 +275,13 @@ export const realGhPr: GhPr = {
       if (opts.description) create.push('--description', opts.description);
       gh(create);
     } catch {
-      /* label already exists — fine */
+      /* label already exists: fine */
     }
     gh(['pr', 'edit', prNumber, ...scope, '--add-label', label]);
   },
 
   versionTags(_repoRoot, repo) {
-    // The Stage-2 checkout is shallow, so `git tag --merged origin/main` sees no history —
+    // The Stage-2 checkout is shallow, so `git tag --merged origin/main` sees no history,
     // read tags from the API instead ([R23]). `v*` filtered client-side.
     if (!repo) return [];
     try {
@@ -295,7 +295,7 @@ export const realGhPr: GhPr = {
 
 /** The real Cloudflare Pages deployer injected into `cmdDeployPreview`. Drives the CF Pages
  *  direct-upload protocol via wrangler (the same tool today's `wrangler-action` wraps) and
- *  parses the deployment URL from its output. Any failure throws — the caller degrades to an
+ *  parses the deployment URL from its output. Any failure throws; the caller degrades to an
  *  artifact-link comment rather than failing the run ([R16]). */
 export const realPagesDeployer: PagesDeployer = {
   async deploy(opts) {
@@ -318,7 +318,7 @@ export const realPagesDeployer: PagesDeployer = {
 };
 
 /* --------------------------------------------------------------------------
- * checks.ts seam — the GitHub Check-Run reporter (slice 4). Posts the journal-check results
+ * checks.ts seam: the GitHub Check-Run reporter (slice 4). Posts the journal-check results
  * as a first-class Check Run: summary table + inline diff annotations (reporting option 2).
  * Needs `checks: write` (a trusted/base CI context, like the sticky comment).
  * ------------------------------------------------------------------------ */
@@ -357,7 +357,7 @@ export const realCheckRun: CheckRunPoster = {
 };
 
 /* --------------------------------------------------------------------------
- * bootstrap.ts seam — the GitHub/git provisioning (slice 5). Idempotent shells over
+ * bootstrap.ts seam: the GitHub/git provisioning (slice 5). Idempotent shells over
  * `gh api`/`git`, ported from create-submission-target.sh's `apply_rulesets_to_repo` +
  * repo-create/seed/ingest. Every mutation GET-then-acts; effects are injectable for tests.
  * ------------------------------------------------------------------------ */
@@ -401,7 +401,7 @@ export const realProvisioner: Provisioner = {
       try {
         gitRaw(['checkout', 'origin/main', '--', 'CODEOWNERS'], tmp);
       } catch {
-        /* CODEOWNERS may live under .github/ — already restored above */
+        /* CODEOWNERS may live under .github/, already restored above */
       }
     }
     gitRaw(['add', '-A'], tmp);
@@ -482,7 +482,7 @@ export const realProvisioner: Provisioner = {
     try {
       gh(args);
     } catch {
-      /* label already exists at this definition — fine */
+      /* label already exists at this definition, fine */
     }
   },
   setSecret(repo, name, value) {
@@ -497,7 +497,7 @@ export const realProvisioner: Provisioner = {
 };
 
 /* --------------------------------------------------------------------------
- * upgrade.ts seams — target resolution, template materialization, the gated resync PR.
+ * upgrade.ts seams: target resolution, template materialization, the gated resync PR.
  * ------------------------------------------------------------------------ */
 
 /** The authenticated gh user login (`gh api user`). */
@@ -521,11 +521,11 @@ export function tempClone(repo: string): string {
  * silently contradicted RELEASING.md ("marked pre-release, so `version: latest` never resolves
  * to one") and pointed tenants at dev tags the same document says will be DELETED when pruned.
  *
- * `releases/latest` is GitHub's own definition of the invariant — newest non-draft,
- * non-prerelease — so the rule now lives in one place instead of being reimplemented here.
+ * `releases/latest` is GitHub's own definition of the invariant, newest non-draft,
+ * non-prerelease, so the rule now lives in one place instead of being reimplemented here.
  * A pre-release stays reachable, but only by naming it: `--engine-version` / `--to`.
  *
- * 404 when the repo has no stable release at all (only dev cuts, or none) — that is an answer,
+ * 404 when the repo has no stable release at all (only dev cuts, or none); that is an answer,
  * not a failure, so the probe is quiet and the caller gets a message that says how to proceed.
  */
 export function latestEngineRelease(engineRepo: string): string {
@@ -548,7 +548,7 @@ export function materializeTemplate(engineRepo: string, tag: string): string {
   return join(tmp, 'templates', 'paper');
 }
 
-/** The gated upgrade/resync PR — openDoiPr's branch→commit-as-bot→push→gh-pr-create shape. */
+/** The gated upgrade/resync PR: openDoiPr's branch→commit-as-bot→push→gh-pr-create shape. */
 export const realUpgradePr: UpgradePr = {
   open(repoRoot, opts) {
     git(repoRoot, ['checkout', '-B', opts.branch]);
@@ -591,7 +591,7 @@ export const realConformanceGh: ConformanceGh = {
     ghOk(['api', '-X', 'DELETE', `repos/${repo}/git/refs/heads/${branch}`]);
   },
   listTags(repo, marker) {
-    // No "contains" ref filter — list tags and match the middle marker in JS.
+    // No "contains" ref filter: list tags and match the middle marker in JS.
     const out = gh(['api', `repos/${repo}/tags`, '--paginate', '--jq', '.[].name']);
     return out ? out.split('\n').filter((t) => t.includes(marker)) : [];
   },
@@ -623,7 +623,7 @@ export const realConformanceGh: ConformanceGh = {
   },
   openCertPr(repo, branch, marker) {
     // Branch off main, then a trivial always-valid content change (a MyST `%` comment appended
-    // to index.md) via the Contents API — no clone, so no git-credential dependency in CI.
+    // to index.md) via the Contents API, no clone, so no git-credential dependency in CI.
     const mainSha = gh(['api', `repos/${repo}/git/ref/heads/main`, '--jq', '.object.sha']);
     gh(['api', '-X', 'POST', `repos/${repo}/git/refs`, '-f', `ref=refs/heads/${branch}`, '-f', `sha=${mainSha}`]);
 
@@ -644,7 +644,7 @@ export const realConformanceGh: ConformanceGh = {
     const url = gh([
       'pr', 'create', '--repo', repo, '--base', 'main', '--head', branch,
       '--title', `conformance preview ${marker}`,
-      '--body', 'Automated conformance preview probe — opened and closed by the harness.',
+      '--body', 'Automated conformance preview probe; opened and closed by the harness.',
     ]);
     const number = Number(url.split('/').pop());
     const headSha = gh(['api', `repos/${repo}/git/ref/heads/${branch}`, '--jq', '.object.sha']);
@@ -701,7 +701,7 @@ export const realConformanceGh: ConformanceGh = {
     ]);
   },
   releaseAssets(repo, tag) {
-    // `gh release view` errors when the release doesn't exist yet — treat that as no assets.
+    // `gh release view` errors when the release doesn't exist yet, treat that as no assets.
     try {
       const out = gh(['release', 'view', tag, '-R', repo, '--json', 'assets', '--jq', '[.assets[].name]'], { quiet: true });
       return out ? (JSON.parse(out) as string[]) : [];
@@ -727,7 +727,7 @@ export const realConformanceGh: ConformanceGh = {
   },
   openForkPr(baseRepo, forkRepo, forkToken, branch, tag, marker) {
     // On the FORK (fork token): branch off its default branch, then bump the engine pin to V so
-    // the fork PR builds under V — that pin change is also the non-empty content diff. All via
+    // the fork PR builds under V: that pin change is also the non-empty content diff. All via
     // the Contents API (no clone → no git-credential dependency for the fork token).
     const forkOwner = forkRepo.split('/')[0];
     const defaultBranch = ghAs(forkToken, ['api', `repos/${forkRepo}`, '--jq', '.default_branch']);
@@ -748,12 +748,12 @@ export const realConformanceGh: ConformanceGh = {
       '-f', `branch=${branch}`,
     ]);
 
-    // Open the cross-fork PR on the BASE repo with the PRIMARY token — `--head owner:branch`
+    // Open the cross-fork PR on the BASE repo with the PRIMARY token, `--head owner:branch`
     // targets the fork's head branch.
     const url = gh([
       'pr', 'create', '--repo', baseRepo, '--base', 'main', '--head', `${forkOwner}:${branch}`,
       '--title', `conformance fork preview ${marker}`,
-      '--body', 'Automated conformance fork-PR preview probe — opened and closed by the harness.',
+      '--body', 'Automated conformance fork-PR preview probe; opened and closed by the harness.',
     ]);
     const number = Number(url.split('/').pop());
     // Re-read the fork branch head sha post-commit (the PUT advanced it).
@@ -766,7 +766,7 @@ export const realConformanceGh: ConformanceGh = {
   approveWorkflowRun(repo, runId) {
     // The fork-PR first-time-contributor gate is on the BASE repo, so approve with the PRIMARY
     // token. TOLERANT: a no-op error when approval isn't required. NOTE: whether fork runs need
-    // approval every time (vs. only the first) is UNCERTAIN — the tolerant approve covers both,
+    // approval every time (vs. only the first) is UNCERTAIN; the tolerant approve covers both,
     // and live-testing will settle it.
     ghOk(['api', '-X', 'POST', `repos/${repo}/actions/runs/${runId}/approve`]);
   },

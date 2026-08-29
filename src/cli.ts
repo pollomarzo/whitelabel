@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * cli.ts — the `oak` entry point (bundled to dist/cli.cjs per tag; CI calls it directly
+ * cli.ts: the `oak` entry point (bundled to dist/cli.cjs per tag; CI calls it directly
  * via ci/run.sh). Verb surface maps the 7 current isp-actions-config workflows (impl §2).
  *
  * Implemented: `build` (slice 2). The rest are stubbed with their slice number. The myst
@@ -19,8 +19,8 @@ import * as msg from './messages.js';
 import { annotate, UserError } from './messages.js';
 
 // dist/cli.cjs is an esbuild CJS bundle ([R51]), so `__dirname` is the bundle's dir
-// (engine/dist). `oak` is only ever run bundled — CI (ci/run.sh) and local both invoke
-// dist/cli.cjs — so we don't need the ESM import.meta.url dance. @types/node declares
+// (engine/dist). `oak` is only ever run bundled, CI (ci/run.sh) and local both invoke
+// dist/cli.cjs, so we don't need the ESM import.meta.url dance. @types/node declares
 // __dirname globally, keeping tsc happy under NodeNext.
 declare const __dirname: string;
 
@@ -72,7 +72,7 @@ function readEngineRepo(paperRoot: string): string {
 /**
  * Dev/CI-from-checkout asset resolution. `--typst-template` is the EXPLICIT override and
  * tops compose's precedence chain; the engine checkout's local `templates/typst` is the
- * BOTTOM fallback ([R76]) — it beats the (not-yet-existent) release zip but yields to a
+ * BOTTOM fallback ([R76]): it beats the (not-yet-existent) release zip but yields to a
  * tenant's or an author's template, which is the whole point of the chain. (It used to be
  * forced into the same slot as the explicit flag, i.e. first, which made both overrides
  * unreachable.) `--no-site-template` uses myst's default theme until the fork release
@@ -82,7 +82,7 @@ function readEngineRepo(paperRoot: string): string {
  * `myst.oak.yml` through the same `materializeDerived`. Sharing the function is not enough
  * to stop them drifting if they feed it different inputs: `templates/typst` exists in every
  * checkout including CI, so a validate that skipped these overrides stamped the release-zip
- * URL where the build stamps the local path — two different files under one name, and
+ * URL where the build stamps the local path, two different files under one name, and
  * `readStampedTemplate` (zenodo.ts) reads that file as the record of what the build rendered
  * with. Same overrides in, same bytes out.
  */
@@ -102,10 +102,10 @@ function assetOverridesFrom(argv: string[]): ComposeInput['assetOverrides'] {
  * `--instance` › the CO-LOCATED root (a `journal.yml` sitting beside the paper) › the
  * explicit `--no-instance` opt-out.
  *
- * The co-located rung is what `ci/run.sh` means by "'.' = co-located — leave to the CLI's
+ * The co-located rung is what `ci/run.sh` means by "'.' = co-located, leave to the CLI's
  * root resolution": when `pins.yml` says `instance_repo: .` the shim clones nothing and
  * passes no `--instance`, so WITHOUT this rung every co-located repo's CI died on the
- * usage error below. It also makes the error itself useful — the common way to reach it is
+ * usage error below. It also makes the error itself useful: the common way to reach it is
  * a paper whose `pins.yml` still carries the template's `.` placeholder, and the old text
  * ("pass --instance <path>") named a flag the author cannot reach from a CI log.
  *
@@ -128,7 +128,7 @@ function resolveInstanceRoot(
  * Is this directory the JOURNAL repo rather than a paper?
  *
  * `oak build` assumed every target was a paper, and the co-located rung above reads a
- * `journal.yml` as "the journal settings are in this repo" — which is equally true of the
+ * `journal.yml` as "the journal settings are in this repo", which is equally true of the
  * journal repo itself, where there is no manuscript at all. So a `oak build` typed in a journal
  * clone sailed past instance resolution and died inside the config read, on a coordinate a
  * journal repo is never supposed to have (the UX-test crash).
@@ -136,7 +136,7 @@ function resolveInstanceRoot(
  * The discriminator is the ENGINE COORDINATE, not `journal.yml`: a co-located repo is both a
  * journal and a paper and carries both, while the journal repo's `myst.yml` is the WEBSITE and
  * carries no `project.options.oaktree-sapling`. A `--no-site` journal has no myst.yml at all.
- * A myst.yml we cannot parse is not called a journal — that is a different error, and it should
+ * A myst.yml we cannot parse is not called a journal; that is a different error, and it should
  * be allowed to speak for itself.
  */
 function isJournalRepo(root: string): boolean {
@@ -153,7 +153,7 @@ function isJournalRepo(root: string): boolean {
   }
 }
 
-/** Everything `materializeDerived` needs except the myst edge — shared by build and start so a
+/** Everything `materializeDerived` needs except the myst edge, shared by build and start so a
  *  preview cannot compose from different inputs than the build it is previewing. */
 function materializeInputFrom(argv: string[], paperRoot: string, instanceRoot: string | null): Omit<MaterializeInput, 'edge'> {
   return {
@@ -217,7 +217,7 @@ function startOptsFrom(argv: string[]): StartOpts {
 }
 
 /**
- * `oak start` — compose, then hand off to myst's dev server (the same one `myst start` runs).
+ * `oak start`: compose, then hand off to myst's dev server (the same one `myst start` runs).
  *
  * Never returns: myst's `startServer` resolves once the server is UP, and `main()`'s return
  * would exit the process out from under it. The wait is what keeps the server alive; Ctrl-C
@@ -229,7 +229,7 @@ async function cmdStart(argv: string[]): Promise<number> {
   const edge = createMystEdge();
 
   // The journal repo is a plain myst project (its website), with nothing to compose: no engine
-  // layers, no edition, no derived config — myst reads its own myst.yml, exactly as the site
+  // layers, no edition, no derived config; myst reads its own myst.yml, exactly as the site
   // workflow does. Same shape check as `oak build`, opposite conclusion: here there IS
   // something to show.
   if (isJournalRepo(paperRoot)) {
@@ -251,7 +251,7 @@ async function cmdStart(argv: string[]): Promise<number> {
   for (const w of first.warnings) process.stderr.write(annotate('warning', w) + '\n');
 
   // myst watches the DERIVED config (that is the one it was pointed at), so an edit to the
-  // author's `myst.yml` would otherwise change nothing on screen until the next `oak start` —
+  // author's `myst.yml` would otherwise change nothing on screen until the next `oak start`:
   // the one file an author edits most. Recomposing rewrites `myst.oak.yml`, which myst's own
   // watcher then picks up: the reload path stays myst's, we only refresh its input.
   watchFile(join(paperRoot, 'myst.yml'), { interval: 500 }, (curr, prev) => {
@@ -286,7 +286,7 @@ const SUMMARY_SKIP = new Set(['runbook', 'checkRun']);
 /** Fallback rendering of a result object for a human: one `key: value` line per field. Arrays
  *  of strings become bullets, nested objects a compact `k=v` list, empty things nothing. */
 function summarize(result: Record<string, unknown>): string[] {
-  // A refusal is a sentence, not a record — the message already names the verb and the fix.
+  // A refusal is a sentence, not a record; the message already names the verb and the fix.
   if (result.status === 'error') {
     const text = result.error ?? result.message;
     if (typeof text === 'string') return [text];
@@ -323,14 +323,14 @@ function narrated(result: Record<string, unknown>): string[] {
   if (result.status !== 'ok') return special;
   const what = result.repo ?? result.target ?? '';
   const links = [result.pr, result.site_url].filter((v): v is string => typeof v === 'string' && !!v);
-  return [`done: ${what}${links.length ? ` — ${links.join('  ')}` : ''}`];
+  return [`done: ${what}${links.length ? `; ${links.join('  ')}` : ''}`];
 }
 
 /**
  * Print a verb's result. The JSON envelope is OPT-IN (`--json`): dumping it into a human's
- * terminal repeats, in a shape nobody reads, what the verb has just said in prose — the
+ * terminal repeats, in a shape nobody reads, what the verb has just said in prose, the
  * runbook a tenant is supposed to act on arrived twice, once as instructions and once as a
- * log. Nothing in CI parses this stdout (the shim and the workflows consume FILES — `oak
+ * log. Nothing in CI parses this stdout (the shim and the workflows consume FILES, `oak
  * validate --report`, `oak conformance --record`), so the envelope can be gated without
  * touching them. Human output goes to stderr, where the rest of our prose already is, so
  * `--json`'s stdout stays a clean machine channel.
@@ -347,7 +347,7 @@ function emit(
   for (const line of (human ?? summarize)(result)) process.stderr.write(line + '\n');
 }
 
-/** `oak deposit <prepare|publish|status>` — the Zenodo deposit verbs (slice 3). */
+/** `oak deposit <prepare|publish|status>`, the Zenodo deposit verbs (slice 3). */
 async function cmdDeposit(argv: string[]): Promise<number> {
   const sub = argv[0];
   const rest = argv.slice(1);
@@ -420,7 +420,7 @@ function findExportedPdf(paperRoot: string): string | null {
   return hit ? join(dir, String(hit)) : null;
 }
 
-/** `oak release --tag vX` — build + deposit publish + attach the bundle to the tag Release,
+/** `oak release --tag vX`: build + deposit publish + attach the bundle to the tag Release,
  *  post a commit comment / failure issue via gh (§1e). Env is derived from the committed DOI. */
 async function cmdRelease(argv: string[]): Promise<number> {
   const tag = flag(argv, 'tag');
@@ -432,7 +432,7 @@ async function cmdRelease(argv: string[]): Promise<number> {
   const gh = await import('./gh.js');
 
   // Build in a CHILD process, not in-process: the myst HTML/site build calls process.exit(0)
-  // on success, which — run in-process — kills `release` before its deposit half ever runs
+  // on success, which (run in-process) kills `release` before its deposit half ever runs
   // (observed on CI: build succeeded, job exited 0, nothing deposited). The child isolates
   // that exit; the parent then reads the same working tree's _build/exports (PDF) and
   // _build/site/content (abstract) for the deposit. `oak build` ignores the extra release
@@ -488,7 +488,7 @@ async function cmdRelease(argv: string[]): Promise<number> {
   return out.exitCode;
 }
 
-/** `oak deploy-preview <site>` — deploy the inert Stage-1 artifact to Cloudflare Pages (or
+/** `oak deploy-preview <site>`: deploy the inert Stage-1 artifact to Cloudflare Pages (or
  *  degrade to an artifact-link comment [R16]), post the sticky preview comment, then run the
  *  new-version reminder. Slice 2-shim; the git/gh + CF effects are the real gh.ts seams. */
 async function cmdDeployPreview(argv: string[]): Promise<number> {
@@ -512,9 +512,9 @@ async function cmdDeployPreview(argv: string[]): Promise<number> {
   return out.exitCode;
 }
 
-/** `oak notify new-version [--pr N | --site <dir>]` — the standalone new-version reminder.
+/** `oak notify new-version [--pr N | --site <dir>]`, the standalone new-version reminder.
  *  deploy-preview runs the same logic internally ([R16]); this is the manual/testable entry.
- *  The PR number comes from `--pr` or a `.pr-number` in `--site` (read-only — deploy-preview
+ *  The PR number comes from `--pr` or a `.pr-number` in `--site` (read-only, deploy-preview
  *  owns the [R26] delete). */
 async function cmdNotify(argv: string[]): Promise<number> {
   if (argv[0] !== 'new-version') {
@@ -548,10 +548,10 @@ async function cmdNotify(argv: string[]): Promise<number> {
   return out.exitCode;
 }
 
-/** `oak validate` — run the journal-controlled checks (slice 4). Layer A (engine invariants,
+/** `oak validate`: run the journal-controlled checks (slice 4). Layer A (engine invariants,
  *  also the `oak build` pre-flight phase) + Layer B (journal-selected editorial checks). Emits
  *  the report to stdout and, with `--report <path>`, writes the full JSON envelope for the
- *  Stage-2 `oak check-post` job to post. Does NOT post to GitHub itself — all PR write-back is
+ *  Stage-2 `oak check-post` job to post. Does NOT post to GitHub itself, all PR write-back is
  *  now uniform Stage-2 (the untrusted validate job holds no write token). */
 /** The paper's declared edition, or null. `oak validate` must survive a paper with a missing
  *  or malformed engine coordinate (that is itself a finding), so this never throws. */
@@ -571,7 +571,7 @@ function readEditionQuietly(paperRoot: string): string | null {
  * frozen `check.yml` only asks `jq -e '.checkRun.conclusion'`, so a missing file is
  * indistinguishable from any other fault and the author is told "engine crash" and nothing
  * else. A validator is a reporter first ([R82]'s "a gate that crashes tells the author less
- * than one that says what it could not do") — so even a usage error or an unexpected throw
+ * than one that says what it could not do"), so even a usage error or an unexpected throw
  * leaves a well-formed failing report, and Stage 2 posts the actual reason on the PR.
  * Best-effort: if even this write fails, the old "no valid report" path still catches it.
  */
@@ -599,7 +599,7 @@ function writeFailureReport(reportPath: string | undefined, title: string, messa
       ),
     );
   } catch {
-    /* best-effort — the Stage-1 guard remains the backstop */
+    /* best-effort: the Stage-1 guard remains the backstop */
   }
 }
 
@@ -607,7 +607,7 @@ function writeFailureReport(reportPath: string | undefined, title: string, messa
  * The human rendering of a validate run. Without `--json` the reader gets the verdict and
  * the findings that produced it, not the envelope: the envelope exists for `check-post`
  * (which reads `--report <path>`), and a terminal reader has no use for its `checkRun`
- * markdown. Every finding still appears — a shorter summary that DROPS findings would be a
+ * markdown. Every finding still appears; a shorter summary that DROPS findings would be a
  * different verdict, which is the one thing a validator may never do.
  */
 function validateSummary(out: {
@@ -660,8 +660,8 @@ async function cmdValidate(argv: string[]): Promise<number> {
   const { runValidate } = await import('./validate.js');
   const { createMystEdge } = await import('./myst.js');
 
-  // myst-cli writes progress to STDOUT — the `📖/📚 Built…` logger lines AND a raw `console.debug`
-  // from `new Session()` that bypasses its own logger — which would corrupt the JSON `emit()` puts
+  // myst-cli writes progress to STDOUT, the `📖/📚 Built…` logger lines AND a raw `console.debug`
+  // from `new Session()` that bypasses its own logger, which would corrupt the JSON `emit()` puts
   // there. Forward every stdout write to stderr for the duration of the run (preserving myst's own
   // formatting), so stdout carries ONLY our machine-readable payload; restore before we emit.
   const realStdoutWrite = process.stdout.write.bind(process.stdout);
@@ -674,7 +674,7 @@ async function cmdValidate(argv: string[]): Promise<number> {
         instanceRoot,
         edge: createMystEdge(),
         // [R72] disjointness needs the engine layer + which edition file to compare; the
-        // engine root + instance are ALSO what let validate compose ([R82]) — without both it
+        // engine root + instance are ALSO what let validate compose ([R82]); without both it
         // degrades to the author's config and says so in the report.
         engineRoot: engineRoot(),
         edition: readEditionQuietly(paperRoot),
@@ -691,7 +691,7 @@ async function cmdValidate(argv: string[]): Promise<number> {
     // the bare "engine crash" Stage-1 line, which names neither the fault nor the file.
     process.stdout.write = realStdoutWrite;
     // A UserError is a paper that needs fixing, not a crash: report its sentence (and only its
-    // sentence — a stack in a Check Run summary tells an author nothing they can act on).
+    // sentence: a stack in a Check Run summary tells an author nothing they can act on).
     const userFault = err instanceof UserError;
     const message = userFault ? (err as Error).message : String((err as Error)?.stack ?? err);
     process.stderr.write(annotate('error', userFault ? message : msg.workflow.validateCrashLine(message)) + '\n');
@@ -709,7 +709,7 @@ async function cmdValidate(argv: string[]): Promise<number> {
       warnings: out.warnings,
       checks: out.checks,
       // Only when there is something to say: a composed run is the normal case and stays quiet,
-      // an UNCOMPOSED one must announce itself ([R82]) — the report is the only place a reader
+      // an UNCOMPOSED one must announce itself ([R82]); the report is the only place a reader
       // learns that these findings came from the author's config rather than the composed one.
       ...(out.notes.length ? { notes: out.notes } : {}),
       checkRun: out.checkRun,
@@ -733,7 +733,7 @@ async function cmdValidate(argv: string[]): Promise<number> {
   return out.exitCode;
 }
 
-/** `oak check-post --report <path> --repo <o/r> --sha <headsha> [--pr <n>]` — Stage-2 write-back
+/** `oak check-post --report <path> --repo <o/r> --sha <headsha> [--pr <n>]`, Stage-2 write-back
  *  (slice 4b). Reads the precomputed `oak validate` report and posts a first-class Check Run on
  *  the PR HEAD sha plus, when a PR, an always-on sticky comment. Runs in trusted base context
  *  (checks:write + pull-requests:write); never re-runs validate or touches myst. Best-effort:
@@ -807,7 +807,7 @@ function secretsFrom(argv: string[]) {
   };
 }
 
-/** `oak bootstrap <paper|journal>` — onboarding (slice 5). */
+/** `oak bootstrap <paper|journal>`: onboarding (slice 5). */
 async function cmdBootstrap(argv: string[]): Promise<number> {
   const sub = argv[0];
   const rest = argv.slice(1);
@@ -883,7 +883,7 @@ async function cmdBootstrap(argv: string[]): Promise<number> {
         tier: external ? 'external' : 'co-located',
         name: flag(rest, 'name'),
         // Defaulted (and declared in the plan): the scaffold NAMES its own edition file from
-        // this value, so `edition` is self-consistent here — a placeholder the tenant renames,
+        // this value, so `edition` is self-consistent here, a placeholder the tenant renames,
         // not a claim about someone else's journal.
         edition: flag(rest, 'edition'),
         engineVersion,
@@ -905,7 +905,7 @@ async function cmdBootstrap(argv: string[]): Promise<number> {
   return 2;
 }
 
-/** `oak upgrade` — render-and-compare lifecycle (slice 5). */
+/** `oak upgrade`: render-and-compare lifecycle (slice 5). */
 async function cmdUpgrade(argv: string[]): Promise<number> {
   const gh = await import('./gh.js');
   const upgrade = await import('./upgrade.js');
@@ -937,7 +937,7 @@ async function cmdUpgrade(argv: string[]): Promise<number> {
   return out.exitCode;
 }
 
-/** `oak conformance` — the paper-CI conformance harness (plan-paper-ci-conformance.md). Slice
+/** `oak conformance`: the paper-CI conformance harness (plan-paper-ci-conformance.md). Slice
  *  C0: `reset` (idempotent teardown of a cert run's ephemeral state). */
 async function cmdConformance(argv: string[]): Promise<number> {
   const sub = argv[0];
@@ -1002,7 +1002,7 @@ async function cmdConformance(argv: string[]): Promise<number> {
     emit(rest, out.result);
     // The tag-keyed cert record (the C5 promotion-gate seam): persist the verdict for a later
     // gate to read. `--record` writes it to a file the workflow can attach to the engine tag's
-    // release — the FILE is the machine channel (stdout carries the envelope only under
+    // release: the FILE is the machine channel (stdout carries the envelope only under
     // `--json`), which is why the conformance workflow passes `--record` and parses nothing.
     const record = flag(rest, 'record');
     if (record) writeFileSync(resolve(record), JSON.stringify(out.result, null, 2) + '\n');
@@ -1027,7 +1027,7 @@ const VERBS: Verb[] = [
   'conformance',
 ];
 
-/** Levenshtein distance — only ever run over two short command words. */
+/** Levenshtein distance: only ever run over two short command words. */
 function editDistance(a: string, b: string): number {
   const prev = Array.from({ length: b.length + 1 }, (_, i) => i);
   for (let i = 1; i <= a.length; i++) {
@@ -1091,7 +1091,7 @@ main(process.argv.slice(2)).then(
   (code) => process.exit(code),
   (err) => {
     // A UserError was WRITTEN for whoever typed the command: one sentence naming the file and
-    // the fix, exit 2 (a usage failure), no stack — the UX test's worst moment was a missing
+    // the fix, exit 2 (a usage failure), no stack; the UX test's worst moment was a missing
     // config line reported as a five-frame trace through the bundle. Anything else is an engine
     // bug, and the stack is the only useful thing we have.
     if (err instanceof UserError) {

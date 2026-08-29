@@ -1,21 +1,21 @@
 #!/usr/bin/env bash
-# cut-engine-release.sh — the ONE way to make an engine *ref* runnable ([R57]).
+# cut-engine-release.sh: the ONE way to make an engine *ref* runnable ([R57]).
 #
 # A runnable engine ⟺ a release. This builds dist/cli.cjs and commits it ONTO THE TAG'S
 # LEAF COMMIT (never onto main or any branch), pushes ONLY the tag, and creates a GH
-# (pre-)release. It runs identically in CI (the cut-engine-release workflow) and by hand —
+# (pre-)release. It runs identically in CI (the cut-engine-release workflow) and by hand:
 # the release path is the product, so there is exactly one path.
 #
 #   scripts/cut-engine-release.sh v0.3.0-dev.4     # dev pre-release (accumulate + prune)
 #   scripts/cut-engine-release.sh v1.2.0           # real release (immutable, never re-cut)
 #
 # A '-' in the version (semver pre-release) ⇒ marked --prerelease. Requires: node+npm and gh
-# authed (GH_TOKEN in CI). typst is NOT required on PATH — this script fetches the pinned
+# authed (GH_TOKEN in CI). typst is NOT required on PATH; this script fetches the pinned
 # linux-x86_64 binary (typst.version) into bin/typst and both renders the canary with it AND
 # ships it ([R34]/[R66]).
 #
 # NOTE ([R57]): the bundle is delivered by being *committed at the tag*, NOT uploaded as a
-# Release asset (install pathology + local==CI byte-identity are the reasons — [R66] retires
+# Release asset (install pathology + local==CI byte-identity are the reasons, [R66] retires
 # the "replay-on-move"/"no network" framings). bin/typst
 # rides the same tag leaf so the checked-out engine is immediately runnable AND the Zenodo
 # deposit's engine.zip is self-contained. The GH release is just the marker/pre-release flag.
@@ -34,7 +34,7 @@ fi
 # Real vX.Y.Z are immutable; dev releases accumulate as a NEW N (never reuse a moving tag).
 if git rev-parse -q --verify "refs/tags/$version" >/dev/null 2>&1 \
    || git ls-remote --exit-code --tags origin "refs/tags/$version" >/dev/null 2>&1; then
-  echo "::error::tag $version already exists — bump the version (dev releases accumulate)" >&2
+  echo "::error::tag $version already exists, bump the version (dev releases accumulate)" >&2
   exit 1
 fi
 
@@ -42,7 +42,7 @@ fi
 # The build steps below touch only gitignored paths (node_modules/, dist/), so a clean tree
 # here guarantees the leaf's tree = exactly this source commit + dist/cli.cjs.
 if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
-  echo "::error::working tree has uncommitted tracked changes — commit or stash first" >&2
+  echo "::error::working tree has uncommitted tracked changes, commit or stash first" >&2
   exit 1
 fi
 src_sha="$(git rev-parse HEAD)"
@@ -71,7 +71,7 @@ npm run build:fixture      # second, standalone render through the freshly-built
 
 # --- build the leaf commit WITHOUT moving any branch (git plumbing) --------------------
 # dist/ and bin/ are gitignored; force-add them into the index, snapshot the index as a tree,
-# and make a detached commit parented on the source commit. HEAD/branches never move — so
+# and make a detached commit parented on the source commit. HEAD/branches never move, so
 # `main` is not advanced (handoff constraint 1: pushing never forces the developer to pull).
 # Identity for the release commit + tag ONLY. Env vars, not `git config`: a bare `git config`
 # writes .git/config and never unsets it, so a local cut silently re-authors every later commit

@@ -3,20 +3,20 @@
  *
  * How to use this file:
  *   - Grouped by SURFACE: the output plumbing first (it decides how the rest is printed), then
- *     roughly the order a tenant meets them — usage → the confirm prompt → bootstrap → upgrade →
+ *     roughly the order a tenant meets them, usage → the confirm prompt → bootstrap → upgrade →
  *     build → start → validate → what lands on a pull request → the workflow-run verbs.
  *   - Fixed strings are consts; parameterized ones are functions. Edit the words freely; keep
  *     the `${…}` holes and the leading `oak <verb>:` prefixes (the prefix is how a reader knows
  *     which command spoke, and a few tests assert on distinctive fragments).
  *   - Nothing here does any work: no I/O, no logic beyond choosing between phrasings. The one
- *     import is the docs link table, which is constants only — keep it that way.
+ *     import is the docs link table, which is constants only, keep it that way.
  *   - A message that links to documentation writes `docsUrl(DOCS.<topic>)`, never a URL. The
  *     domain lives in `assets.ts`; the page it lands on is `docs-links.ts`'s problem. Link
  *     where the page says more than a sentence can and the reader is stuck; a URL on every
  *     line is noise, and most of these messages already name the file and the fix.
  *
  * The output rules these strings follow (open-tasks/cli-output-pass.md):
- *   1. Nothing the CLI assumes may be silent — every default or auto-resolved value is declared
+ *   1. Nothing the CLI assumes may be silent, every default or auto-resolved value is declared
  *      in the plan before the confirm prompt.
  *   2. No design-doc jargon ([S#]/[R#], "frozen shim", "instance-config", "build_type=workflow").
  *   3. Human prose on stderr by default; the JSON envelope only under `--json`, on stdout.
@@ -31,7 +31,7 @@
  *   engine/templates/paper/CODEOWNERS .............. header comment
  *   engine/templates/paper/.github/workflows/*.yml . paper CI job names + `::error::` annotations
  *                                                    (check.yml, check-post.yml, preview.yml,
- *                                                    publish.yml — names show in the Actions tab)
+ *                                                    publish.yml: names show in the Actions tab)
  *   engine/templates/instance/README.md ............ what a journal editor reads first
  *   engine/templates/instance/journal.yml .......... journal's settings, comments and all
  *   engine/templates/instance/brand/brand.yml ...... branding knobs and their comments
@@ -58,7 +58,7 @@
 import { DOCS, docsUrl } from './docs-links.js';
 
 /* ═══════════════════════════════════════════════════════════════════════════════════════════
- * Output plumbing — not prose, but it decides HOW the prose is printed.
+ * Output plumbing: not prose, but it decides HOW the prose is printed.
  * ═════════════════════════════════════════════════════════════════════════════════════════ */
 
 /** Are we inside a GitHub Actions run? Annotations mean something only there. */
@@ -70,7 +70,7 @@ export function inCI(): boolean {
  * A warning/error line. `::warning::…` is GitHub-Actions syntax: in a workflow log it becomes an
  * annotation on the run, and in a tenant's terminal it is line noise in front of the sentence
  * that matters (the UX test read one as part of the error). So the annotation is added ONLY in
- * CI, where a multi-line message must also be escaped — a raw newline silently truncates the
+ * CI, where a multi-line message must also be escaped; a raw newline silently truncates the
  * annotation to its first line.
  */
 export function annotate(kind: 'warning' | 'error', message: string): string {
@@ -80,7 +80,7 @@ export function annotate(kind: 'warning' | 'error', message: string): string {
 
 /**
  * An error whose message was written FOR a tenant. `main()` prints it as a plain sentence and
- * exits 2 — **no stack trace** (in a workflow log it is annotated, like every other error).
+ * exits 2: **no stack trace** (in a workflow log it is annotated, like every other error).
  * Anything else reaching the top level is an engine bug, and gets the stack it needs. The class
  * lives here because the message and the promise "this prints without a stack" are one decision.
  */
@@ -92,7 +92,7 @@ export class UserError extends Error {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════════════════
- * Usage — the first screen a new tenant sees.
+ * Usage: the first screen a new tenant sees.
  * ═══════════════════════════════════════════════════════════════════════════════════════════
  * It opens with what `oak` IS and where someone with nothing starts, because a bare list of
  * verbs answers a question they have not reached yet. The two journal shapes get a plain
@@ -160,7 +160,7 @@ export const unknownCommand = (verb: string, near: string | null): string =>
   `oak: unknown command '${verb}'${near ? `; did you mean '${near}'?` : ''}\n`;
 
 /* ═══════════════════════════════════════════════════════════════════════════════════════════
- * The confirm prompt — every plan ends here.
+ * The confirm prompt: every plan ends here.
  * ═════════════════════════════════════════════════════════════════════════════════════════ */
 
 export const prompt = {
@@ -183,13 +183,13 @@ export const prompt = {
 };
 
 /* ═══════════════════════════════════════════════════════════════════════════════════════════
- * oak bootstrap — the longest conversation the engine has with a tenant.
+ * oak bootstrap: the longest conversation the engine has with a tenant.
  * ═════════════════════════════════════════════════════════════════════════════════════════ */
 
 /**
  * The plan's opening block: every value this run will use, and for each one whether it came
  * from a flag or from us. A default nobody was told about is a decision made on the tenant's
- * behalf, and `Proceed? [y/N]` is only consent if the assumptions are on the screen above it —
+ * behalf, and `Proceed? [y/N]` is only consent if the assumptions are on the screen above it:
  * most of these end up stamped into files that are awkward to change afterwards.
  */
 export const declared = {
@@ -432,7 +432,7 @@ export const build = {
 
   /**
    * `oak build` run in the journal repo. The journal repo carries a `journal.yml` but its
-   * `myst.yml` is the WEBSITE, not a paper — before the shape check, the co-located rung took
+   * `myst.yml` is the WEBSITE, not a paper, before the shape check, the co-located rung took
    * that `journal.yml` as proof of a paper and the run died deep inside the config read.
    */
   inJournalRepo: (root: string): string =>
@@ -479,7 +479,7 @@ export const build = {
   preflightFailed: (findings: string): string =>
     `oak build: pre-flight validation failed:\n${findings}`,
 
-  /** The coordinate the paper declares and the one the merged config resolves to disagree —
+  /** The coordinate the paper declares and the one the merged config resolves to disagree:
    *  something in an extended layer is overriding `project.options`. */
   coordinateMismatch: (
     version: string,
@@ -517,12 +517,12 @@ export const start = {
 };
 
 /* ═══════════════════════════════════════════════════════════════════════════════════════════
- * oak validate — the engine's own findings (Layer A) and the notes about how a run happened.
+ * oak validate: the engine's own findings (Layer A) and the notes about how a run happened.
  * The editorial (Layer B) check messages come from the curvenote catalog, not from us.
  * ═════════════════════════════════════════════════════════════════════════════════════════ */
 
 export const validate = {
-  /** `oak validate` typed in the journal repo — the same shape check `oak build` makes, and the
+  /** `oak validate` typed in the journal repo, the same shape check `oak build` makes, and the
    *  same reason: without it the run dies on an engine coordinate a journal repo never has. */
   inJournalRepo: (root: string): string =>
     `oak validate: ${root} is the journal repo, not a paper; journal.yml holds the journal's ` +
@@ -560,7 +560,7 @@ export const validate = {
   brandWatermarkUnresolved: (logo: string): string =>
     `brand typst watermark "${logo}" does not resolve to a file`,
 
-  // ── how the run happened (notes — they explain, they never gate) ────────────────────────
+  // ── how the run happened (notes: they explain, they never gate) ────────────────────────
   noteUncomposed:
     "checked the paper's own myst.yml ONLY: the journal's settings were not available to this " +
     'run, so whatever the journal, its edition or its branding add (the cover image, the PDF ' +
@@ -667,7 +667,7 @@ export const pr = {
     `${docsUrl(DOCS.checksChanging)}`,
   checkTableHeader: '| Check | Status | Detail |\n| --- | --- | --- |',
 
-  /** A PR that edits the files the checks run from — an advisory, never a gate (legitimate
+  /** A PR that edits the files the checks run from: an advisory, never a gate (legitimate
    *  engine-upgrade PRs edit them too). */
   shimWarning: (shown: string, more: string): string =>
     `> ⚠️ **This PR changes the files that run the checks** (${shown}${more}). The results below ` +
@@ -736,7 +736,7 @@ export const workflow = {
   // bootstrap / conformance argument errors
   bootstrapNoRepo: 'oak bootstrap: --repo <owner/name> is required',
   /** The engine repo has pre-releases but no stable one. Saying "no release" would be a lie a
-   *  tenant can see through — they are looking at a releases page full of dev tags — so name
+   *  tenant can see through (they are looking at a releases page full of dev tags) so name
    *  the distinction and the flag that reaches one. */
   bootstrapNoRelease:
     'oak bootstrap: the engine repo has no stable release to default to. Pass ' +
@@ -752,7 +752,7 @@ export const workflow = {
     '  oak conformance reset   --repo <owner/name>\n' +
     '  oak conformance certify --repo <owner/name> --tag <vX.Y.Z> [--run-id <id>] [--fork-repo <owner/name>] [--record <path>]',
 
-  /** Printed while a git/gh call is in flight, then erased — see gh.ts `showWorking`. */
+  /** Printed while a git/gh call is in flight, then erased; see gh.ts `showWorking`. */
   working: (what: string): string => `  … ${what}`,
 
   // the engine-release resolver + the wrangler deploy (gh.ts)

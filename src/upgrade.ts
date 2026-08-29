@@ -1,5 +1,5 @@
 /**
- * upgrade.ts — `oak upgrade` (slice 5). Render-and-compare lifecycle: pick a repo, render the
+ * upgrade.ts: `oak upgrade` (slice 5). Render-and-compare lifecycle: pick a repo, render the
  * frozen `.github/` at a target engine tag from the repo's own answers, 2-way diff against the
  * files on disk, and offer {bump the logic ref only / resync the drifted frozen files / both}
  * as a PR. No stored `template_version` marker and no 3-way merge: the frozen files are fully
@@ -7,14 +7,14 @@
  * divergence is reset to the template render (a deliberate hand-edit still shows in the PR).
  *
  *  - **version-only** bumps `project.options.oaktree-sapling.version` → target in `myst.yml`
- *    (YAML round-trip, never sed). Data — not CODEOWNERS-gated.
+ *    (YAML round-trip, never sed). Data, not CODEOWNERS-gated.
  *  - **files-only** overwrites the drifted frozen files with the target render. Touched paths
  *    are all under `/.github/` (+ `/CODEOWNERS`), so the PR lands on the CODEOWNERS gate.
  *  - **both** does both.
  *
  * Output is always a PR (reusing openDoiPr's branch→commit-as-bot→push→gh-pr-create shape),
  * never a silent push; a clean repo with no requested bump opens nothing. SEAMS (target
- * resolution, template materialization, the PR) are injected — faked in tests. No myst-cli.
+ * resolution, template materialization, the PR) are injected, faked in tests. No myst-cli.
  */
 import { existsSync, readFileSync, writeFileSync, mkdirSync, copyFileSync } from 'node:fs';
 import { join, dirname, posix } from 'node:path';
@@ -43,8 +43,8 @@ export function ownerFromCodeowners(src: string): string {
 
 export function readAnswers(repoRoot: string): TemplateAnswers {
   // A directory that is not a paper repo has no pins.yml at all, and reading it threw an
-  // ENOENT stack trace at the tenant. An ABSENT file is the same answer as an empty one —
-  // "no engine pin here" — and cmdUpgrade already turns that into a sentence.
+  // ENOENT stack trace at the tenant. An ABSENT file is the same answer as an empty one:
+  // "no engine pin here", and cmdUpgrade already turns that into a sentence.
   const pinsPath = join(repoRoot, PINS_REL);
   const pins = existsSync(pinsPath) ? readDoc(pinsPath) : null;
   const engineRepo = String(pins?.get('engine_repo') ?? '');
@@ -63,7 +63,7 @@ export function readAnswers(repoRoot: string): TemplateAnswers {
 }
 
 /* --------------------------------------------------------------------------
- * Drift (pure) — render each frozen file at target, 2-way diff vs disk
+ * Drift (pure): render each frozen file at target, 2-way diff vs disk
  * ------------------------------------------------------------------------ */
 
 /** The frozen files scanned for drift: everything under `.github/` plus `CODEOWNERS`. The

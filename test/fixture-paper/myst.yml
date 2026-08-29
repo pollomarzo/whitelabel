@@ -1,10 +1,10 @@
 version: 1
 
-# Fixture paper (design §12 step 0) — the release-safety canary. This is a NEW-MODEL
+# Fixture paper (design §12 step 0): the release-safety canary. This is a NEW-MODEL
 # committed paper: NO `extends:` (compose injects the engine/edition/brand chain), and
 # the single engine coordinate rides myst's `options` passthrough. It deliberately also
 # carries a sibling option (`youtube`) so tests prove compose/schema never clobber
-# option keys the engine doesn't own (finding 3 — live in suheylgulenc).
+# option keys the engine doesn't own (finding 3, live in suheylgulenc).
 project:
   id: fixture-2026-sample-paper
   title: A Fixture Paper for Engine Release Safety

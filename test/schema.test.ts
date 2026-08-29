@@ -83,7 +83,7 @@ describe('JournalConfig additive-only (dec. 24)', () => {
   });
 });
 
-describe('checkIdShape (check A — catches the live geetha bug [R12])', () => {
+describe('checkIdShape (check A: catches the live geetha bug [R12])', () => {
   const policy = {
     id_sentinel: 'fixture-template-placeholder',
     id_pattern: '^fixture-\\d{4}-[a-z0-9-]+$',
@@ -105,7 +105,7 @@ describe('checkIdShape (check A — catches the live geetha bug [R12])', () => {
   });
 });
 
-describe('checkIdUniqueness (check B — needs the registry)', () => {
+describe('checkIdUniqueness (check B, needs the registry)', () => {
   const registry = Registry.parse(read('./fixture-instance/registry/papers.yml'));
 
   it('flags a duplicate id owned by another paper', () => {
@@ -130,7 +130,7 @@ describe('checkIdUniqueness (check B — needs the registry)', () => {
   });
 
   it('downgrades a clash to a warning when self is not identifiable (no repo context)', () => {
-    // Offline/local build: no GITHUB_REPOSITORY, temp checkout — the paper's own entry
+    // Offline/local build: no GITHUB_REPOSITORY, temp checkout; the paper's own entry
     // cannot be distinguished from a real duplicate, so it must not hard-gate.
     const r = checkIdUniqueness('fixture-2026-sample-paper', registry, undefined, {
       selfIdentifiable: false,

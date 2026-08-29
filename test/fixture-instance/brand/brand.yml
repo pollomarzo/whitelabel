@@ -1,11 +1,11 @@
 version: 1
 
-# Fixture brand (design §5). The journal's visual identity — logo, colors, nav, footer.
+# Fixture brand (design §5). The journal's visual identity, logo, colors, nav, footer.
 # Materialized as REAL files (logo.svg/favicon.svg beside this) because typst/theme load
 # brand assets by path, not URL ([R38], dec. 19). Moved here from the website's nexus.yml.
 #
 # Asset paths are BRAND-RELATIVE (`./logo.svg`). compose() absolutizes them to
-# `<instanceRoot>/brand/<x>` so they resolve through the extends chain — myst would
+# `<instanceRoot>/brand/<x>` so they resolve through the extends chain; myst would
 # otherwise resolve them against the PAPER root, where the instance's files don't exist
 # ([R62]). A resolvable favicon is also what keeps the HTML prerender from fatally
 # 500-ing on /favicon.ico ([R61]).
@@ -13,7 +13,7 @@ version: 1
 # `site.options` assets feed the HTML book-theme. `project.options.logo` is the typst PDF
 # WATERMARK: the engine template ships no default (design.md:160-161 keep the shared engine
 # neutral), so each journal supplies its own logo-watermark.svg here. Unlike the site logo
-# it must be a real file — typst can't take a URL.
+# it must be a real file: typst can't take a URL.
 site:
   options:
     logo_text: Fixture Journal

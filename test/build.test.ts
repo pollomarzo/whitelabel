@@ -53,7 +53,7 @@ function fakeEdge(): { edge: MystEdge; calls: string[] } {
   };
 }
 
-describe('runBuild — the two-pass orchestrator ([R52])', () => {
+describe('runBuild: the two-pass orchestrator ([R52])', () => {
   it('injects extends, then writes the engine override to the OWN config, then builds', async () => {
     const paperRoot = tmpPaper();
     const { edge, calls } = fakeEdge();
@@ -84,11 +84,11 @@ describe('runBuild — the two-pass orchestrator ([R52])', () => {
       typstTemplateUrl('open-scholar-nexus/oaktree-sapling', 'v0.3.0'),
     );
     expect(doc.getIn(['project', 'exports', 0, 'articles', 0, 'file'])).toBe('index.md');
-    // engine also owns `output` — pinned so the artifact path never depends on the derived
+    // engine also owns `output`: pinned so the artifact path never depends on the derived
     // config's filename (myst would otherwise derive it from the declaring file)
     expect(doc.getIn(['project', 'exports', 0, 'output'])).toBe(TYPST_OUTPUT);
     // theme override + sibling option preserved. NB the author's ORIGINAL youtube
-    // survives — the override pass never touches options, and loadConfig's resolved
+    // survives: the override pass never touches options, and loadConfig's resolved
     // value ('…/x') is never written back to the working tree (finding 3).
     expect(doc.getIn(['site', 'template'])).toBe(themeZipUrl());
     expect(doc.getIn(['project', 'options', 'youtube'])).toBe(
@@ -140,7 +140,7 @@ describe('runBuild — the two-pass orchestrator ([R52])', () => {
     expect(res.warnings.join(' ')).not.toMatch(/overrides the journal/);
   });
 
-  it('NEVER writes the author myst.yml — it is byte-identical after a build ([R71])', async () => {
+  it('NEVER writes the author myst.yml: it is byte-identical after a build ([R71])', async () => {
     const paperRoot = tmpPaper();
     const authorPath = join(paperRoot, 'myst.yml');
     const before = readFileSync(authorPath); // raw bytes, not a yaml round-trip
@@ -211,7 +211,7 @@ describe('a missing engine coordinate is a SENTENCE, not a stack', () => {
   });
 });
 
-describe('runStart — compose, then hand off to myst', () => {
+describe('runStart: compose, then hand off to myst', () => {
   it('composes the SAME derived config as a build and points the server at it', async () => {
     const paperRoot = tmpPaper();
     const { edge, calls } = fakeEdge();
@@ -232,7 +232,7 @@ describe('runStart — compose, then hand off to myst', () => {
       `load:${DERIVED_CONFIG_FILE}`,
       `start:${paperRoot}:{"port":3210}:${DERIVED_CONFIG_FILE}`,
     ]);
-    // No build ran — the server does its own.
+    // No build ran: the server does its own.
     expect(calls.some((c) => c.startsWith('build:'))).toBe(false);
 
     const doc = parseDocument(readFileSync(join(paperRoot, DERIVED_CONFIG_FILE), 'utf8'));
@@ -242,7 +242,7 @@ describe('runStart — compose, then hand off to myst', () => {
 
   it('does NOT gate a preview on Layer-A findings the way a build does', async () => {
     // A placeholder id is exactly what a fresh repo has, and it must not stand between an
-    // author and looking at their draft. (index.md is absent here — the structural class that
+    // author and looking at their draft. (index.md is absent here; the structural class that
     // DOES block `oak build`.)
     const paperRoot = mkdtempSync(join(tmpdir(), 'oak-start-'));
     copyFileSync(fixturePaper, join(paperRoot, 'myst.yml'));
