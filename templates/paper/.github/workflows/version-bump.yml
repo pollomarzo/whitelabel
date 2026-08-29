@@ -1,6 +1,6 @@
 name: Engine version bump
 
-# Scheduled logic-ref bump (design §6b-left, dec. 17). Floats
+# Scheduled logic-ref bump. Floats
 # project.options.oaktree-sapling.version to the latest engine release and opens a one-line
 # PR. The bump is DATA (myst.yml, not CODEOWNERS-gated), so an editor merges it after the
 # preview build shows the result; it touches no secret. Runs `oak upgrade --version-only`,

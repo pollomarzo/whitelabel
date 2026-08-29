@@ -1,6 +1,6 @@
 name: Preview deploy
 
-# Stage 2 of the always-split preview (design §6a, dec. 13, [R16]). Runs in BASE-repo
+# Stage 2 of the always-split preview. Runs in BASE-repo
 # context after Paper CI completes, so it holds the preview secret that fork PRs never
 # get. It ONLY downloads Stage 1's inert artifact and deploys it; it never rebuilds fork
 # content (that would reopen the injection hole through the shim's back door). The engine
@@ -14,11 +14,11 @@ on:
 permissions:
   contents: read
   actions: read # download the cross-run artifact
-  pull-requests: write # sticky preview comment + new-version reminder ([R16])
+  pull-requests: write # sticky preview comment + new-version reminder
 
 concurrency:
   # head_branch alone collides across forks (two forks PRing from `main` would cancel each
-  # other's previews): key on head repo too ([R15]).
+  # other's previews): key on head repo too.
   group: preview-${{ github.event.workflow_run.head_repository.full_name }}-${{ github.event.workflow_run.head_branch }}
   cancel-in-progress: true
 
@@ -36,10 +36,10 @@ jobs:
           path: site
           run-id: ${{ github.event.workflow_run.id }}
           github-token: ${{ github.token }}
-      # deploys the inert artifact (deletes .pr-number first, [R26]); if no Cloudflare
+      # deploys the inert artifact (deletes .pr-number first); if no Cloudflare
       # secrets are present, `oak deploy-preview` degrades to an artifact-link comment
-      # instead of failing ([R6]). It also posts the new-version reminder here, where it
-      # has pull-requests: write (fork Stage-1 runs never do), [R16].
+      # instead of failing. It also posts the new-version reminder here, where it
+      # has pull-requests: write (fork Stage-1 runs never do).
       - uses: ./.github/actions/engine
         with:
           args: deploy-preview site

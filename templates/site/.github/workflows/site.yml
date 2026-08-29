@@ -1,10 +1,10 @@
 name: Journal site
 
 # Builds + deploys the journal site to GitHub Pages. Plain MyST: no engine, no shim, no
-# secrets ([S1]). The editorial PR that adds a registry entry lands in THIS repo, so it is
-# also the deploy trigger: publish → visible, one act, one repo ([S8]).
+# secrets. The editorial PR that adds a registry entry lands in THIS repo, so it is
+# also the deploy trigger: publish → visible, one act, one repo.
 #
-# Actions are pinned by full commit SHA at a close-to-latest major ([R75]); the same SHAs
+# Actions are pinned by full commit SHA at a close-to-latest major; the same SHAs
 # the frozen paper shim uses.
 
 on:
@@ -53,7 +53,7 @@ jobs:
       # `--strict` catches errors raised while BUILDING a page (a bad DOI, a missing image).
       # It does NOT catch a plugin that never loaded: myst logs "Unknown plugin" and
       # "unknown directive: paper-cards", then exits 0, and the gallery-less page deploys
-      # over a perfectly good one. Verified live, not assumed ([R80]). So we also require a
+      # over a perfectly good one. Verified live, not assumed. So we also require a
       # POSITIVE signal: myst prints the plugin's own name when it loads, and that name is
       # ours, not a myst log format we don't control.
       - name: Build (and prove the gallery plugin loaded)

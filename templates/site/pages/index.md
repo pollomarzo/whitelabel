@@ -21,5 +21,5 @@ When you grow a second edition, split this into per-edition pages: add
 
 and add the file to `toc:` in myst.yml. The edition's display title and blurb live in that
 page, deliberately: `editions/<edition>.yml` is a MyST config layer, so a non-MyST key there
-is silently ignored and misattributed to a paper's generated config ([R79]).
+is silently ignored and misattributed to a paper's generated config.
 -->
