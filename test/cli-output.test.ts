@@ -8,7 +8,7 @@
  */
 import { describe, it, expect, beforeAll } from 'vitest';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, copyFileSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, copyFileSync, readFileSync, writeFileSync, cpSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -16,7 +16,14 @@ import { bundleState, assertBundleNotStale, bundlePath } from './bundle-state.js
 import { labelChildOutput } from '../src/gh.js';
 
 const engineDir = fileURLToPath(new URL('..', import.meta.url));
-const fixturePaper = join(engineDir, 'test', 'fixture-paper');
+/** A PRIVATE copy of the paper fixture: `materializeDerived` writes `myst.oak.yml` into the
+ *  paper root, and vitest runs files in parallel, so sharing it races with
+ *  `validate.integration.test.ts`. See the longer note there. */
+const fixturePaper = mkdtempSync(join(tmpdir(), 'oak-fixture-paper-'));
+cpSync(join(engineDir, 'test', 'fixture-paper'), fixturePaper, {
+  recursive: true,
+  filter: (src) => !src.endsWith('myst.oak.yml'),
+});
 const fixtureInstance = join(engineDir, 'test', 'fixture-instance');
 /** The repo the fixture paper is registered to (id-uniqueness passes only under it). */
 const fixtureRepo = 'open-scholar-nexus/fixture-sample-paper';

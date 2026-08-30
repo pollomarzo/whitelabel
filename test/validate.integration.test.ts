@@ -17,7 +17,21 @@ import { bundleState, assertBundleNotStale } from './bundle-state.js';
 
 const engineDir = fileURLToPath(new URL('..', import.meta.url));
 const bundle = join(engineDir, 'dist', 'cli.cjs');
-const fixturePaper = join(engineDir, 'test', 'fixture-paper');
+/**
+ * A PRIVATE copy of the paper fixture, not the shared `test/fixture-paper`.
+ *
+ * `materializeDerived` writes `myst.oak.yml` INTO the paper root and leaves it there (by
+ * design: myst's `process.exit(0)` defeats cleanup, and the frozen paper template gitignores
+ * it). Vitest runs test FILES in parallel, and two suites validate this fixture, so pointing
+ * both at the shared directory makes them race on that one file: the loser reads the winner's
+ * derived config and reports `status: 'error'` where it expects `ok`. That is the intermittent
+ * failure `plans/todo-misc.md` carried as unreproduced from 2026-08-25.
+ */
+const fixturePaper = mkdtempSync(join(tmpdir(), 'oak-fixture-paper-'));
+cpSync(join(engineDir, 'test', 'fixture-paper'), fixturePaper, {
+  recursive: true,
+  filter: (src) => !src.endsWith('myst.oak.yml'),
+});
 const fixtureInstance = join(engineDir, 'test', 'fixture-instance');
 const repo = 'open-scholar-nexus/fixture-sample-paper';
 
