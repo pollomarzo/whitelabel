@@ -54,10 +54,9 @@ describe('every documentation topic resolves', () => {
         offenders.push(`${name}: ${m[0]}`);
       }
     }
-    expect(
-      offenders,
-      `write docsUrl(DOCS.<topic>) instead:\n  ${offenders.join('\n  ')}`,
-    ).toEqual([]);
+    expect(offenders, `write docsUrl(DOCS.<topic>) instead:\n  ${offenders.join('\n  ')}`).toEqual(
+      [],
+    );
   });
 
   it('docsUrl joins with exactly one slash, whatever the base looks like', () => {

@@ -106,9 +106,7 @@ function needsAbsolutizing(value: string): boolean {
  *  `<instanceRoot>/brand/<x>`; URLs / absolute paths pass through. Exported so `oak validate`
  *  checks the SAME resolved path compose will emit ([R62]). */
 export function resolveBrandAssetPath(instanceRoot: string, value: string): string {
-  return needsAbsolutizing(value)
-    ? join(instanceRoot, 'brand', value.replace(/^\.\//, ''))
-    : value;
+  return needsAbsolutizing(value) ? join(instanceRoot, 'brand', value.replace(/^\.\//, '')) : value;
 }
 
 /** Absolutize the instance-relative values among `raw` (the {@link BRAND_ASSET_KEYS}
@@ -293,9 +291,10 @@ export function compose(input: ComposeInput): ComposeResult {
     // The author needs no new field and no flag: paper-base and editions never declare
     // `template:`, so a `template:` surviving onto the resolved export can only be the
     // author's own, written myst-natively in the deterministic base slot (no [R72] race).
-    const authorTemplate = typeof typst['template'] === 'string' && typst['template']
-      ? (typst['template'] as string)
-      : undefined;
+    const authorTemplate =
+      typeof typst['template'] === 'string' && typst['template']
+        ? (typst['template'] as string)
+        : undefined;
     const tenantTemplate =
       input.tenantTypstTemplate && instanceRoot
         ? resolveTenantTemplate(instanceRoot, input.tenantTypstTemplate)

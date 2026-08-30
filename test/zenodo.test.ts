@@ -74,7 +74,10 @@ const dep = (over: Partial<Deposition> = {}): Deposition => ({
   id: 1,
   conceptrecid: 1,
   submitted: false,
-  links: { html: 'https://sandbox.zenodo.org/deposit/1', bucket: 'https://sandbox.zenodo.org/bucket/1' },
+  links: {
+    html: 'https://sandbox.zenodo.org/deposit/1',
+    bucket: 'https://sandbox.zenodo.org/bucket/1',
+  },
   metadata: {},
   ...over,
 });
@@ -109,7 +112,9 @@ describe('findDeposit', () => {
   const gh = 'https://github.com/o/r';
   const match = dep({
     id: 7,
-    metadata: { related_identifiers: [{ identifier: paperUrn(id), relation: 'isVersionOf', scheme: 'urn' }] },
+    metadata: {
+      related_identifiers: [{ identifier: paperUrn(id), relation: 'isVersionOf', scheme: 'urn' }],
+    },
   });
 
   it('matches by id URN first (query keyed on the urn)', async () => {
@@ -169,7 +174,12 @@ describe('buildMetadata', () => {
   };
 
   it('omits community + blurb for a fresh tenant, and keeps the github + id related ids', () => {
-    const md = buildMetadata({ project, paperId: project.id, githubUrl: 'https://github.com/o/r', zenodo: {} });
+    const md = buildMetadata({
+      project,
+      paperId: project.id,
+      githubUrl: 'https://github.com/o/r',
+      zenodo: {},
+    });
     expect(md.communities).toBeUndefined();
     // no tenant blurb → the description is just the repo/site lines, no ISP-style sentence
     expect(md.description).not.toContain('Program');
@@ -212,17 +222,34 @@ describe('buildBundle', () => {
     return root;
   }
   const prov = {
-    repo: 'o/r', commit_sha: 'x', tag: 'v1.0.0', site_url: undefined,
-    concept_doi: 'd', version_doi: 'v', review_pr: '42', built_at: 'now',
-    platform: 'linux-x86_64', typst_version: '0.14.2',
+    repo: 'o/r',
+    commit_sha: 'x',
+    tag: 'v1.0.0',
+    site_url: undefined,
+    concept_doi: 'd',
+    version_doi: 'v',
+    review_pr: '42',
+    built_at: 'now',
+    platform: 'linux-x86_64',
+    typst_version: '0.14.2',
   };
 
   it('adds the five fixed files (incl. engine.zip) plus deposit/ files verbatim', async () => {
     const root = paperWithDeposit({ 'data.csv': '1,2,3', 'extra.txt': 'hi' });
     const out = join(root, '_bundle');
-    const files = (await buildBundle(out, join(root, 'paper.pdf'), root, root, prov, fakeGit)).map((p) => p.split('/').pop());
+    const files = (await buildBundle(out, join(root, 'paper.pdf'), root, root, prov, fakeGit)).map(
+      (p) => p.split('/').pop(),
+    );
     expect(files).toEqual(
-      ['data.csv', 'engine.zip', 'extra.txt', 'myst.yml', 'paper.pdf', 'publication-provenance.json', 'source.zip'].sort(),
+      [
+        'data.csv',
+        'engine.zip',
+        'extra.txt',
+        'myst.yml',
+        'paper.pdf',
+        'publication-provenance.json',
+        'source.zip',
+      ].sort(),
     );
     const written = JSON.parse(readFileSync(join(out, 'publication-provenance.json'), 'utf8'));
     expect(written.review_pr).toBe('42');
@@ -230,9 +257,9 @@ describe('buildBundle', () => {
 
   it('rejects a deposit/ file that collides with an engine-reserved name', async () => {
     const root = paperWithDeposit({ 'paper.pdf': 'oops' });
-    await expect(buildBundle(join(root, '_bundle'), join(root, 'paper.pdf'), root, root, prov, fakeGit)).rejects.toBeInstanceOf(
-      BundleCollisionError,
-    );
+    await expect(
+      buildBundle(join(root, '_bundle'), join(root, 'paper.pdf'), root, root, prov, fakeGit),
+    ).rejects.toBeInstanceOf(BundleCollisionError);
   });
 
   it('reserves template.zip against deposit/ collisions too', async () => {
@@ -270,7 +297,14 @@ describe('buildBundle', () => {
     const { paper, engine } = paperAndEngine();
     stamp(paper, join(engine, 'templates', 'typst'));
 
-    const files = await buildBundle(join(paper, '_bundle'), join(paper, 'paper.pdf'), paper, engine, prov, fakeGit);
+    const files = await buildBundle(
+      join(paper, '_bundle'),
+      join(paper, 'paper.pdf'),
+      paper,
+      engine,
+      prov,
+      fakeGit,
+    );
     expect(namesIn(files)).not.toContain('template.zip');
     expect(namesIn(files)).toEqual(RESERVED_BUNDLE_NAMES.slice().sort());
   });
@@ -311,7 +345,10 @@ describe('buildBundle', () => {
     const { paper, engine } = paperAndEngine();
     const url = 'https://github.com/o/r/releases/download/v1.2.3/typst-template.zip';
     const materialized = join(
-      paper, '_build', 'templates', 'typst',
+      paper,
+      '_build',
+      'templates',
+      'typst',
       createHash('sha256').update(url).digest('hex'),
     );
     mkdirSync(materialized, { recursive: true });
@@ -362,7 +399,10 @@ describe('readStampedTemplate / resolveTemplateDir ([R76])', () => {
 
   it('is null when no typst export declares a template', () => {
     const root = mkdtempSync(join(tmpdir(), 'oak-stamp-'));
-    writeFileSync(join(root, 'myst.yml'), 'project:\n  exports:\n  - id: typst-pdf\n    format: typst\n');
+    writeFileSync(
+      join(root, 'myst.yml'),
+      'project:\n  exports:\n  - id: typst-pdf\n    format: typst\n',
+    );
     expect(readStampedTemplate(root)).toBeNull();
   });
 
@@ -385,7 +425,9 @@ describe('readStampedTemplate / resolveTemplateDir ([R76])', () => {
     });
     it('expands the three name shapes', () => {
       const t = (n: string) => resolveTemplateDir(n, paper);
-      expect(t('lapreprint-typst')).toBe(join(paper, '_build/templates/typst/myst/lapreprint-typst'));
+      expect(t('lapreprint-typst')).toBe(
+        join(paper, '_build/templates/typst/myst/lapreprint-typst'),
+      );
       expect(t('acme/mine')).toBe(join(paper, '_build/templates/typst/acme/mine'));
       expect(t('typst/acme/mine')).toBe(join(paper, '_build/templates/typst/acme/mine'));
     });
@@ -430,7 +472,9 @@ describe('cmdPrepare', () => {
     const post = calls.find((c) => c.method === 'POST')!;
     const md = (post.opts.json as any).metadata;
     expect(md.prereserve_doi).toBe(true);
-    expect(md.related_identifiers.map((r: any) => r.identifier)).toContain(paperUrn('fixture-2026-sample-paper'));
+    expect(md.related_identifiers.map((r: any) => r.identifier)).toContain(
+      paperUrn('fixture-2026-sample-paper'),
+    );
   });
 
   it('refuses a same-env re-prepare but allows sandbox→prod replacement ([R29])', async () => {
@@ -438,14 +482,28 @@ describe('cmdPrepare', () => {
     const noop = new ZenodoApi(fakeTransport(() => ({ json: [] })).transport, 'x', 't');
 
     // sandbox prepare over a committed sandbox DOI → refuse (same env)
-    const same = await cmdPrepare({ mystPath: withSandboxDoi, repo: 'o/r', sandbox: true, api: noop, instanceRoot: null });
+    const same = await cmdPrepare({
+      mystPath: withSandboxDoi,
+      repo: 'o/r',
+      sandbox: true,
+      api: noop,
+      instanceRoot: null,
+    });
     expect(same.exitCode).toBe(2);
 
     // prod prepare over a committed sandbox DOI → allowed (mints a fresh prod concept)
     const prodPath = paperRepo(BARE_MYST + '  doi: 10.5072/zenodo.5\n');
-    const { transport } = fakeTransport(({ method }) => (method === 'POST' ? { json: dep({ id: 8, conceptrecid: 8 }) } : { json: [] }));
+    const { transport } = fakeTransport(({ method }) =>
+      method === 'POST' ? { json: dep({ id: 8, conceptrecid: 8 }) } : { json: [] },
+    );
     const prodApi = new ZenodoApi(transport, 'https://zenodo.org/api', 't');
-    const up = await cmdPrepare({ mystPath: prodPath, repo: 'o/r', sandbox: false, api: prodApi, instanceRoot: null });
+    const up = await cmdPrepare({
+      mystPath: prodPath,
+      repo: 'o/r',
+      sandbox: false,
+      api: prodApi,
+      instanceRoot: null,
+    });
     expect(up.exitCode).toBe(0);
     expect(up.result.concept_doi).toBe('10.5281/zenodo.8');
   });
@@ -453,7 +511,13 @@ describe('cmdPrepare', () => {
   it('forbids prod→sandbox downgrade ([R29])', async () => {
     const prodDoi = paperRepo(BARE_MYST + '  doi: 10.5281/zenodo.5\n');
     const noop = new ZenodoApi(fakeTransport(() => ({ json: [] })).transport, 'x', 't');
-    const out = await cmdPrepare({ mystPath: prodDoi, repo: 'o/r', sandbox: true, api: noop, instanceRoot: null });
+    const out = await cmdPrepare({
+      mystPath: prodDoi,
+      repo: 'o/r',
+      sandbox: true,
+      api: noop,
+      instanceRoot: null,
+    });
     expect(out.exitCode).toBe(2);
     expect(String(out.result.message)).toContain('downgrade');
   });
@@ -461,14 +525,17 @@ describe('cmdPrepare', () => {
 
 describe('cmdPublish', () => {
   it('populates the reserved draft: metadata overwrite + all bundle files uploaded', async () => {
-    const mystPath = paperRepo(BARE_MYST + '  doi: 10.5072/zenodo.5\n  github: https://github.com/o/r\n');
+    const mystPath = paperRepo(
+      BARE_MYST + '  doi: 10.5072/zenodo.5\n  github: https://github.com/o/r\n',
+    );
     writeFileSync(mystPath.replace('myst.yml', 'paper.pdf'), '%PDF');
     const uploaded: string[] = [];
     const { transport } = fakeTransport((r) => {
       if (r.method === 'GET' && r.url.includes('/deposit/depositions/')) {
         return { json: dep({ id: 5, conceptrecid: 5, submitted: false }) };
       }
-      if (r.method === 'GET') return { json: [dep({ id: 5, conceptrecid: 5, created: '2026-01-01' })] }; // list
+      if (r.method === 'GET')
+        return { json: [dep({ id: 5, conceptrecid: 5, created: '2026-01-01' })] }; // list
       if (r.method === 'PUT' && r.url.includes('/bucket/')) {
         uploaded.push(r.url.split('/').pop()!);
         return { json: {} };
@@ -490,16 +557,30 @@ describe('cmdPublish', () => {
     });
     expect(out.exitCode).toBe(0);
     expect(out.result.version_doi).toBe('10.5072/zenodo.5');
-    expect(uploaded.sort()).toEqual(['engine.zip', 'myst.yml', 'paper.pdf', 'publication-provenance.json', 'source.zip']);
+    expect(uploaded.sort()).toEqual([
+      'engine.zip',
+      'myst.yml',
+      'paper.pdf',
+      'publication-provenance.json',
+      'source.zip',
+    ]);
   });
 
   it('errors when --sandbox disagrees with the committed DOI prefix', async () => {
-    const mystPath = paperRepo(BARE_MYST + '  doi: 10.5072/zenodo.5\n  github: https://github.com/o/r\n');
+    const mystPath = paperRepo(
+      BARE_MYST + '  doi: 10.5072/zenodo.5\n  github: https://github.com/o/r\n',
+    );
     writeFileSync(mystPath.replace('myst.yml', 'paper.pdf'), '%PDF');
     const noop = new ZenodoApi(fakeTransport(() => ({ json: {} })).transport, 'x', 't');
     const out = await cmdPublish({
-      mystPath, pdf: mystPath.replace('myst.yml', 'paper.pdf'), tag: 'v1.0.0',
-      sandbox: false, bundleOut: '/tmp/x', api: noop, git: fakeGit, instanceRoot: null,
+      mystPath,
+      pdf: mystPath.replace('myst.yml', 'paper.pdf'),
+      tag: 'v1.0.0',
+      sandbox: false,
+      bundleOut: '/tmp/x',
+      api: noop,
+      git: fakeGit,
+      instanceRoot: null,
       engineRoot: mystPath.replace('myst.yml', ''),
     });
     expect(out.exitCode).toBe(2);

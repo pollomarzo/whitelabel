@@ -18,9 +18,7 @@ const resolvedProject: ResolvedProject = {
     youtube: 'https://youtu.be/x',
     'oaktree-sapling': { version: VERSION, edition: EDITION },
   },
-  exports: [
-    { id: 'typst-pdf', format: 'typst', articles: [{ file: 'index.md', level: 0 }] },
-  ],
+  exports: [{ id: 'typst-pdf', format: 'typst', articles: [{ file: 'index.md', level: 0 }] }],
 };
 
 const base = (over: Partial<ComposeInput> = {}): ComposeInput => ({
@@ -96,18 +94,14 @@ describe('compose: brand asset absolutization ([R62])', () => {
 
   it('routes the typst watermark into project.options.logo, absolutized', () => {
     const r = compose(base({ brandAssets }));
-    expect(r.ownOverride.project!.options!.logo).toBe(
-      `${INSTANCE}/brand/logo-watermark.svg`,
-    );
+    expect(r.ownOverride.project!.options!.logo).toBe(`${INSTANCE}/brand/logo-watermark.svg`);
     // and it rides alongside the typst export entry, not replacing it
     expect(r.ownOverride.project!.exports![0]!.id).toBe('typst-pdf');
   });
 
   it('passes URLs and already-absolute paths through untouched', () => {
     const r = compose(base({ brandAssets }));
-    expect(r.ownOverride.site!.options!.logo_dark).toBe(
-      'https://cdn.example.org/logo-dark.svg',
-    );
+    expect(r.ownOverride.site!.options!.logo_dark).toBe('https://cdn.example.org/logo-dark.svg');
     expect(r.ownOverride.site!.options!.style).toBe('/already/absolute.css');
   });
 

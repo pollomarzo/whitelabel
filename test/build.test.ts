@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { mkdtempSync, copyFileSync, readFileSync, mkdirSync, writeFileSync, existsSync } from 'node:fs';
+import {
+  mkdtempSync,
+  copyFileSync,
+  readFileSync,
+  mkdirSync,
+  writeFileSync,
+  existsSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -32,9 +39,7 @@ function fakeEdge(): { edge: MystEdge; calls: string[] } {
       youtube: 'https://youtu.be/x',
       'oaktree-sapling': { version: 'v0.3.0', edition: 'fixture-edition' },
     },
-    exports: [
-      { id: 'typst-pdf', format: 'typst', articles: [{ file: 'index.md', level: 0 }] },
-    ],
+    exports: [{ id: 'typst-pdf', format: 'typst', articles: [{ file: 'index.md', level: 0 }] }],
   };
   return {
     calls,
@@ -91,9 +96,7 @@ describe('runBuild: the two-pass orchestrator ([R52])', () => {
     // survives: the override pass never touches options, and loadConfig's resolved
     // value ('…/x') is never written back to the working tree (finding 3).
     expect(doc.getIn(['site', 'template'])).toBe(themeZipUrl());
-    expect(doc.getIn(['project', 'options', 'youtube'])).toBe(
-      'https://youtu.be/dQw4w9WgXcQ',
-    );
+    expect(doc.getIn(['project', 'options', 'youtube'])).toBe('https://youtu.be/dQw4w9WgXcQ');
 
     expect(res.resolvedProject.id).toBe('fixture-2026-sample-paper');
   });
@@ -190,10 +193,7 @@ describe('a missing engine coordinate is a SENTENCE, not a stack', () => {
     // handler and printed five bundle frames at a tenant.
     const paperRoot = tmpPaper();
     const authorPath = join(paperRoot, 'myst.yml');
-    writeFileSync(
-      authorPath,
-      readFileSync(authorPath, 'utf8').replace(/\n\s*version: .*/, ''),
-    );
+    writeFileSync(authorPath, readFileSync(authorPath, 'utf8').replace(/\n\s*version: .*/, ''));
 
     const err = await runBuild({
       paperRoot,

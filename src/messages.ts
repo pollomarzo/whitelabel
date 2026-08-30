@@ -267,7 +267,8 @@ export const bootstrap = {
     `bootstrap journal (${external ? 'its own repo; papers live elsewhere' : 'journal and paper in one repo'}): ${repo}`,
 
   planRepoExists: '  ✓ repo exists',
-  planCreateRepo: (isPrivate: boolean): string => `  ○ create repo (${isPrivate ? 'private' : 'public'})`,
+  planCreateRepo: (isPrivate: boolean): string =>
+    `  ○ create repo (${isPrivate ? 'private' : 'public'})`,
   planCreateJournalRepo: (external: boolean): string =>
     `  ○ create repo (public${external ? '; it must stay public: every paper build reads the journal settings from it, without a token' : ''})`,
 
@@ -313,13 +314,16 @@ export const bootstrap = {
 
   // ── what the repos are called on GitHub (the tenant reads these in the repo list) ───────
   descriptionPaper: 'A paper, created by `oak bootstrap paper`',
-  descriptionJournal: 'Journal settings, branding and paper list, created by `oak bootstrap journal`',
-  descriptionCoLocated: 'Journal and paper in one repo, created by `oak bootstrap journal --co-located`',
+  descriptionJournal:
+    'Journal settings, branding and paper list, created by `oak bootstrap journal`',
+  descriptionCoLocated:
+    'Journal and paper in one repo, created by `oak bootstrap journal --co-located`',
 
   // ── the running log ────────────────────────────────────────────────────────────────────
   logCreated: (repo: string): string => `  ✓ created ${repo}`,
   logCreatedPublic: (repo: string): string => `  ✓ created ${repo} (public)`,
-  logMadePublic: '  ✓ made the repo public (paper builds read these settings from here with no token)',
+  logMadePublic:
+    '  ✓ made the repo public (paper builds read these settings from here with no token)',
   logSeeded: '  ✓ seeded main',
   logReviewBranch:
     "  ✓ built the review branch: the author's files, with this repo's own workflows and settings restored over them",
@@ -333,8 +337,10 @@ export const bootstrap = {
     `  ✓ created tag rule '${name}': only editors can create the v* tags that publish a version`,
   logPagesExists: '  ✓ GitHub Pages already enabled',
   logPagesEnabled: '  ✓ GitHub Pages enabled (published by a workflow)',
-  logZenodoEnvExists: "  ✓ the 'zenodo-publish' environment already restricts its secrets to v* tags",
-  logZenodoEnvCreated: "  ✓ created the 'zenodo-publish' environment: only v* tags may use its secrets",
+  logZenodoEnvExists:
+    "  ✓ the 'zenodo-publish' environment already restricts its secrets to v* tags",
+  logZenodoEnvCreated:
+    "  ✓ created the 'zenodo-publish' environment: only v* tags may use its secrets",
   logSecretSet: (name: string): string => `  ✓ secret ${name} set`,
   logSiteAdded: (siteUrl: string): string => `  ✓ journal website added: ${siteUrl}`,
 
@@ -409,8 +415,10 @@ export const upgrade = {
     `  ○ set the engine version in myst.yml: ${from || '(unset)'} → ${target}`,
   planResync: (count: number, target: string, files: string): string =>
     `  ○ restore ${count} engine-managed file(s) that no longer match the ${target} template: ${files}`,
-  planFilesMatch: (target: string): string => `  ✓ the engine-managed files already match ${target}`,
-  planAsPr: '  ○ all of the above goes up as a pull request for you to review; nothing is pushed to main',
+  planFilesMatch: (target: string): string =>
+    `  ✓ the engine-managed files already match ${target}`,
+  planAsPr:
+    '  ○ all of the above goes up as a pull request for you to review; nothing is pushed to main',
 
   logPrOpened: (url: string): string => `opened upgrade PR ${url}`,
 
@@ -534,7 +542,8 @@ export const validate = {
     `oak validate: ${pass ? 'PASS' : 'FAIL'}${counts.length ? ' (' + counts.join(', ') + ')' : ''}`,
   countErrors: (n: number): string => `${n} error(s)`,
   countWarnings: (n: number): string => `${n} warning(s)`,
-  countChecks: (passed: number, total: number): string => `${passed}/${total} editorial checks passed`,
+  countChecks: (passed: number, total: number): string =>
+    `${passed}/${total} editorial checks passed`,
 
   // ── layout / identity ──────────────────────────────────────────────────────────────────
   missingFile: (file: string): string => `missing required file "${file}" at the paper root`,
@@ -565,7 +574,6 @@ export const validate = {
     "checked the paper's own myst.yml ONLY: the journal's settings were not available to this " +
     'run, so whatever the journal, its edition or its branding add (the cover image, the PDF ' +
     'export) was not checked here.',
-
 
   // ── the paper's id (checked against the journal's policy) ──────────────────────────────
   idPlaceholder: (id: string): string =>
@@ -688,7 +696,8 @@ export const workflow = {
   depositNoRepo: 'deposit prepare: pass --repo owner/repo (or set GITHUB_REPOSITORY)',
   depositPublishArgs: 'deposit publish: --pdf and --tag are required',
   depositDoiPrOpened: (url: string): string => `deposit prepare: opened DOI PR ${url}`,
-  depositDoiPrFailed: (message: string): string => `deposit prepare: DOI PR not opened (${message})`,
+  depositDoiPrFailed: (message: string): string =>
+    `deposit prepare: DOI PR not opened (${message})`,
 
   // release
   releaseNoTag: 'oak release: --tag vX.Y.Z is required',
@@ -696,7 +705,8 @@ export const workflow = {
   releaseNoToken: (sandbox: boolean): string =>
     `no token: set ${sandbox ? 'ZENODO_TOKEN_SANDBOX' : 'ZENODO_TOKEN'}`,
   releaseNoPdf: 'oak release: no PDF under _build/exports (did the typst export run?)',
-  releasePostStepsFailed: (message: string): string => `oak release: gh post-steps failed (${message})`,
+  releasePostStepsFailed: (message: string): string =>
+    `oak release: gh post-steps failed (${message})`,
   releaseCommitComment: (draft: string): string => `Zenodo draft populated: ${draft}`,
   releaseFailureIssue: (tag: string): string => `Zenodo publish failed for ${tag}`,
 
@@ -725,8 +735,10 @@ export const workflow = {
   checkPostArgs:
     'oak check-post: --report <path>, --repo <owner/repo> and --sha <headsha> are required',
   checkPostNoReport: (path: string): string => `oak check-post: report file not found: ${path}`,
-  checkPostCheckRunFailed: (message: string): string => `check-post: Check Run not posted (${message})`,
-  checkPostCommentFailed: (message: string): string => `check-post: comment not posted (${message})`,
+  checkPostCheckRunFailed: (message: string): string =>
+    `check-post: Check Run not posted (${message})`,
+  checkPostCommentFailed: (message: string): string =>
+    `check-post: comment not posted (${message})`,
 
   // validate's own failure envelope (what Stage 2 posts when the run could not happen)
   validateCouldNotRun: 'oak validate could not run',

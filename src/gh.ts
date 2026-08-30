@@ -65,7 +65,14 @@ function echoChild(tool: string, text: unknown): void {
  */
 function showWorking(tool: string, args: string[]): () => void {
   if (!process.stderr.isTTY || verboseChildren()) return () => {};
-  process.stderr.write(msg.workflow.working(`${tool} ${args.filter((a) => !a.startsWith('-')).slice(0, 2).join(' ')}`));
+  process.stderr.write(
+    msg.workflow.working(
+      `${tool} ${args
+        .filter((a) => !a.startsWith('-'))
+        .slice(0, 2)
+        .join(' ')}`,
+    ),
+  );
   return () => process.stderr.write('\r\u001b[K');
 }
 
@@ -74,7 +81,11 @@ function showWorking(tool: string, args: string[]): () => void {
  * probes that treat a non-zero exit as a valid answer (does this ruleset exist?), where the
  * child's complaint is noise about a question we already answered.
  */
-function run(tool: 'git' | 'gh', args: string[], opts: { input?: string; cwd?: string; quiet?: boolean; env?: NodeJS.ProcessEnv } = {}): string {
+function run(
+  tool: 'git' | 'gh',
+  args: string[],
+  opts: { input?: string; cwd?: string; quiet?: boolean; env?: NodeJS.ProcessEnv } = {},
+): string {
   const done = showWorking(tool, args);
   // spawnSync, not execFileSync: capturing stderr AND being able to replay it needs the
   // stream back in hand, which execFileSync only gives us on the failure path.
@@ -89,7 +100,10 @@ function run(tool: 'git' | 'gh', args: string[], opts: { input?: string; cwd?: s
   if (r.error) throw r.error;
   if (r.status !== 0) {
     if (!opts.quiet) echoChild(tool, r.stderr || r.stdout);
-    const first = String(r.stderr || r.stdout || '').split('\n').find((l) => l.trim() !== '') ?? '';
+    const first =
+      String(r.stderr || r.stdout || '')
+        .split('\n')
+        .find((l) => l.trim() !== '') ?? '';
     const err = new Error(
       `${tool} ${args[0] ?? ''} failed (exit ${r.status ?? `signal ${r.signal}`})${first ? `: ${first.trim()}` : ''}`,
     ) as Error & { status: number | null; stdout: string; stderr: string };
@@ -128,7 +142,11 @@ function ghOk(args: string[]): boolean {
 /** `gh` run under a DIFFERENT token (the fork account's PAT), same shape as `gh()`, but the
  *  child sees `GH_TOKEN=token`. The conformance fork phase owns a second-account fork; base-repo
  *  ops keep using `gh()` (the ambient primary token), fork-repo ops use `ghAs(forkToken, …)`. */
-function ghAs(token: string, args: string[], opts: { input?: string; cwd?: string; quiet?: boolean } = {}): string {
+function ghAs(
+  token: string,
+  args: string[],
+  opts: { input?: string; cwd?: string; quiet?: boolean } = {},
+): string {
   return run('gh', args, { ...opts, env: { ...process.env, GH_TOKEN: token } });
 }
 
@@ -144,8 +162,10 @@ function ghOkAs(token: string, args: string[]): boolean {
 
 /** Commit-as-bot identity flags (a CI runner has no git identity; see openDoiPr). */
 const BOT_ID = [
-  '-c', 'user.name=github-actions[bot]',
-  '-c', 'user.email=41898282+github-actions[bot]@users.noreply.github.com',
+  '-c',
+  'user.name=github-actions[bot]',
+  '-c',
+  'user.email=41898282+github-actions[bot]@users.noreply.github.com',
 ];
 
 /** The real git/gh context injected into `cmdPublish`. */
@@ -198,16 +218,24 @@ export function openDoiPr(repoRoot: string, opts: { conceptDoi: string }): strin
   // A CI runner has no git identity, so an inline one is required or `commit` fails with
   // "Author identity unknown" (the actions/checkout runner sets no user.name/email).
   git(repoRoot, [
-    '-c', 'user.name=github-actions[bot]',
-    '-c', 'user.email=41898282+github-actions[bot]@users.noreply.github.com',
-    'commit', '-m', `chore: reserve Zenodo DOI ${opts.conceptDoi}`,
+    '-c',
+    'user.name=github-actions[bot]',
+    '-c',
+    'user.email=41898282+github-actions[bot]@users.noreply.github.com',
+    'commit',
+    '-m',
+    `chore: reserve Zenodo DOI ${opts.conceptDoi}`,
   ]);
   git(repoRoot, ['push', '-u', 'origin', branch, '--force']);
   return gh([
-    'pr', 'create',
-    '--title', 'Reserve Zenodo DOI',
-    '--body', `Stamps the reserved concept DOI \`${opts.conceptDoi}\` into \`myst.yml\`. Merge before tagging.`,
-    '--head', branch,
+    'pr',
+    'create',
+    '--title',
+    'Reserve Zenodo DOI',
+    '--body',
+    `Stamps the reserved concept DOI \`${opts.conceptDoi}\` into \`myst.yml\`. Merge before tagging.`,
+    '--head',
+    branch,
   ]);
 }
 
@@ -253,16 +281,32 @@ export const realGhPr: GhPr = {
     let existingId = '';
     try {
       existingId = gh([
-        'api', `repos/${repo}/issues/${prNumber}/comments`, '--paginate',
-        '--jq', `[.[] | select(.body | startswith("${marker}"))] | last | .id // empty`,
+        'api',
+        `repos/${repo}/issues/${prNumber}/comments`,
+        '--paginate',
+        '--jq',
+        `[.[] | select(.body | startswith("${marker}"))] | last | .id // empty`,
       ]);
     } catch {
       /* no comments / no read access: fall through to create */
     }
     if (existingId) {
-      gh(['api', '--method', 'PATCH', `repos/${repo}/issues/comments/${existingId}`, '-F', 'body=@-'], { input: body });
+      gh(
+        [
+          'api',
+          '--method',
+          'PATCH',
+          `repos/${repo}/issues/comments/${existingId}`,
+          '-F',
+          'body=@-',
+        ],
+        { input: body },
+      );
     } else {
-      gh(['api', '--method', 'POST', `repos/${repo}/issues/${prNumber}/comments`, '-F', 'body=@-'], { input: body });
+      gh(
+        ['api', '--method', 'POST', `repos/${repo}/issues/${prNumber}/comments`, '-F', 'body=@-'],
+        { input: body },
+      );
     }
   },
 
@@ -286,7 +330,10 @@ export const realGhPr: GhPr = {
     if (!repo) return [];
     try {
       const out = gh(['api', `repos/${repo}/tags`, '--paginate', '--jq', '.[].name']);
-      return out.split('\n').map((t) => t.trim()).filter((t) => t.startsWith('v'));
+      return out
+        .split('\n')
+        .map((t) => t.trim())
+        .filter((t) => t.startsWith('v'));
     } catch {
       return [];
     }
@@ -302,13 +349,21 @@ export const realPagesDeployer: PagesDeployer = {
     const out = execFileSync(
       'npx',
       [
-        '--yes', 'wrangler', 'pages', 'deploy', opts.dir,
+        '--yes',
+        'wrangler',
+        'pages',
+        'deploy',
+        opts.dir,
         `--project-name=${opts.projectName}`,
         `--branch=${opts.branch}`,
       ],
       {
         encoding: 'utf8',
-        env: { ...process.env, CLOUDFLARE_API_TOKEN: opts.apiToken, CLOUDFLARE_ACCOUNT_ID: opts.accountId },
+        env: {
+          ...process.env,
+          CLOUDFLARE_API_TOKEN: opts.apiToken,
+          CLOUDFLARE_ACCOUNT_ID: opts.accountId,
+        },
       },
     );
     const m = /https?:\/\/[^\s]*\.pages\.dev[^\s]*/.exec(out);
@@ -364,13 +419,22 @@ export const realCheckRun: CheckRunPoster = {
 
 export const realProvisioner: Provisioner = {
   ownerType(owner) {
-    return gh(['api', `users/${owner}`, '--jq', '.type']) === 'Organization' ? 'Organization' : 'User';
+    return gh(['api', `users/${owner}`, '--jq', '.type']) === 'Organization'
+      ? 'Organization'
+      : 'User';
   },
   repoExists(repo) {
     return ghOk(['api', `repos/${repo}`]);
   },
   createRepo(repo, opts) {
-    gh(['repo', 'create', repo, opts.private ? '--private' : '--public', '--description', opts.description]);
+    gh([
+      'repo',
+      'create',
+      repo,
+      opts.private ? '--private' : '--public',
+      '--description',
+      opts.description,
+    ]);
   },
   branchExists(repo, branch) {
     return ghOk(['api', `repos/${repo}/branches/${branch}`]);
@@ -410,17 +474,31 @@ export const realProvisioner: Provisioner = {
   },
   prExists(repo, head) {
     try {
-      return Number(gh(['pr', 'list', '--repo', repo, '--head', head, '--json', 'number', '--jq', 'length'])) > 0;
+      return (
+        Number(
+          gh(['pr', 'list', '--repo', repo, '--head', head, '--json', 'number', '--jq', 'length']),
+        ) > 0
+      );
     } catch {
       return false;
     }
   },
   openPr(repo, opts) {
     return gh([
-      'api', `repos/${repo}/pulls`, '--method', 'POST',
-      '--field', `title=${opts.title}`, '--field', `head=${opts.head}`,
-      '--field', `base=${opts.base}`, '--field', `body=${opts.body}`,
-      '--jq', '.html_url',
+      'api',
+      `repos/${repo}/pulls`,
+      '--method',
+      'POST',
+      '--field',
+      `title=${opts.title}`,
+      '--field',
+      `head=${opts.head}`,
+      '--field',
+      `base=${opts.base}`,
+      '--field',
+      `body=${opts.body}`,
+      '--jq',
+      '.html_url',
     ]);
   },
   grantTeamWrite(repo, team) {
@@ -433,13 +511,17 @@ export const realProvisioner: Provisioner = {
   },
   rulesetExists(repo, name) {
     try {
-      return gh(['api', `repos/${repo}/rulesets`, '--jq', `.[] | select(.name=="${name}") | .id`]) !== '';
+      return (
+        gh(['api', `repos/${repo}/rulesets`, '--jq', `.[] | select(.name=="${name}") | .id`]) !== ''
+      );
     } catch {
       return false;
     }
   },
   createRuleset(repo, body) {
-    gh(['api', '-X', 'POST', `repos/${repo}/rulesets`, '--input', '-'], { input: JSON.stringify(body) });
+    gh(['api', '-X', 'POST', `repos/${repo}/rulesets`, '--input', '-'], {
+      input: JSON.stringify(body),
+    });
   },
   pagesEnabled(repo) {
     return ghOk(['api', `repos/${repo}/pages`]);
@@ -452,17 +534,24 @@ export const realProvisioner: Provisioner = {
   },
   upsertEnvironment(repo, name) {
     gh([
-      'api', '-X', 'PUT', `repos/${repo}/environments/${name}`,
-      '--field', 'deployment_branch_policy[protected_branches]=false',
-      '--field', 'deployment_branch_policy[custom_branch_policies]=true',
+      'api',
+      '-X',
+      'PUT',
+      `repos/${repo}/environments/${name}`,
+      '--field',
+      'deployment_branch_policy[protected_branches]=false',
+      '--field',
+      'deployment_branch_policy[custom_branch_policies]=true',
     ]);
   },
   branchPolicyExists(repo, env, name) {
     try {
       return (
         gh([
-          'api', `repos/${repo}/environments/${env}/deployment-branch-policies`,
-          '--jq', `.branch_policies[] | select(.name=="${name}") | .id`,
+          'api',
+          `repos/${repo}/environments/${env}/deployment-branch-policies`,
+          '--jq',
+          `.branch_policies[] | select(.name=="${name}") | .id`,
         ]) !== ''
       );
     } catch {
@@ -471,8 +560,14 @@ export const realProvisioner: Provisioner = {
   },
   createBranchPolicy(repo, env, name, type) {
     gh([
-      'api', '-X', 'POST', `repos/${repo}/environments/${env}/deployment-branch-policies`,
-      '--field', `name=${name}`, '--field', `type=${type}`,
+      'api',
+      '-X',
+      'POST',
+      `repos/${repo}/environments/${env}/deployment-branch-policies`,
+      '--field',
+      `name=${name}`,
+      '--field',
+      `type=${type}`,
     ]);
   },
   createLabel(repo, name, opts) {
@@ -557,7 +652,9 @@ export const realUpgradePr: UpgradePr = {
     git(repoRoot, ['push', '-u', 'origin', opts.branch, '--force']);
     // Run `gh` inside the clone so it infers the target repo from origin (in CI the CWD is
     // already the repo; locally `oak upgrade` clones to a tmp dir, so pass cwd explicitly).
-    return gh(['pr', 'create', '--title', opts.title, '--body', opts.body, '--head', opts.branch], { cwd: repoRoot });
+    return gh(['pr', 'create', '--title', opts.title, '--body', opts.body, '--head', opts.branch], {
+      cwd: repoRoot,
+    });
   },
 };
 
@@ -569,7 +666,21 @@ export const realConformanceGh: ConformanceGh = {
     // A not-yet-provisioned label makes `gh pr list --label` error; treat as no PRs.
     let out: string;
     try {
-      out = gh(['pr', 'list', '--repo', repo, '--state', 'open', '--label', label, '--json', 'number,headRefName'], { quiet: true });
+      out = gh(
+        [
+          'pr',
+          'list',
+          '--repo',
+          repo,
+          '--state',
+          'open',
+          '--label',
+          label,
+          '--json',
+          'number,headRefName',
+        ],
+        { quiet: true },
+      );
     } catch {
       return [];
     }
@@ -602,11 +713,31 @@ export const realConformanceGh: ConformanceGh = {
     gh(['pr', 'edit', String(prNumber), '--repo', repo, '--add-label', label]);
   },
   prHeadSha(repo, prNumber) {
-    return gh(['pr', 'view', String(prNumber), '--repo', repo, '--json', 'headRefOid', '--jq', '.headRefOid']);
+    return gh([
+      'pr',
+      'view',
+      String(prNumber),
+      '--repo',
+      repo,
+      '--json',
+      'headRefOid',
+      '--jq',
+      '.headRefOid',
+    ]);
   },
   mergePr(repo, prNumber) {
     gh(['pr', 'merge', String(prNumber), '--repo', repo, '--merge', '--delete-branch']);
-    return gh(['pr', 'view', String(prNumber), '--repo', repo, '--json', 'mergeCommit', '--jq', '.mergeCommit.oid']);
+    return gh([
+      'pr',
+      'view',
+      String(prNumber),
+      '--repo',
+      repo,
+      '--json',
+      'mergeCommit',
+      '--jq',
+      '.mergeCommit.oid',
+    ]);
   },
   workflowRunsForCommit(repo, sha) {
     const out = gh([
@@ -618,33 +749,70 @@ export const realConformanceGh: ConformanceGh = {
     return out ? (JSON.parse(out) as import('./conformance.js').WorkflowRun[]) : [];
   },
   checkRunsForCommit(repo, sha) {
-    const out = gh(['api', `repos/${repo}/commits/${sha}/check-runs`, '--jq', '[.check_runs[] | {name, conclusion}]']);
+    const out = gh([
+      'api',
+      `repos/${repo}/commits/${sha}/check-runs`,
+      '--jq',
+      '[.check_runs[] | {name, conclusion}]',
+    ]);
     return out ? (JSON.parse(out) as import('./conformance.js').CheckRunRef[]) : [];
   },
   openCertPr(repo, branch, marker) {
     // Branch off main, then a trivial always-valid content change (a MyST `%` comment appended
     // to index.md) via the Contents API, no clone, so no git-credential dependency in CI.
     const mainSha = gh(['api', `repos/${repo}/git/ref/heads/main`, '--jq', '.object.sha']);
-    gh(['api', '-X', 'POST', `repos/${repo}/git/refs`, '-f', `ref=refs/heads/${branch}`, '-f', `sha=${mainSha}`]);
+    gh([
+      'api',
+      '-X',
+      'POST',
+      `repos/${repo}/git/refs`,
+      '-f',
+      `ref=refs/heads/${branch}`,
+      '-f',
+      `sha=${mainSha}`,
+    ]);
 
-    const meta = JSON.parse(gh(['api', `repos/${repo}/contents/index.md?ref=${branch}`, '--jq', '{content: .content, sha: .sha}'])) as {
+    const meta = JSON.parse(
+      gh([
+        'api',
+        `repos/${repo}/contents/index.md?ref=${branch}`,
+        '--jq',
+        '{content: .content, sha: .sha}',
+      ]),
+    ) as {
       content: string;
       sha: string;
     };
     const current = Buffer.from(meta.content, 'base64').toString('utf8'); // GitHub wraps base64 in \n; Buffer ignores them
     const updated = Buffer.from(`${current}\n% conformance ${marker}\n`, 'utf8').toString('base64');
     gh([
-      'api', '-X', 'PUT', `repos/${repo}/contents/index.md`,
-      '-f', `message=conformance preview probe ${marker}`,
-      '-f', `content=${updated}`,
-      '-f', `sha=${meta.sha}`,
-      '-f', `branch=${branch}`,
+      'api',
+      '-X',
+      'PUT',
+      `repos/${repo}/contents/index.md`,
+      '-f',
+      `message=conformance preview probe ${marker}`,
+      '-f',
+      `content=${updated}`,
+      '-f',
+      `sha=${meta.sha}`,
+      '-f',
+      `branch=${branch}`,
     ]);
 
     const url = gh([
-      'pr', 'create', '--repo', repo, '--base', 'main', '--head', branch,
-      '--title', `conformance preview ${marker}`,
-      '--body', 'Automated conformance preview probe; opened and closed by the harness.',
+      'pr',
+      'create',
+      '--repo',
+      repo,
+      '--base',
+      'main',
+      '--head',
+      branch,
+      '--title',
+      `conformance preview ${marker}`,
+      '--body',
+      'Automated conformance preview probe; opened and closed by the harness.',
     ]);
     const number = Number(url.split('/').pop());
     const headSha = gh(['api', `repos/${repo}/git/ref/heads/${branch}`, '--jq', '.object.sha']);
@@ -673,7 +841,16 @@ export const realConformanceGh: ConformanceGh = {
     return gh(['api', `repos/${repo}/git/ref/heads/main`, '--jq', '.object.sha']);
   },
   pushTag(repo, tag, sha) {
-    gh(['api', '-X', 'POST', `repos/${repo}/git/refs`, '-f', `ref=refs/tags/${tag}`, '-f', `sha=${sha}`]);
+    gh([
+      'api',
+      '-X',
+      'POST',
+      `repos/${repo}/git/refs`,
+      '-f',
+      `ref=refs/tags/${tag}`,
+      '-f',
+      `sha=${sha}`,
+    ]);
   },
   approveDeployment(repo, runId, environment) {
     // GET the pending deployments, pick the environment id matching `environment`, then POST the
@@ -694,16 +871,25 @@ export const realConformanceGh: ConformanceGh = {
     }
     if (!envId) return;
     gh([
-      'api', '-X', 'POST', `repos/${repo}/actions/runs/${runId}/pending_deployments`,
-      '-F', `environment_ids[]=${envId}`,
-      '-f', 'state=approved',
-      '-f', 'comment=conformance harness auto-approve',
+      'api',
+      '-X',
+      'POST',
+      `repos/${repo}/actions/runs/${runId}/pending_deployments`,
+      '-F',
+      `environment_ids[]=${envId}`,
+      '-f',
+      'state=approved',
+      '-f',
+      'comment=conformance harness auto-approve',
     ]);
   },
   releaseAssets(repo, tag) {
     // `gh release view` errors when the release doesn't exist yet, treat that as no assets.
     try {
-      const out = gh(['release', 'view', tag, '-R', repo, '--json', 'assets', '--jq', '[.assets[].name]'], { quiet: true });
+      const out = gh(
+        ['release', 'view', tag, '-R', repo, '--json', 'assets', '--jq', '[.assets[].name]'],
+        { quiet: true },
+      );
       return out ? (JSON.parse(out) as string[]) : [];
     } catch {
       return [];
@@ -718,7 +904,12 @@ export const realConformanceGh: ConformanceGh = {
   sweepForkBranches(forkRepo, forkToken, prefix) {
     // Idempotency: clear stale cert branches on the fork left by a crashed run (mirrors the
     // base-repo listBranches/deleteBranch sweep, but on the fork under the fork token).
-    const out = ghAs(forkToken, ['api', `repos/${forkRepo}/git/matching-refs/heads/${prefix}`, '--jq', '.[].ref']);
+    const out = ghAs(forkToken, [
+      'api',
+      `repos/${forkRepo}/git/matching-refs/heads/${prefix}`,
+      '--jq',
+      '.[].ref',
+    ]);
     const branches = out ? out.split('\n').map((r) => r.replace(/^refs\/heads\//, '')) : [];
     for (const branch of branches) {
       ghOkAs(forkToken, ['api', '-X', 'DELETE', `repos/${forkRepo}/git/refs/heads/${branch}`]);
@@ -731,33 +922,73 @@ export const realConformanceGh: ConformanceGh = {
     // the Contents API (no clone → no git-credential dependency for the fork token).
     const forkOwner = forkRepo.split('/')[0];
     const defaultBranch = ghAs(forkToken, ['api', `repos/${forkRepo}`, '--jq', '.default_branch']);
-    const headSha = ghAs(forkToken, ['api', `repos/${forkRepo}/git/ref/heads/${defaultBranch}`, '--jq', '.object.sha']);
-    ghAs(forkToken, ['api', '-X', 'POST', `repos/${forkRepo}/git/refs`, '-f', `ref=refs/heads/${branch}`, '-f', `sha=${headSha}`]);
+    const headSha = ghAs(forkToken, [
+      'api',
+      `repos/${forkRepo}/git/ref/heads/${defaultBranch}`,
+      '--jq',
+      '.object.sha',
+    ]);
+    ghAs(forkToken, [
+      'api',
+      '-X',
+      'POST',
+      `repos/${forkRepo}/git/refs`,
+      '-f',
+      `ref=refs/heads/${branch}`,
+      '-f',
+      `sha=${headSha}`,
+    ]);
 
     const meta = JSON.parse(
-      ghAs(forkToken, ['api', `repos/${forkRepo}/contents/myst.yml?ref=${branch}`, '--jq', '{content: .content, sha: .sha}']),
+      ghAs(forkToken, [
+        'api',
+        `repos/${forkRepo}/contents/myst.yml?ref=${branch}`,
+        '--jq',
+        '{content: .content, sha: .sha}',
+      ]),
     ) as { content: string; sha: string };
     const doc = parseDocument(Buffer.from(meta.content, 'base64').toString('utf8')); // GitHub wraps base64 in \n; Buffer ignores them
     doc.setIn(['project', 'options', 'oaktree-sapling', 'version'], tag);
     const updated = Buffer.from(String(doc), 'utf8').toString('base64');
     ghAs(forkToken, [
-      'api', '-X', 'PUT', `repos/${forkRepo}/contents/myst.yml`,
-      '-f', `message=conformance fork preview ${marker} (pin engine ${tag})`,
-      '-f', `content=${updated}`,
-      '-f', `sha=${meta.sha}`,
-      '-f', `branch=${branch}`,
+      'api',
+      '-X',
+      'PUT',
+      `repos/${forkRepo}/contents/myst.yml`,
+      '-f',
+      `message=conformance fork preview ${marker} (pin engine ${tag})`,
+      '-f',
+      `content=${updated}`,
+      '-f',
+      `sha=${meta.sha}`,
+      '-f',
+      `branch=${branch}`,
     ]);
 
     // Open the cross-fork PR on the BASE repo with the PRIMARY token, `--head owner:branch`
     // targets the fork's head branch.
     const url = gh([
-      'pr', 'create', '--repo', baseRepo, '--base', 'main', '--head', `${forkOwner}:${branch}`,
-      '--title', `conformance fork preview ${marker}`,
-      '--body', 'Automated conformance fork-PR preview probe; opened and closed by the harness.',
+      'pr',
+      'create',
+      '--repo',
+      baseRepo,
+      '--base',
+      'main',
+      '--head',
+      `${forkOwner}:${branch}`,
+      '--title',
+      `conformance fork preview ${marker}`,
+      '--body',
+      'Automated conformance fork-PR preview probe; opened and closed by the harness.',
     ]);
     const number = Number(url.split('/').pop());
     // Re-read the fork branch head sha post-commit (the PUT advanced it).
-    const postSha = ghAs(forkToken, ['api', `repos/${forkRepo}/git/ref/heads/${branch}`, '--jq', '.object.sha']);
+    const postSha = ghAs(forkToken, [
+      'api',
+      `repos/${forkRepo}/git/ref/heads/${branch}`,
+      '--jq',
+      '.object.sha',
+    ]);
     return { number, headSha: postSha };
   },
   deleteForkBranch(forkRepo, forkToken, branch) {

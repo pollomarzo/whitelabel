@@ -40,7 +40,9 @@ function fakeGh(init: {
       return tags;
     },
     listOpenPrs(_repo, label) {
-      return prs.filter((p) => p.open && p.label === label).map((p) => ({ number: p.number, headRef: p.headRef }));
+      return prs
+        .filter((p) => p.open && p.label === label)
+        .map((p) => ({ number: p.number, headRef: p.headRef }));
     },
     closePr(_repo, prNumber) {
       const pr = prs.find((p) => p.number === prNumber);
@@ -108,7 +110,12 @@ describe('cmdConformanceReset', () => {
     expect(first.result.changed).toBe(3); // 1 pr + 1 branch + 1 tag
 
     const second = await cmdConformanceReset({ repo: REPO }, silentDeps(gh));
-    expect(second.result).toMatchObject({ closedPrs: [], deletedBranches: [], deletedTags: [], changed: 0 });
+    expect(second.result).toMatchObject({
+      closedPrs: [],
+      deletedBranches: [],
+      deletedTags: [],
+      changed: 0,
+    });
   });
 
   it('cleans a stranded reserved deposit tag (no -cert- marker) and leaves real release tags', async () => {
@@ -134,24 +141,41 @@ describe('cmdConformanceReset', () => {
 const TAG = 'v0.0.0-dev.9';
 // Both events so push→main (push) and the PR build (pull_request) each find a green Paper CI.
 const SUCCESS_CI: WorkflowRun[] = [
-  { id: 1, name: 'Paper CI', status: 'completed', conclusion: 'success', url: 'run-url', event: 'push' },
-  { id: 2, name: 'Paper CI', status: 'completed', conclusion: 'success', url: 'pr-run-url', event: 'pull_request' },
+  {
+    id: 1,
+    name: 'Paper CI',
+    status: 'completed',
+    conclusion: 'success',
+    url: 'run-url',
+    event: 'push',
+  },
+  {
+    id: 2,
+    name: 'Paper CI',
+    status: 'completed',
+    conclusion: 'success',
+    url: 'pr-run-url',
+    event: 'pull_request',
+  },
 ];
 const SUCCESS_CHECK: CheckRunRef[] = [{ name: 'Journal checks', conclusion: 'success' }];
-const PREVIEW_COMMENT = '<!-- oak-sticky: oak-preview -->\n**Preview deployed** 🚀\n\nhttps://cert-x.oaktree-sapling-test.pages.dev\n';
+const PREVIEW_COMMENT =
+  '<!-- oak-sticky: oak-preview -->\n**Preview deployed** 🚀\n\nhttps://cert-x.oaktree-sapling-test.pages.dev\n';
 
 /** Full seam for certify. Reset methods are inert (a certify run resets a clean fixture in
  *  tests); the C1/C2/C3 methods are driven by `over`. Records label/merge/close/tag/approve/
  *  release calls. The default publish run on the deposit tag sha ('main-sha') is observed
  *  `waiting` on the first poll (the required-reviewer gate) then `completed`/`success` after,
  *  so the happy path exercises the approve→conclude transition without stateful `over`. */
-function fakeCertGh(over: {
-  workflowRuns?: (sha: string) => WorkflowRun[];
-  checkRuns?: (sha: string) => CheckRunRef[];
-  comments?: (pr: number) => string[];
-  committedDoi?: () => string | null;
-  releaseAssets?: (tag: string) => string[];
-} = {}): ConformanceGh & {
+function fakeCertGh(
+  over: {
+    workflowRuns?: (sha: string) => WorkflowRun[];
+    checkRuns?: (sha: string) => CheckRunRef[];
+    comments?: (pr: number) => string[];
+    committedDoi?: () => string | null;
+    releaseAssets?: (tag: string) => string[];
+  } = {},
+): ConformanceGh & {
   labeled: [number, string][];
   merged: number[];
   closed: number[];
@@ -253,7 +277,13 @@ const certDeps = (
   log: () => {},
   sleep: async () => {}, // no real waits in tests
   probe: over.probe ?? (async () => 200),
-  installEngine: over.installEngine ?? (async () => ({ upToDate: false, prNumber: 7, prUrl: 'https://github.com/me/fixture-paper-repo/pull/7' })),
+  installEngine:
+    over.installEngine ??
+    (async () => ({
+      upToDate: false,
+      prNumber: 7,
+      prUrl: 'https://github.com/me/fixture-paper-repo/pull/7',
+    })),
   fork: 'fork' in over ? over.fork : null,
 });
 
@@ -275,7 +305,10 @@ describe('cmdConformanceCertify', () => {
       depositTag: CERT_DEPOSIT_TAG,
       releaseAssets: RESERVED_BUNDLE_NAMES,
     });
-    expect(gh.labeled).toEqual([[7, CONFORMANCE_LABEL], [21, CONFORMANCE_LABEL]]);
+    expect(gh.labeled).toEqual([
+      [7, CONFORMANCE_LABEL],
+      [21, CONFORMANCE_LABEL],
+    ]);
     expect(gh.merged).toEqual([7]); // only the upgrade PR is merged (push→main trigger)
     expect(gh.closed).toEqual([21]); // the observation-only preview PR is closed, not merged
     expect(gh.pushedTags).toEqual([[CERT_DEPOSIT_TAG, 'main-sha']]); // reserved clean-semver tag
@@ -292,7 +325,10 @@ describe('cmdConformanceCertify', () => {
 
   it('CERTIFIES the fork-PR preview path when a fork is configured', async () => {
     const gh = fakeCertGh();
-    const out = await cmdConformanceCertify({ repo: REPO, tag: TAG, runId: '42' }, certDeps(gh, { fork: FORK }));
+    const out = await cmdConformanceCertify(
+      { repo: REPO, tag: TAG, runId: '42' },
+      certDeps(gh, { fork: FORK }),
+    );
 
     expect(out.exitCode).toBe(0);
     expect(out.result).toMatchObject({
@@ -314,10 +350,15 @@ describe('cmdConformanceCertify', () => {
     const gh = fakeCertGh({
       comments: (pr) =>
         pr === 31
-          ? ['<!-- oak-sticky: oak-preview -->\n**Preview build ready** 📦\nartifact link, no live preview']
+          ? [
+              '<!-- oak-sticky: oak-preview -->\n**Preview build ready** 📦\nartifact link, no live preview',
+            ]
           : [PREVIEW_COMMENT],
     });
-    const out = await cmdConformanceCertify({ repo: REPO, tag: TAG, runId: '42' }, certDeps(gh, { fork: FORK }));
+    const out = await cmdConformanceCertify(
+      { repo: REPO, tag: TAG, runId: '42' },
+      certDeps(gh, { fork: FORK }),
+    );
     expect(out.exitCode).toBe(1);
     expect(out.result).toMatchObject({ status: 'failed', path: 'preview-fork' });
     expect(gh.closed).toContain(21); // same-repo preview certified (closed) before the fork phase
@@ -327,16 +368,35 @@ describe('cmdConformanceCertify', () => {
     const gh = fakeCertGh({
       workflowRuns: (sha) => {
         if (sha === 'fork-head-sha') {
-          return [{ id: 5, name: 'Paper CI', status: 'completed', conclusion: 'failure', url: 'bad-fork-run', event: 'pull_request' }];
+          return [
+            {
+              id: 5,
+              name: 'Paper CI',
+              status: 'completed',
+              conclusion: 'failure',
+              url: 'bad-fork-run',
+              event: 'pull_request',
+            },
+          ];
         }
         const runs: WorkflowRun[] = [...SUCCESS_CI];
         if (sha === 'main-sha') {
-          runs.push({ id: 3, name: 'Publish Zenodo deposit', event: 'push', url: 'publish-run-url', status: 'completed', conclusion: 'success' });
+          runs.push({
+            id: 3,
+            name: 'Publish Zenodo deposit',
+            event: 'push',
+            url: 'publish-run-url',
+            status: 'completed',
+            conclusion: 'success',
+          });
         }
         return runs;
       },
     });
-    const out = await cmdConformanceCertify({ repo: REPO, tag: TAG, runId: '42' }, certDeps(gh, { fork: FORK }));
+    const out = await cmdConformanceCertify(
+      { repo: REPO, tag: TAG, runId: '42' },
+      certDeps(gh, { fork: FORK }),
+    );
     expect(out.exitCode).toBe(1);
     expect(out.result).toMatchObject({ status: 'failed', path: 'preview-fork' });
     expect(out.result.failure).toContain('fork Paper CI');
@@ -346,7 +406,9 @@ describe('cmdConformanceCertify', () => {
     const gh = fakeCertGh();
     const out = await cmdConformanceCertify(
       { repo: REPO, tag: TAG },
-      certDeps(gh, { installEngine: async () => ({ upToDate: true, prNumber: null, prUrl: null }) }),
+      certDeps(gh, {
+        installEngine: async () => ({ upToDate: true, prNumber: null, prUrl: null }),
+      }),
     );
     expect(out.exitCode).toBe(1);
     expect(out.result).toMatchObject({ status: 'failed', path: 'install' });
@@ -355,7 +417,16 @@ describe('cmdConformanceCertify', () => {
 
   it('fails the cert when Paper CI concludes failure on main', async () => {
     const gh = fakeCertGh({
-      workflowRuns: () => [{ id: 9, name: 'Paper CI', status: 'completed', conclusion: 'failure', url: 'bad-run', event: 'push' }],
+      workflowRuns: () => [
+        {
+          id: 9,
+          name: 'Paper CI',
+          status: 'completed',
+          conclusion: 'failure',
+          url: 'bad-run',
+          event: 'push',
+        },
+      ],
     });
     const out = await cmdConformanceCertify({ repo: REPO, tag: TAG }, certDeps(gh));
     expect(out.exitCode).toBe(1);
@@ -376,7 +447,11 @@ describe('cmdConformanceCertify', () => {
   });
 
   it('fails at the preview phase when the sticky degraded to an artifact link (no pages.dev URL)', async () => {
-    const gh = fakeCertGh({ comments: () => ['<!-- oak-sticky: oak-preview -->\n**Preview build ready** 📦\nartifact link, no live preview'] });
+    const gh = fakeCertGh({
+      comments: () => [
+        '<!-- oak-sticky: oak-preview -->\n**Preview build ready** 📦\nartifact link, no live preview',
+      ],
+    });
     const out = await cmdConformanceCertify({ repo: REPO, tag: TAG }, certDeps(gh));
     expect(out.exitCode).toBe(1);
     expect(out.result).toMatchObject({ status: 'failed', path: 'preview-same-repo' });
@@ -396,7 +471,16 @@ describe('cmdConformanceCertify', () => {
 
   it('is INCONCLUSIVE when a run never completes (poll timeout = slow/stuck third party)', async () => {
     const gh = fakeCertGh({
-      workflowRuns: () => [{ id: 9, name: 'Paper CI', status: 'in_progress', conclusion: null, url: 'stuck', event: 'push' }],
+      workflowRuns: () => [
+        {
+          id: 9,
+          name: 'Paper CI',
+          status: 'in_progress',
+          conclusion: null,
+          url: 'stuck',
+          event: 'push',
+        },
+      ],
     });
     const out = await cmdConformanceCertify({ repo: REPO, tag: TAG }, certDeps(gh));
     expect(out.exitCode).toBe(2);
@@ -434,7 +518,9 @@ describe('cmdConformanceCertify', () => {
   });
 
   it('fails at the deposit phase when the GH Release is missing a deposit asset', async () => {
-    const gh = fakeCertGh({ releaseAssets: () => RESERVED_BUNDLE_NAMES.filter((n) => n !== 'engine.zip') });
+    const gh = fakeCertGh({
+      releaseAssets: () => RESERVED_BUNDLE_NAMES.filter((n) => n !== 'engine.zip'),
+    });
     const out = await cmdConformanceCertify({ repo: REPO, tag: TAG }, certDeps(gh));
     expect(out.exitCode).toBe(1);
     expect(out.result).toMatchObject({ status: 'failed', path: 'deposit' });
@@ -448,7 +534,16 @@ describe('cmdConformanceCertify', () => {
     const gh = fakeCertGh({
       workflowRuns: (sha) =>
         sha === 'main-sha'
-          ? [{ id: 3, name: 'Publish Zenodo deposit', status: 'completed', conclusion: 'failure', url: 'bad-publish', event: 'push' }]
+          ? [
+              {
+                id: 3,
+                name: 'Publish Zenodo deposit',
+                status: 'completed',
+                conclusion: 'failure',
+                url: 'bad-publish',
+                event: 'push',
+              },
+            ]
           : SUCCESS_CI,
     });
     const out = await cmdConformanceCertify({ repo: REPO, tag: TAG }, certDeps(gh));

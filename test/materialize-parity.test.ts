@@ -29,7 +29,8 @@ const cli = readFileSync(fileURLToPath(new URL('../src/cli.ts', import.meta.url)
 
 /** Call sites of `name(`, ignoring its own `function name(` declaration. */
 function callsTo(src: string, name: string): number {
-  return src.split('\n').filter((l) => l.includes(`${name}(`) && !l.includes(`function ${name}(`)).length;
+  return src.split('\n').filter((l) => l.includes(`${name}(`) && !l.includes(`function ${name}(`))
+    .length;
 }
 
 describe('build and validate materialize from the same inputs', () => {
@@ -38,7 +39,9 @@ describe('build and validate materialize from the same inputs', () => {
     // started deriving its own, which is exactly the shape of the shipped bug.
     expect(callsTo(cli, 'assetOverridesFrom')).toBe(1);
     const builder = cli.slice(cli.indexOf('function materializeInputFrom'));
-    expect(builder.slice(0, builder.indexOf('\n}')).includes('assetOverridesFrom(argv)')).toBe(true);
+    expect(builder.slice(0, builder.indexOf('\n}')).includes('assetOverridesFrom(argv)')).toBe(
+      true,
+    );
   });
 
   it('every verb that materializes spreads the shared builder', () => {
@@ -59,8 +62,18 @@ describe('build and validate materialize from the same inputs', () => {
       .split('\n')
       .filter((l) => !l.includes('materializeInputFrom('))
       .join('\n');
-    for (const field of ['engineRoot:', 'engineRepo:', 'assetOverrides:', 'baseUrl:', 'paperRoot,', 'instanceRoot,']) {
-      expect(body, `runValidate re-lists ${field} instead of taking it from the builder`).not.toContain(field);
+    for (const field of [
+      'engineRoot:',
+      'engineRepo:',
+      'assetOverrides:',
+      'baseUrl:',
+      'paperRoot,',
+      'instanceRoot,',
+    ]) {
+      expect(
+        body,
+        `runValidate re-lists ${field} instead of taking it from the builder`,
+      ).not.toContain(field);
     }
   });
 });

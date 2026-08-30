@@ -76,9 +76,10 @@ export function readEngineCoordinateRaw(
  *  brand-relative; a paper's own relative asset is never reinterpreted. Returns the fields
  *  per namespace (`site.options.*` for HTML, `project.options.logo` for the typst
  *  watermark). Absent file / keys → empty maps (compose emits nothing). */
-export function readBrandAssetOptions(
-  instanceRoot: string,
-): { site: Record<string, string>; project: Record<string, string> } {
+export function readBrandAssetOptions(instanceRoot: string): {
+  site: Record<string, string>;
+  project: Record<string, string>;
+} {
   const brandPath = join(instanceRoot, 'brand', 'brand.yml');
   const empty = { site: {}, project: {} };
   if (!existsSync(brandPath)) return empty;

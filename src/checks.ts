@@ -30,7 +30,10 @@ import {
 // tests free of the toolchain, exactly as `@curvenote/check-definitions` (types + ids) is safe to
 // import statically.
 type CheckInterface = CheckDefinition & {
-  validate: (session: ISession, options: Check) => Promise<CheckResult | CheckResult[]> | CheckResult | CheckResult[];
+  validate: (
+    session: ISession,
+    options: Check,
+  ) => Promise<CheckResult | CheckResult[]> | CheckResult | CheckResult[];
 };
 async function curvenoteChecks(): Promise<CheckInterface[]> {
   const mod = await import('@curvenote/check-implementations');
@@ -71,7 +74,11 @@ export async function runChecks(
   for (const jc of journalChecks) {
     const impl = catalog.find((c) => c.id === jc.id);
     if (!impl) {
-      out.push({ id: jc.id, status: CheckStatus.error, message: messages.pr.unknownCheckId(jc.id) });
+      out.push({
+        id: jc.id,
+        status: CheckStatus.error,
+        message: messages.pr.unknownCheckId(jc.id),
+      });
       continue;
     }
     const { optional, ...check } = jc;
@@ -129,7 +136,9 @@ export function toCheckRun(
   pathBase?: string,
   notes: string[] = [],
 ): CheckRun {
-  const failed = results.filter((r) => r.status === CheckStatus.fail || r.status === CheckStatus.error);
+  const failed = results.filter(
+    (r) => r.status === CheckStatus.fail || r.status === CheckStatus.error,
+  );
   const blocking = failed.filter((r) => !r.optional);
   const passed = results.filter((r) => r.status === CheckStatus.pass);
 
@@ -139,7 +148,8 @@ export function toCheckRun(
   const esc = (s: string) => s.replace(/\|/g, '\\|');
   const rows = results
     .map(
-      (r) => `| ${esc(r.id)} | ${r.status}${r.optional ? ' (optional)' : ''} | ${esc(r.message ?? '')} |`,
+      (r) =>
+        `| ${esc(r.id)} | ${r.status}${r.optional ? ' (optional)' : ''} | ${esc(r.message ?? '')} |`,
     )
     .join('\n');
   const table = `${messages.pr.checkTableHeader}\n${rows}`;
@@ -223,7 +233,10 @@ export function frozenPathsTouched(changed: string[]): string[] {
  *  changes the Check-Run conclusion): legitimate engine-upgrade PRs edit these files too, so
  *  blocking would be wrong. Renders in both the sticky comment and the Check-Run summary. */
 export function shimWarning(touched: string[]): string {
-  const shown = touched.slice(0, 5).map((f) => `\`${f}\``).join(', ');
+  const shown = touched
+    .slice(0, 5)
+    .map((f) => `\`${f}\``)
+    .join(', ');
   const more = touched.length > 5 ? `, +${touched.length - 5} more` : '';
   return messages.pr.shimWarning(shown, more);
 }

@@ -59,9 +59,7 @@ describe('working-tree injection preserves author content ([R3])', () => {
     );
     expect(out.getIn(['site', 'template'])).toBe('https://example.org/book-theme.zip');
     // finding 3: the sibling option key is untouched
-    expect(out.getIn(['project', 'options', 'youtube'])).toBe(
-      'https://youtu.be/dQw4w9WgXcQ',
-    );
+    expect(out.getIn(['project', 'options', 'youtube'])).toBe('https://youtu.be/dQw4w9WgXcQ');
     // and the engine coordinate the shim reads still resolves
     expect(readEngineCoordinateRaw(out)).toEqual({
       version: 'v0.3.0',

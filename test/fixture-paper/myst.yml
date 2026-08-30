@@ -11,21 +11,21 @@ project:
   abstract: A short plain-language abstract for the engine release-safety fixture paper.
   date: 2026-07-09
   authors:
-  - name: Ada Fixture
-    orcid: 0000-0002-1825-0097
-    affiliations:
-    - Fixture Institute
-    corresponding: true
-    email: ada@example.org
-    roles:
-    - conceptualization
-    - software
-    - writing - original draft
+    - name: Ada Fixture
+      orcid: 0000-0002-1825-0097
+      affiliations:
+        - Fixture Institute
+      corresponding: true
+      email: ada@example.org
+      roles:
+        - conceptualization
+        - software
+        - writing - original draft
   keywords:
-  - fixtures
-  - engine
+    - fixtures
+    - engine
   bibliography:
-  - bib.bib
+    - bib.bib
   options:
     youtube: https://youtu.be/dQw4w9WgXcQ
     oaktree-sapling:
