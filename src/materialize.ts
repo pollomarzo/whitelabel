@@ -1,16 +1,9 @@
 /**
- * materialize.ts: what `oak build` and `oak validate` must agree on before they diverge.
+ * materialize.ts: what `oak build` and `oak validate` must agree on before they diverge. The
+ * myst edge, the input both verbs feed it, and the two-pass write of `myst.oak.yml`.
  *
- * The myst edge (the seam to mystmd) and the two-pass derived-config materialization live
- * here rather than in `build.ts` because BOTH verbs need them. [R82] shared
- * `materializeDerived` between build and validate by extracting it from `runBuild` and leaving
- * it in `build.ts`; validate then had to import it back, and `build.ts` still imports
- * `runLayerA` from `validate.ts` (its [R21] pre-flight runs BETWEEN the two passes). That made
- * the two largest verb modules mutually dependent. The coupling is real and deliberate; the
- * module boundary was never a decision, only where the code happened to already be.
- *
- * Nothing here knows about building or validating. It is the shared contract: the edge
- * interface, the input both verbs feed it, and the function that writes `myst.oak.yml`.
+ * Its own module because both need it: sharing it from `build.ts` ([R82]) made the two verbs
+ * import each other, since build also needs validate's `runLayerA` between the passes ([R21]).
  */
 import { join } from 'node:path';
 import type { ISession } from 'myst-cli';
