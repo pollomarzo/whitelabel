@@ -27,8 +27,6 @@ describe('decideRef (dec. 23 / [R41], repo + ref-class trust)', () => {
 
   it('refuses a PR-merge ref from a fork but allows it when allowlisted', () => {
     expect(decideRef('refs/pull/9/merge', { isFork: true }).allowed).toBe(false);
-    expect(
-      decideRef('refs/pull/9/merge', { isFork: true, allowlisted: true }).allowed,
-    ).toBe(true);
+    expect(decideRef('refs/pull/9/merge', { isFork: true, allowlisted: true }).allowed).toBe(true);
   });
 });

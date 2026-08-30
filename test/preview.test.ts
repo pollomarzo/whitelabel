@@ -73,7 +73,10 @@ const failDeployer = (msg = 'CF 500'): PagesDeployer => ({
 });
 
 const previewCfg = (over: Record<string, unknown> = {}) =>
-  JournalConfig.parse({ name: 'x', preview: { provider: 'cloudflare', cf_project_name: 'journal-x', ...over } }).preview;
+  JournalConfig.parse({
+    name: 'x',
+    preview: { provider: 'cloudflare', cf_project_name: 'journal-x', ...over },
+  }).preview;
 
 function siteWithPr(pr: string | null): string {
   const dir = mkdtempSync(join(tmpdir(), 'oak-preview-'));
@@ -101,7 +104,9 @@ describe('takePrNumber', () => {
 
 describe('previewBranch', () => {
   it('substitutes {repo}/{pr} and uses the short repo name', () => {
-    expect(previewBranch('paper-{repo}-{pr}', 'impact-scholars/geetha-2026-pd', '9')).toBe('paper-geetha-2026-pd-9');
+    expect(previewBranch('paper-{repo}-{pr}', 'impact-scholars/geetha-2026-pd', '9')).toBe(
+      'paper-geetha-2026-pd-9',
+    );
   });
   it('slugifies to a CF-safe alias and truncates', () => {
     const b = previewBranch('{repo}_{pr}', 'Owner/Weird Name!!', '3');
@@ -115,10 +120,19 @@ describe('planPreview', () => {
   const cf = { apiToken: 't', accountId: 'a' };
   it('deploys to cloudflare when provider + secrets + project name are all present', () => {
     const plan = planPreview({ preview: previewCfg(), cf, repo: 'o/r', pr: '5' });
-    expect(plan).toMatchObject({ mode: 'cloudflare', projectName: 'journal-x', branch: 'paper-r-5' });
+    expect(plan).toMatchObject({
+      mode: 'cloudflare',
+      projectName: 'journal-x',
+      branch: 'paper-r-5',
+    });
   });
   it('degrades when provider is not cloudflare', () => {
-    const plan = planPreview({ preview: previewCfg({ provider: 'artifact' }), cf, repo: 'o/r', pr: '5' });
+    const plan = planPreview({
+      preview: previewCfg({ provider: 'artifact' }),
+      cf,
+      repo: 'o/r',
+      pr: '5',
+    });
     expect(plan).toMatchObject({ mode: 'artifact' });
   });
   it('degrades when secrets are absent ([R6])', () => {
@@ -126,8 +140,16 @@ describe('planPreview', () => {
     expect(plan).toMatchObject({ mode: 'artifact', reason: expect.stringContaining('secrets') });
   });
   it('degrades when cf_project_name is unset', () => {
-    const plan = planPreview({ preview: previewCfg({ cf_project_name: undefined }), cf, repo: 'o/r', pr: '5' });
-    expect(plan).toMatchObject({ mode: 'artifact', reason: expect.stringContaining('cf_project_name') });
+    const plan = planPreview({
+      preview: previewCfg({ cf_project_name: undefined }),
+      cf,
+      repo: 'o/r',
+      pr: '5',
+    });
+    expect(plan).toMatchObject({
+      mode: 'artifact',
+      reason: expect.stringContaining('cf_project_name'),
+    });
   });
 });
 
@@ -211,7 +233,9 @@ describe('cmdDeployPreview', () => {
     });
     expect(out.exitCode).toBe(0);
     expect(out.result.preview).toBe('cloudflare');
-    expect(stickies.some((s) => s.header === STICKY_PREVIEW && s.body.includes('pages.dev'))).toBe(true);
+    expect(stickies.some((s) => s.header === STICKY_PREVIEW && s.body.includes('pages.dev'))).toBe(
+      true,
+    );
     expect(existsSync(join(dir, '.pr-number'))).toBe(false); // stripped
   });
 
@@ -240,7 +264,10 @@ describe('cmdDeployPreview', () => {
   it('deep-links the degrade comment to the specific Paper CI run (artifactRunId)', async () => {
     const dir = siteWithPr('7');
     const { gh, stickies } = fakeGh();
-    await cmdDeployPreview(baseInput(dir, { cf: {}, artifactRunId: '12345' }), { deployer: okDeployer(), gh });
+    await cmdDeployPreview(baseInput(dir, { cf: {}, artifactRunId: '12345' }), {
+      deployer: okDeployer(),
+      gh,
+    });
     const c = stickies.find((s) => s.header === STICKY_PREVIEW)!;
     expect(c.body).toContain('/actions/runs/12345');
   });
@@ -258,7 +285,10 @@ describe('cmdDeployPreview', () => {
     const mystPath = join(dir, 'myst.yml');
     writeFileSync(mystPath, 'project:\n  doi: 10.5281/zenodo.55\n');
     const { gh, stickies, labels } = fakeGh({ versionTags: () => ['v1.0.0'] });
-    const out = await cmdDeployPreview(baseInput(dir, { cf: {}, mystPath }), { deployer: okDeployer(), gh });
+    const out = await cmdDeployPreview(baseInput(dir, { cf: {}, mystPath }), {
+      deployer: okDeployer(),
+      gh,
+    });
     expect((out.result.notify as Record<string, unknown>).reminder).toBe('posted');
     expect(stickies.some((s) => s.header === STICKY_NEWVERSION)).toBe(true);
     expect(labels.some((l) => l.label === LABEL_EDITOR_ACTION)).toBe(true);
@@ -269,7 +299,10 @@ describe('cmdDeployPreview', () => {
     const mystPath = join(dir, 'myst.yml'); // no project.doi
     writeFileSync(mystPath, 'project:\n  title: x\n');
     const { gh, stickies } = fakeGh({ versionTags: () => ['v1.0.0'] });
-    const out = await cmdDeployPreview(baseInput(dir, { cf: {}, mystPath }), { deployer: okDeployer(), gh });
+    const out = await cmdDeployPreview(baseInput(dir, { cf: {}, mystPath }), {
+      deployer: okDeployer(),
+      gh,
+    });
     expect(out.exitCode).toBe(1); // the run fails loudly
     expect(out.result.status).toBe('error');
     expect(stickies.some((s) => s.header === STICKY_PREVIEW)).toBe(true); // preview still posted

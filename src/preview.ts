@@ -70,7 +70,10 @@ export interface Outcome {
   exitCode: number;
   result: Record<string, unknown>;
 }
-const ok = (fields: Record<string, unknown>): Outcome => ({ exitCode: 0, result: { status: 'ok', ...fields } });
+const ok = (fields: Record<string, unknown>): Outcome => ({
+  exitCode: 0,
+  result: { status: 'ok', ...fields },
+});
 const err = (exitCode: number, message: string, fields: Record<string, unknown> = {}): Outcome => ({
   exitCode,
   result: { status: 'error', message, ...fields },
@@ -172,7 +175,9 @@ export function artifactComment(runUrl: string, reason: string): string {
 /** Parse the Zenodo record URL from a concept DOI prefix (sandbox `10.5072` vs prod `10.5281`).
  *  Returns an error string for an unrecognized prefix; the caller fails loud, matching today's
  *  notify (a published paper with an unparseable DOI is an inconsistent state). */
-export function recordUrlForDoi(doi: string): { doi: string; recordUrl: string } | { error: string } {
+export function recordUrlForDoi(
+  doi: string,
+): { doi: string; recordUrl: string } | { error: string } {
   const map: Array<[string, string]> = [
     ['10.5072/zenodo.', 'https://sandbox.zenodo.org/records/'],
     ['10.5281/zenodo.', 'https://zenodo.org/records/'],
@@ -222,7 +227,10 @@ export interface PreviewDeps {
  * then run the new-version reminder ([R16]). NEVER fails the run: a Cloudflare error degrades
  * to the artifact comment, and a missing `.pr-number` no-ops.
  */
-export async function cmdDeployPreview(input: DeployPreviewInput, deps: PreviewDeps): Promise<Outcome> {
+export async function cmdDeployPreview(
+  input: DeployPreviewInput,
+  deps: PreviewDeps,
+): Promise<Outcome> {
   const { siteDir, repoRoot, instanceRoot, repo, serverUrl, cf, mystPath } = input;
   const pr = takePrNumber(siteDir);
   if (!pr) {
@@ -262,7 +270,10 @@ export async function cmdDeployPreview(input: DeployPreviewInput, deps: PreviewD
         STICKY_PREVIEW,
         artifactComment(runUrl, msg.workflow.cloudflareDegradedReason(failure)),
       );
-      outcome = { preview: 'artifact', reason: msg.workflow.previewCloudflareFailedReason(failure) };
+      outcome = {
+        preview: 'artifact',
+        reason: msg.workflow.previewCloudflareFailedReason(failure),
+      };
     }
   } else {
     deps.gh.sticky(repoRoot, pr, STICKY_PREVIEW, artifactComment(runUrl, plan.reason));
@@ -272,7 +283,10 @@ export async function cmdDeployPreview(input: DeployPreviewInput, deps: PreviewD
   // The new-version reminder rides here, base context holds pull-requests: write ([R16]).
   // Its failure (a real "published but unlinked" inconsistency, or a gh error) propagates.
   const notify = runNewVersionReminder({ repoRoot, mystPath, repo, pr }, deps.gh);
-  return { exitCode: notify.exitCode, result: { status: notify.result.status, ...outcome, notify: notify.result } };
+  return {
+    exitCode: notify.exitCode,
+    result: { status: notify.result.status, ...outcome, notify: notify.result },
+  };
 }
 
 export interface NotifyInput {
@@ -301,9 +315,7 @@ export function runNewVersionReminder(input: NotifyInput, gh: GhPr): Outcome {
 
   const doi = readProjectDoi(mystPath);
   if (!doi) {
-    process.stderr.write(
-      annotate('error', msg.workflow.notifyPublishedButUnlinked) + '\n',
-    );
+    process.stderr.write(annotate('error', msg.workflow.notifyPublishedButUnlinked) + '\n');
     return err(1, 'v* tag present but project.doi missing', { reminder: 'error' });
   }
   const parsed = recordUrlForDoi(doi);

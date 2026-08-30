@@ -15,14 +15,14 @@ project:
   # Fixed thumbnail location, consumed by the gallery plugin.
   thumbnail: thumbnails/thumbnail.png
   exports:
-  - format: typst
-    id: typst-pdf
-    articles:
-    - file: index.md
-      level: 0
+    - format: typst
+      id: typst-pdf
+      articles:
+        - file: index.md
+          level: 0
   downloads:
-  - id: typst-pdf
-    title: PDF export
+    - id: typst-pdf
+      title: PDF export
 
 site:
   options:

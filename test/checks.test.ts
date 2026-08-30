@@ -18,9 +18,9 @@ import {
 
 describe('toCheckRun (reporting: GitHub Check Run, ours)', () => {
   it('fails the conclusion on a non-optional failure', () => {
-    expect(
-      toCheckRun([{ id: 'x', status: CheckStatus.fail, message: 'bad' }]).conclusion,
-    ).toBe('failure');
+    expect(toCheckRun([{ id: 'x', status: CheckStatus.fail, message: 'bad' }]).conclusion).toBe(
+      'failure',
+    );
   });
 
   it('an error status also gates (failure conclusion)', () => {
@@ -45,7 +45,11 @@ describe('toCheckRun (reporting: GitHub Check Run, ours)', () => {
     }));
     const r = toCheckRun(results);
     expect(r.annotations).toHaveLength(50);
-    expect(r.annotations[0]).toMatchObject({ path: 'index.md', start_line: 1, annotation_level: 'failure' });
+    expect(r.annotations[0]).toMatchObject({
+      path: 'index.md',
+      start_line: 1,
+      annotation_level: 'failure',
+    });
   });
 
   it('relativizes an absolute annotation path against pathBase, leaves a relative one alone', () => {
@@ -163,7 +167,13 @@ const report = (over: Partial<CheckRun> = {}): ChecksReport => ({
   checkRun: toCheckRun([
     { id: 'abstract-exists', status: CheckStatus.pass },
     ...(over.conclusion === 'failure'
-      ? [{ id: 'authors-have-orcid', status: CheckStatus.fail, message: 'no ORCID' } as EngineCheckResult]
+      ? [
+          {
+            id: 'authors-have-orcid',
+            status: CheckStatus.fail,
+            message: 'no ORCID',
+          } as EngineCheckResult,
+        ]
       : []),
   ]),
 });
@@ -185,7 +195,7 @@ describe('checksComment (sticky PR-comment renderer)', () => {
     expect(body).toContain('authors-have-orcid');
   });
 
-  it('carries a degraded run\'s note into the comment ([R82])', () => {
+  it("carries a degraded run's note into the comment ([R82])", () => {
     // check-post does not know notes exist; they ride inside checkRun.summary, which this
     // renders. That is the whole fix: the PR UI stops showing a degraded run as a normal one.
     const body = checksComment({
@@ -219,7 +229,9 @@ describe('cmdCheckPost (Stage-2 orchestration, fake seams)', () => {
     const out = cmdCheckPost({ report: report(), repo: 'o/r', sha: 'abc', pr: '7' }, deps);
     expect(out.checkRunPosted).toBe(true);
     expect(out.commentPosted).toBe(true);
-    expect(runs).toEqual([{ repo: 'o/r', sha: 'abc', name: 'Journal checks', run: report().checkRun }]);
+    expect(runs).toEqual([
+      { repo: 'o/r', sha: 'abc', name: 'Journal checks', run: report().checkRun },
+    ]);
     expect(stickies).toHaveLength(1);
     expect(stickies[0]).toMatchObject({ pr: '7', header: STICKY_CHECKS });
     expect(stickies[0]!.body).toContain('| Check | Status | Detail |');
@@ -236,7 +248,11 @@ describe('cmdCheckPost (Stage-2 orchestration, fake seams)', () => {
 
   it('a throwing Check-Run seam degrades to a warning, still upserts the comment', () => {
     const { deps, stickies } = fakePost({
-      checkRun: { create: () => { throw new Error('403 read-only'); } },
+      checkRun: {
+        create: () => {
+          throw new Error('403 read-only');
+        },
+      },
     });
     const out = cmdCheckPost({ report: report(), repo: 'o/r', sha: 'abc', pr: '7' }, deps);
     expect(out.checkRunPosted).toBe(false);
@@ -247,7 +263,9 @@ describe('cmdCheckPost (Stage-2 orchestration, fake seams)', () => {
 
   it('a throwing sticky seam degrades to a warning (no crash)', () => {
     const { deps, runs } = fakePost({
-      sticky: () => { throw new Error('boom'); },
+      sticky: () => {
+        throw new Error('boom');
+      },
     });
     const out = cmdCheckPost({ report: report(), repo: 'o/r', sha: 'abc', pr: '7' }, deps);
     expect(out.checkRunPosted).toBe(true);
@@ -259,7 +277,13 @@ describe('cmdCheckPost (Stage-2 orchestration, fake seams)', () => {
 
 describe('frozenPathsTouched (frozen-shim detector)', () => {
   it('matches .github/** and CODEOWNERS, ignores paper content', () => {
-    const changed = ['index.md', '.github/workflows/check.yml', 'CODEOWNERS', 'data/x.csv', '.github/actions/engine/pins.yml'];
+    const changed = [
+      'index.md',
+      '.github/workflows/check.yml',
+      'CODEOWNERS',
+      'data/x.csv',
+      '.github/actions/engine/pins.yml',
+    ];
     expect(frozenPathsTouched(changed)).toEqual([
       '.github/workflows/check.yml',
       'CODEOWNERS',
@@ -275,7 +299,13 @@ describe('cmdCheckPost frozen-shim advisory', () => {
   it('with shimTouched: warns in the comment AND the Check-Run title/summary, conclusion unchanged', () => {
     const { deps, runs, stickies } = fakePost();
     const out = cmdCheckPost(
-      { report: report(), repo: 'o/r', sha: 'abc', pr: '7', shimTouched: ['.github/workflows/check.yml'] },
+      {
+        report: report(),
+        repo: 'o/r',
+        sha: 'abc',
+        pr: '7',
+        shimTouched: ['.github/workflows/check.yml'],
+      },
       deps,
     );
     expect(out.checkRunPosted).toBe(true);

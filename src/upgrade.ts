@@ -83,7 +83,11 @@ function frozenFiles(templateAtTarget: string): string[] {
 }
 
 /** Render a single frozen file at the target with the repo's answers. */
-export function renderFrozenFile(templateAtTarget: string, rel: string, answers: TemplateAnswers): string {
+export function renderFrozenFile(
+  templateAtTarget: string,
+  rel: string,
+  answers: TemplateAnswers,
+): string {
   if (rel === PINS_REL) return renderPins(templateAtTarget, answers);
   if (rel === CODEOWNERS_REL)
     return renderCodeowners(readFileSync(join(templateAtTarget, rel), 'utf8'), answers.owner);
@@ -94,7 +98,11 @@ export function renderFrozenFile(templateAtTarget: string, rel: string, answers:
  * Drift = frozen files whose target render differs from the on-disk file (or that are absent
  * on disk). 2-way, reset-to-template semantics. Returns the changed relative paths, sorted.
  */
-export function computeDrift(repoRoot: string, templateAtTarget: string, answers: TemplateAnswers): string[] {
+export function computeDrift(
+  repoRoot: string,
+  templateAtTarget: string,
+  answers: TemplateAnswers,
+): string[] {
   const changed: string[] = [];
   for (const rel of frozenFiles(templateAtTarget)) {
     const rendered = renderFrozenFile(templateAtTarget, rel, answers);
@@ -110,7 +118,10 @@ export function computeDrift(repoRoot: string, templateAtTarget: string, answers
 
 export interface UpgradePr {
   /** branch → add `paths` → commit as bot → push → `gh pr create`; returns the PR URL. */
-  open(repoRoot: string, opts: { branch: string; title: string; body: string; paths: string[] }): string;
+  open(
+    repoRoot: string,
+    opts: { branch: string; title: string; body: string; paths: string[] },
+  ): string;
 }
 
 export interface UpgradeDeps {
@@ -145,7 +156,12 @@ function bumpVersion(repoRoot: string, target: string): void {
 }
 
 /** Overwrite the drifted frozen files on disk with their target render. */
-function resyncFiles(repoRoot: string, templateAtTarget: string, answers: TemplateAnswers, drift: string[]): void {
+function resyncFiles(
+  repoRoot: string,
+  templateAtTarget: string,
+  answers: TemplateAnswers,
+  drift: string[],
+): void {
   for (const rel of drift) {
     const dest = join(repoRoot, rel);
     mkdirSync(dirname(dest), { recursive: true });
@@ -157,7 +173,10 @@ export async function cmdUpgrade(input: UpgradeInput, deps: UpgradeDeps): Promis
   const { repoRoot, mode } = input;
   const answers = readAnswers(repoRoot);
   if (!answers.engineRepo) {
-    return { exitCode: 2, result: { status: 'error', message: msg.upgrade.notAPaperRepo(PINS_REL) } };
+    return {
+      exitCode: 2,
+      result: { status: 'error', message: msg.upgrade.notAPaperRepo(PINS_REL) },
+    };
   }
   // Same rule as bootstrap: a target we picked must say so. "--to v1.2.3" and "whatever is
   // newest right now" are different promises, and only one of them is reproducible.

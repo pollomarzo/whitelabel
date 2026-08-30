@@ -46,7 +46,11 @@ describe('selectEntries', () => {
 
   it('returns EVERY paper when :edition: is omitted (the scaffold single-page case)', () => {
     expect(selectEntries(registry).map((e: { slug: string }) => e.slug)).toEqual(['a', 'b', 'c']);
-    expect(selectEntries(registry, {}).map((e: { slug: string }) => e.slug)).toEqual(['a', 'b', 'c']);
+    expect(selectEntries(registry, {}).map((e: { slug: string }) => e.slug)).toEqual([
+      'a',
+      'b',
+      'c',
+    ]);
   });
 
   it('filters by edition when given', () => {

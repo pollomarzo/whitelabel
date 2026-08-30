@@ -116,7 +116,7 @@ describe('checkIdUniqueness (check B, needs the registry)', () => {
     if (!r.ok) expect(r.severity).toBe('error');
   });
 
-  it("does not flag a paper against its own registry entry", () => {
+  it('does not flag a paper against its own registry entry', () => {
     const r = checkIdUniqueness('fixture-2026-sample-paper', registry, {
       slug: 'fixture-sample-paper',
     });

@@ -12,7 +12,7 @@ id_sentinel: fixture-template-placeholder
 id_pattern: "^fixture-\\d{4}-[a-z0-9-]+$"
 
 preview:
-  provider: artifact          # no Cloudflare secrets → degrade to artifact link ([R6])
+  provider: artifact # no Cloudflare secrets → degrade to artifact link ([R6])
   branch_pattern: paper-{repo}-{pr}
 
 zenodo:

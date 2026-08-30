@@ -23,11 +23,7 @@ import {
   type IdCheckResult,
 } from './schema.js';
 import { isAbsolute, join } from 'node:path';
-import {
-  resolveBrandAssetPath,
-  isBrandAssetUrl,
-  isInstanceRelativeTemplate,
-} from './compose.js';
+import { resolveBrandAssetPath, isBrandAssetUrl, isInstanceRelativeTemplate } from './compose.js';
 import { readBrandAssetOptions, readAuthorTypstTemplate, DERIVED_CONFIG_FILE } from './yaml-io.js';
 import {
   runChecks,
@@ -151,7 +147,7 @@ export function checkBrandWatermark(
 /**
  * Warn on a `project.thumbnail` that names a file which isn't there.
  *
- * Pinning `thumbnail:` (which `paper-base.yml` does, so the gallery knows where to look) 
+ * Pinning `thumbnail:` (which `paper-base.yml` does, so the gallery knows where to look)
  * DISABLES myst's own fallback: `transformThumbnail` only searches the mdast for a first
  * content image when the value is *unset* (`transforms/images.ts:543-556`). So a broken path
  * is worse than no path: `saveImageInStaticFolder` returns null and the paper ships with **no
@@ -237,10 +233,7 @@ export function checkTemplates(
     out.push({ check, severity: 'warn', message, klass: 'config' });
 
   if (authorTemplate && tenantTemplate) {
-    warn(
-      'template-override',
-      msg.validate.templateOverride(authorTemplate, tenantTemplate),
-    );
+    warn('template-override', msg.validate.templateOverride(authorTemplate, tenantTemplate));
   }
 
   for (const [layer, value] of [
@@ -248,10 +241,7 @@ export function checkTemplates(
     ['journal', tenantTemplate],
   ] as const) {
     if (!value || !isFloatingTemplate(value)) continue;
-    warn(
-      'template-floating',
-      msg.validate.templateFloating(layer, value),
-    );
+    warn('template-floating', msg.validate.templateFloating(layer, value));
   }
 
   // The path-vs-name ambiguity, made loud. Only `./`/`../` means "a path in my
@@ -261,10 +251,7 @@ export function checkTemplates(
   if (tenantTemplate && instanceRoot && !isBrandAssetUrl(tenantTemplate)) {
     const bare = !isAbsolute(tenantTemplate) && !isInstanceRelativeTemplate(tenantTemplate);
     if (bare && probes.existsProbe(join(instanceRoot, tenantTemplate))) {
-      warn(
-        'template-name-ambiguous',
-        msg.validate.templateNameAmbiguous(tenantTemplate),
-      );
+      warn('template-name-ambiguous', msg.validate.templateNameAmbiguous(tenantTemplate));
     }
   }
 
@@ -407,18 +394,37 @@ export function runLayerA(
   const registry = loadRegistry(instanceRoot, probes);
 
   if (!project.id) {
-    findings.push({ check: 'id-present', severity: 'error', message: msg.validate.idMissing, klass: 'identity' });
+    findings.push({
+      check: 'id-present',
+      severity: 'error',
+      message: msg.validate.idMissing,
+      klass: 'identity',
+    });
   } else {
-    add('id-shape', 'identity', checkIdShape(project.id, { id_sentinel: journal.id_sentinel, id_pattern: journal.id_pattern }));
+    add(
+      'id-shape',
+      'identity',
+      checkIdShape(project.id, {
+        id_sentinel: journal.id_sentinel,
+        id_pattern: journal.id_pattern,
+      }),
+    );
     add(
       'id-uniqueness',
       'identity',
-      checkIdUniqueness(project.id, registry, findSelf(registry, repo), { selfIdentifiable: repo != null }),
+      checkIdUniqueness(project.id, registry, findSelf(registry, repo), {
+        selfIdentifiable: repo != null,
+      }),
     );
   }
 
   for (const r of checkLayout(paperRoot, probes)) {
-    findings.push({ check: 'layout', severity: r.severity, message: r.message, klass: 'structural' });
+    findings.push({
+      check: 'layout',
+      severity: r.severity,
+      message: r.message,
+      klass: 'structural',
+    });
   }
 
   // A missing thumbnail is `structural` (it is the paper's own layout, not brand or identity)
@@ -426,7 +432,11 @@ export function runLayerA(
   // mid-draft paper that hasn't made one yet should still render; the thumbnail becomes
   // mandatory at REGISTRATION, where a *registered* paper without one hard-fails the journal
   // site build under `--strict` ([R80]) with an editor in the loop.
-  add('thumbnail', 'structural', checkThumbnail({ paperRoot, thumbnail: project.thumbnail }, probes));
+  add(
+    'thumbnail',
+    'structural',
+    checkThumbnail({ paperRoot, thumbnail: project.thumbnail }, probes),
+  );
 
   // [R72]: the three extends layers must own disjoint keys, or precedence is a race.
   if (engineRoot && instanceRoot && edition) {
@@ -438,13 +448,26 @@ export function runLayerA(
       .map((l) => ({ name: l.name, config: readLayer(l.path, probes) }))
       .filter((l) => l.config != null);
     for (const r of checkLayerDisjointness(layers)) {
-      findings.push({ check: 'extends-disjoint', severity: r.severity, message: r.message, klass: 'config' });
+      findings.push({
+        check: 'extends-disjoint',
+        severity: r.severity,
+        message: r.message,
+        klass: 'config',
+      });
     }
   }
 
   const brand = instanceRoot ? readBrandAssetOptions(instanceRoot) : { site: {}, project: {} };
-  add('brand-favicon', 'brand', checkBrandFavicon({ instanceRoot, favicon: brand.site.favicon }, probes));
-  add('brand-watermark', 'brand', checkBrandWatermark({ instanceRoot, logo: brand.project.logo }, probes));
+  add(
+    'brand-favicon',
+    'brand',
+    checkBrandFavicon({ instanceRoot, favicon: brand.site.favicon }, probes),
+  );
+  add(
+    'brand-watermark',
+    'brand',
+    checkBrandWatermark({ instanceRoot, logo: brand.project.logo }, probes),
+  );
 
   // The author's template comes from a RAW LIFT of their own myst.yml, never from `project`
   // ([R82]). Digging it out of the composed `exports` would find compose's pass-2 stamp
@@ -683,9 +706,15 @@ export async function runValidate(
   }));
   // Relativize curvenote's (sometimes absolute) annotation paths against the repo checkout root
   // so GitHub can resolve them; default to the paper root (== repo root in the n=1 model).
-  const checkRun = toCheckRun([...layerAResults, ...checks], opts.pathBase ?? input.paperRoot, notes);
+  const checkRun = toCheckRun(
+    [...layerAResults, ...checks],
+    opts.pathBase ?? input.paperRoot,
+    notes,
+  );
 
-  const blockingCheckFail = checks.some((c) => (c.status === CheckStatus.fail || c.status === CheckStatus.error) && !c.optional);
+  const blockingCheckFail = checks.some(
+    (c) => (c.status === CheckStatus.fail || c.status === CheckStatus.error) && !c.optional,
+  );
   const hasError = errors.length > 0 || blockingCheckFail;
   const exitCode = hasError ? 1 : opts.strict && warnings.length ? 1 : 0;
 

@@ -132,7 +132,10 @@ export interface ConformanceDeps {
   probe(url: string): Promise<number>;
   /** Install engine `tag` into `repo` via `oak upgrade --both` (dogfoods the migration path).
    *  Returns the opened PR, or `upToDate` when the pin already equals `tag`. */
-  installEngine(repo: string, tag: string): Promise<{ upToDate: boolean; prNumber: number | null; prUrl: string | null }>;
+  installEngine(
+    repo: string,
+    tag: string,
+  ): Promise<{ upToDate: boolean; prNumber: number | null; prUrl: string | null }>;
   /** The second-account fork (repo + its own PAT) for the optional fork-PR preview phase, or null
    *  when unconfigured: the phase then self-skips so certs keep working pre-provisioning. */
   fork?: { repo: string; token: string } | null;
@@ -179,7 +182,10 @@ export async function cmdConformanceReset(input: ResetInput, deps: ResetDeps): P
   // Cert tags: the `*-cert-*` branch-side markers plus the reserved deposit tag (which carries
   // no marker). `listTags` is a substring match, so `v0.0.0` also catches any `v0.0.0-cert-*`
   // leftover from the pre-fix tag scheme; the Set dedups the overlap.
-  const certTags = new Set([...gh.listTags(repo, CERT_TAG_MARKER), ...gh.listTags(repo, CERT_DEPOSIT_TAG)]);
+  const certTags = new Set([
+    ...gh.listTags(repo, CERT_TAG_MARKER),
+    ...gh.listTags(repo, CERT_DEPOSIT_TAG),
+  ]);
   const deletedTags: string[] = [];
   for (const tag of certTags) {
     // A crashed C3 run leaves a GH Release on the cert tag, clean it too. `deleteRelease`'s
@@ -238,7 +244,9 @@ async function pollUntil<T>(
     if (ready !== null) return ready;
     if (i < opts.tries - 1) await deps.sleep(opts.intervalMs);
   }
-  throw new ThirdPartyError(`timed out waiting for ${label} (${opts.tries}×${opts.intervalMs}ms); slow/stuck third party`);
+  throw new ThirdPartyError(
+    `timed out waiting for ${label} (${opts.tries}×${opts.intervalMs}ms); slow/stuck third party`,
+  );
 }
 
 /**
@@ -259,7 +267,9 @@ async function assertServes200(
     if (!transient(status)) throw new Error(`${label} ${url} returned ${status}, expected 200`);
     if (i < PROBE.tries - 1) await deps.sleep(PROBE.intervalMs);
   }
-  throw new ThirdPartyError(`${label} ${url} still ${status} after ${PROBE.tries} tries; transient/outage`);
+  throw new ThirdPartyError(
+    `${label} ${url} still ${status} after ${PROBE.tries} tries; transient/outage`,
+  );
 }
 
 /** null = still pending; the ref when it concluded success; throws when it concluded !success. */
@@ -299,7 +309,10 @@ function extractPreviewUrl(commentBody: string): string | null {
  * Paper CI (build + Pages) is green, Pages actually serves 200, and the "Journal checks" Check
  * Run was posted on main. C2 (PR previews + sticky), C3 (deposit), C4 (verdict) append here.
  */
-export async function cmdConformanceCertify(input: CertifyInput, deps: ConformanceDeps): Promise<Outcome> {
+export async function cmdConformanceCertify(
+  input: CertifyInput,
+  deps: ConformanceDeps,
+): Promise<Outcome> {
   const { gh, log, sleep, probe, installEngine, fork } = deps;
   const { repo, tag } = input;
   const runId = input.runId ?? String(Date.now());
@@ -345,9 +358,12 @@ export async function cmdConformanceCertify(input: CertifyInput, deps: Conforman
     await pollUntil(
       'Paper CI (push→main)',
       () => {
-        const ci = gh.workflowRunsForCommit(repo, mergeSha).find((r) => r.name === 'Paper CI' && r.event === 'push');
+        const ci = gh
+          .workflowRunsForCommit(repo, mergeSha)
+          .find((r) => r.name === 'Paper CI' && r.event === 'push');
         if (!ci || ci.status !== 'completed') return null;
-        if (ci.conclusion !== 'success') throw new Error(`Paper CI concluded ${ci.conclusion}: ${ci.url}`);
+        if (ci.conclusion !== 'success')
+          throw new Error(`Paper CI concluded ${ci.conclusion}: ${ci.url}`);
         return ci;
       },
       { sleep, log },
@@ -378,9 +394,12 @@ export async function cmdConformanceCertify(input: CertifyInput, deps: Conforman
     await pollUntil(
       `Paper CI (PR #${previewPr.number} build)`,
       () => {
-        const ci = gh.workflowRunsForCommit(repo, previewPr.headSha).find((r) => r.name === 'Paper CI' && r.event === 'pull_request');
+        const ci = gh
+          .workflowRunsForCommit(repo, previewPr.headSha)
+          .find((r) => r.name === 'Paper CI' && r.event === 'pull_request');
         if (!ci || ci.status !== 'completed') return null;
-        if (ci.conclusion !== 'success') throw new Error(`Paper CI (PR) concluded ${ci.conclusion}: ${ci.url}`);
+        if (ci.conclusion !== 'success')
+          throw new Error(`Paper CI (PR) concluded ${ci.conclusion}: ${ci.url}`);
         return ci;
       },
       { sleep, log },
@@ -390,13 +409,18 @@ export async function cmdConformanceCertify(input: CertifyInput, deps: Conforman
     // presence proves the fork-safe build→deploy split ran end to end.
     const previewBody = await pollUntil(
       `preview sticky comment on PR #${previewPr.number}`,
-      () => gh.listIssueComments(repo, previewPr.number).find((b) => b.includes(PREVIEW_STICKY_MARK)) ?? null,
+      () =>
+        gh.listIssueComments(repo, previewPr.number).find((b) => b.includes(PREVIEW_STICKY_MARK)) ??
+        null,
       { sleep, log },
     );
 
     // The preview actually SERVES 200 (not just that a comment was posted).
     const previewUrl = extractPreviewUrl(previewBody);
-    if (!previewUrl) throw new Error('preview comment posted but carries no Cloudflare URL; degraded to artifact (fixture CF secrets missing?)');
+    if (!previewUrl)
+      throw new Error(
+        'preview comment posted but carries no Cloudflare URL; degraded to artifact (fixture CF secrets missing?)',
+      );
     await assertServes200({ probe, sleep }, previewUrl, 'preview');
     log(`preview 200: ${previewUrl}`);
 
@@ -443,7 +467,8 @@ export async function cmdConformanceCertify(input: CertifyInput, deps: Conforman
         if (!run) return null;
         if (run.status === 'completed') {
           // Concluded before we could approve (no gate, or a failure), decide now.
-          if (run.conclusion !== 'success') throw new Error(`Publish Zenodo deposit concluded ${run.conclusion}: ${run.url}`);
+          if (run.conclusion !== 'success')
+            throw new Error(`Publish Zenodo deposit concluded ${run.conclusion}: ${run.url}`);
           return run;
         }
         if (run.status !== 'waiting') return null; // queued/in_progress; keep waiting for the gate
@@ -460,7 +485,8 @@ export async function cmdConformanceCertify(input: CertifyInput, deps: Conforman
       () => {
         const run = gh.workflowRunsForCommit(repo, tagSha).find((r) => r.id === publishRun.id);
         if (!run || run.status !== 'completed') return null;
-        if (run.conclusion !== 'success') throw new Error(`Publish Zenodo deposit concluded ${run.conclusion}: ${run.url}`);
+        if (run.conclusion !== 'success')
+          throw new Error(`Publish Zenodo deposit concluded ${run.conclusion}: ${run.url}`);
         return run;
       },
       { sleep, log },
@@ -500,7 +526,10 @@ export async function cmdConformanceCertify(input: CertifyInput, deps: Conforman
       // gate): find it, then approve (tolerant: no-op if not gated).
       const forkRun = await pollUntil(
         `fork PR #${forkPr.number} Paper CI run`,
-        () => gh.workflowRunsForCommit(repo, forkPr.headSha).find((r) => r.name === 'Paper CI' && r.event === 'pull_request') ?? null,
+        () =>
+          gh
+            .workflowRunsForCommit(repo, forkPr.headSha)
+            .find((r) => r.name === 'Paper CI' && r.event === 'pull_request') ?? null,
         { sleep, log },
       );
       gh.approveWorkflowRun(repo, forkRun.id);
@@ -509,9 +538,12 @@ export async function cmdConformanceCertify(input: CertifyInput, deps: Conforman
       await pollUntil(
         `fork Paper CI (secretless Stage-1) #${forkPr.number}`,
         () => {
-          const r = gh.workflowRunsForCommit(repo, forkPr.headSha).find((x) => x.name === 'Paper CI' && x.event === 'pull_request');
+          const r = gh
+            .workflowRunsForCommit(repo, forkPr.headSha)
+            .find((x) => x.name === 'Paper CI' && x.event === 'pull_request');
           if (!r || r.status !== 'completed') return null;
-          if (r.conclusion !== 'success') throw new Error(`fork Paper CI concluded ${r.conclusion}: ${r.url}`);
+          if (r.conclusion !== 'success')
+            throw new Error(`fork Paper CI concluded ${r.conclusion}: ${r.url}`);
           return r;
         },
         { sleep, log },
@@ -520,11 +552,14 @@ export async function cmdConformanceCertify(input: CertifyInput, deps: Conforman
       // Stage 2: the base-context preview sticky + a live 200.
       const forkBody = await pollUntil(
         `fork preview sticky on PR #${forkPr.number}`,
-        () => gh.listIssueComments(repo, forkPr.number).find((b) => b.includes(PREVIEW_STICKY_MARK)) ?? null,
+        () =>
+          gh.listIssueComments(repo, forkPr.number).find((b) => b.includes(PREVIEW_STICKY_MARK)) ??
+          null,
         { sleep, log },
       );
       const forkPreviewUrl = extractPreviewUrl(forkBody);
-      if (!forkPreviewUrl) throw new Error('fork preview comment carries no Cloudflare URL; degraded to artifact?');
+      if (!forkPreviewUrl)
+        throw new Error('fork preview comment carries no Cloudflare URL; degraded to artifact?');
       await assertServes200({ probe, sleep }, forkPreviewUrl, 'fork preview');
       log(`fork preview 200: ${forkPreviewUrl}`);
 
@@ -534,7 +569,9 @@ export async function cmdConformanceCertify(input: CertifyInput, deps: Conforman
       paths.push('preview-fork');
       forkResult = { forkPr: forkPr.number, forkPreviewUrl };
     } else {
-      log('fork preview phase SKIPPED (no fork configured; set CONFORMANCE_FORK_REPO/PAT to enable)');
+      log(
+        'fork preview phase SKIPPED (no fork configured; set CONFORMANCE_FORK_REPO/PAT to enable)',
+      );
     }
 
     log(`engine ${tag}: paper-CI CERTIFIED (${paths.join(', ')})`);
@@ -561,7 +598,10 @@ export async function cmdConformanceCertify(input: CertifyInput, deps: Conforman
     const message = err instanceof Error ? err.message : String(err);
     if (err instanceof ThirdPartyError) {
       log(`engine ${tag}: paper-CI INCONCLUSIVE at ${phase}: ${message}`);
-      return { exitCode: 2, result: { status: 'inconclusive', tag, path: phase, repo, reason: message } };
+      return {
+        exitCode: 2,
+        result: { status: 'inconclusive', tag, path: phase, repo, reason: message },
+      };
     }
     log(`engine ${tag}: paper-CI FAILED at ${phase}: ${message}`);
     return { exitCode: 1, result: { status: 'failed', tag, path: phase, repo, failure: message } };

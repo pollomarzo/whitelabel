@@ -48,7 +48,9 @@ execFileSync(
 // rather than duplicate the literal.
 const exportsDir = join(tmp, '_build', 'exports');
 const pdf = existsSync(exportsDir)
-  ? readdirSync(exportsDir, { recursive: true }).map(String).find((f) => f.endsWith('.pdf'))
+  ? readdirSync(exportsDir, { recursive: true })
+      .map(String)
+      .find((f) => f.endsWith('.pdf'))
   : undefined;
 console.error(`\nPDF: ${pdf ? join(exportsDir, pdf) : '(not produced)'}`);
 if (!process.argv.includes('--keep')) {

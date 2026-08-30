@@ -41,56 +41,62 @@ function oak(args: string[]): { code: number; stdout: string; stderr: string } {
   return { code: r.status ?? 1, stdout: r.stdout ?? '', stderr: r.stderr ?? '' };
 }
 
-describe.skipIf(bundleState() === 'absent')('an unrecognized command is an ERROR, not a manual', () => {
-  beforeAll(assertBundleNotStale);
+describe.skipIf(bundleState() === 'absent')(
+  'an unrecognized command is an ERROR, not a manual',
+  () => {
+    beforeAll(assertBundleNotStale);
 
-  it('names the word it did not understand and suggests the near miss', () => {
-    // The UX-test complaint: a typo printed the usage block with no message, so it looked
-    // exactly like a bare `oak` and read as "ran, did nothing".
-    const { code, stderr } = oak(['bootstrp']);
-    expect(code).toBe(2);
-    expect(stderr).toContain("oak: unknown command 'bootstrp'");
-    expect(stderr).toContain("did you mean 'bootstrap'");
-  });
+    it('names the word it did not understand and suggests the near miss', () => {
+      // The UX-test complaint: a typo printed the usage block with no message, so it looked
+      // exactly like a bare `oak` and read as "ran, did nothing".
+      const { code, stderr } = oak(['bootstrp']);
+      expect(code).toBe(2);
+      expect(stderr).toContain("oak: unknown command 'bootstrp'");
+      expect(stderr).toContain("did you mean 'bootstrap'");
+    });
 
-  it('says nothing about near misses when nothing is near', () => {
-    const { code, stderr } = oak(['zzzzzzzz']);
-    expect(code).toBe(2);
-    expect(stderr).toContain("oak: unknown command 'zzzzzzzz'");
-    expect(stderr).not.toContain('did you mean');
-  });
+    it('says nothing about near misses when nothing is near', () => {
+      const { code, stderr } = oak(['zzzzzzzz']);
+      expect(code).toBe(2);
+      expect(stderr).toContain("oak: unknown command 'zzzzzzzz'");
+      expect(stderr).not.toContain('did you mean');
+    });
 
-  it('a BARE oak is not an error message, just the usage', () => {
-    const { code, stderr } = oak([]);
-    expect(code).toBe(2);
-    expect(stderr).not.toContain('unknown command');
-  });
-});
+    it('a BARE oak is not an error message, just the usage', () => {
+      const { code, stderr } = oak([]);
+      expect(code).toBe(2);
+      expect(stderr).not.toContain('unknown command');
+    });
+  },
+);
 
-describe.skipIf(bundleState() === 'absent')('usage opens with what oak is and where to start', () => {
-  beforeAll(assertBundleNotStale);
+describe.skipIf(bundleState() === 'absent')(
+  'usage opens with what oak is and where to start',
+  () => {
+    beforeAll(assertBundleNotStale);
 
-  it('leads with a description and the first command a newcomer runs', () => {
-    const { stderr } = oak([]);
-    const head = stderr.split('\n').slice(0, 8).join('\n');
-    expect(head).toMatch(/^oak: a mystmd-based engine for running a small journal/);
-    expect(head).toContain('oak bootstrap journal');
-    // ...and the verb list still comes after, not instead.
-    expect(stderr).toContain('oak validate');
-  });
+    it('leads with a description and the first command a newcomer runs', () => {
+      const { stderr } = oak([]);
+      const head = stderr.split('\n').slice(0, 8).join('\n');
+      expect(head).toMatch(/^oak: a mystmd-based engine for running a small journal/);
+      expect(head).toContain('oak bootstrap journal');
+      // ...and the verb list still comes after, not instead.
+      expect(stderr).toContain('oak validate');
+    });
 
-  it('explains --external and --co-located in plain words', () => {
-    const { stderr } = oak([]);
-    expect(stderr).toMatch(/--external\s+the journal gets its own public repo/);
-    expect(stderr).toMatch(/--co-located\s+one repo holds the journal and its single paper/);
-  });
+    it('explains --external and --co-located in plain words', () => {
+      const { stderr } = oak([]);
+      expect(stderr).toMatch(/--external\s+the journal gets its own public repo/);
+      expect(stderr).toMatch(/--co-located\s+one repo holds the journal and its single paper/);
+    });
 
-  it('documents the two cross-cutting flags this pass introduced', () => {
-    const { stderr } = oak([]);
-    expect(stderr).toContain('--json');
-    expect(stderr).toContain('--verbose');
-  });
-});
+    it('documents the two cross-cutting flags this pass introduced', () => {
+      const { stderr } = oak([]);
+      expect(stderr).toContain('--json');
+      expect(stderr).toContain('--verbose');
+    });
+  },
+);
 
 describe.skipIf(bundleState() === 'absent')('--json gates the machine envelope', () => {
   beforeAll(assertBundleNotStale);
@@ -98,19 +104,37 @@ describe.skipIf(bundleState() === 'absent')('--json gates the machine envelope',
   /** The fixture paper, alone in a temp dir (no journal.yml beside it). */
   function paperOnly(): string {
     const dir = mkdtempSync(join(tmpdir(), 'oak-cliout-'));
-    for (const f of ['bib.bib', 'index.md', 'myst.yml']) copyFileSync(join(fixturePaper, f), join(dir, f));
+    for (const f of ['bib.bib', 'index.md', 'myst.yml'])
+      copyFileSync(join(fixturePaper, f), join(dir, f));
     return dir;
   }
 
   it('oak validate: stdout is EMPTY without --json, and the verdict is prose on stderr', () => {
-    const { code, stdout, stderr } = oak(['validate', '--paper', fixturePaper, '--instance', fixtureInstance, '--repo', fixtureRepo]);
+    const { code, stdout, stderr } = oak([
+      'validate',
+      '--paper',
+      fixturePaper,
+      '--instance',
+      fixtureInstance,
+      '--repo',
+      fixtureRepo,
+    ]);
     expect(code).toBe(0);
     expect(stdout.trim()).toBe('');
     expect(stderr).toMatch(/oak validate: PASS/);
   }, 60_000);
 
   it('oak validate: --json still puts the full envelope, checkRun included, on stdout', () => {
-    const { stdout } = oak(['validate', '--paper', fixturePaper, '--instance', fixtureInstance, '--repo', fixtureRepo, '--json']);
+    const { stdout } = oak([
+      'validate',
+      '--paper',
+      fixturePaper,
+      '--instance',
+      fixtureInstance,
+      '--repo',
+      fixtureRepo,
+      '--json',
+    ]);
     const out = JSON.parse(stdout);
     expect(out.status).toBe('ok');
     expect(out.checkRun.conclusion).toBe('success');
@@ -128,7 +152,11 @@ describe.skipIf(bundleState() === 'absent')('--json gates the machine envelope',
   it('a refusal prints the sentence, not a JSON record', () => {
     // `oak upgrade --paper <dir>` against a directory that is not a paper repo: a pure local
     // refusal (no network), and the shape every error result now takes without --json.
-    const { code, stdout, stderr } = oak(['upgrade', '--paper', mkdtempSync(join(tmpdir(), 'oak-notapaper-'))]);
+    const { code, stdout, stderr } = oak([
+      'upgrade',
+      '--paper',
+      mkdtempSync(join(tmpdir(), 'oak-notapaper-')),
+    ]);
     expect(code).toBe(2);
     expect(stdout.trim()).toBe('');
     expect(stderr).not.toContain('"status"');
@@ -143,7 +171,10 @@ describe.skipIf(bundleState() === 'absent')('a broken paper gets a sentence, nev
   function journalRepo(): string {
     const dir = mkdtempSync(join(tmpdir(), 'oak-journal-'));
     writeFileSync(join(dir, 'journal.yml'), 'name: A Journal\nid_pattern: ".*"\n');
-    writeFileSync(join(dir, 'myst.yml'), 'version: 1\nproject:\n  title: A Journal\nsite:\n  template: book-theme\n');
+    writeFileSync(
+      join(dir, 'myst.yml'),
+      'version: 1\nproject:\n  title: A Journal\nsite:\n  template: book-theme\n',
+    );
     return dir;
   }
 
@@ -170,7 +201,8 @@ describe.skipIf(bundleState() === 'absent')('a broken paper gets a sentence, nev
 
   it('a paper whose myst.yml lost its engine version names the file and the fix', () => {
     const dir = mkdtempSync(join(tmpdir(), 'oak-nocoord-'));
-    for (const f of ['bib.bib', 'index.md', 'myst.yml']) copyFileSync(join(fixturePaper, f), join(dir, f));
+    for (const f of ['bib.bib', 'index.md', 'myst.yml'])
+      copyFileSync(join(fixturePaper, f), join(dir, f));
     const authorPath = join(dir, 'myst.yml');
     writeFileSync(authorPath, readFileSync(authorPath, 'utf8').replace(/\n\s*version: .*/, ''));
 
@@ -191,7 +223,10 @@ describe.skipIf(bundleState() === 'absent')('a broken paper gets a sentence, nev
 
 describe('subprocess output carries its provenance', () => {
   it('labels every line with the tool that produced it', () => {
-    const out = labelChildOutput('git', "Cloning into '/tmp/oak-seed-x'...\n\nwarning: empty repository\n");
+    const out = labelChildOutput(
+      'git',
+      "Cloning into '/tmp/oak-seed-x'...\n\nwarning: empty repository\n",
+    );
     expect(out.split('\n')).toEqual([
       "  [git] Cloning into '/tmp/oak-seed-x'...",
       '  [git] warning: empty repository',

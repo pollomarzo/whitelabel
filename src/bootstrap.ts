@@ -187,13 +187,21 @@ export function renderMyst(templateRoot: string, answers: TemplateAnswers): stri
  * `destRoot`. `pins.yml`, `CODEOWNERS`, and `myst.yml` are rendered from answers; every other
  * file is byte-copied. Returns the written relative paths (posix). Excludes the engine README.
  */
-export function renderPaperTemplate(paperRoot: string, destRoot: string, answers: TemplateAnswers): string[] {
+export function renderPaperTemplate(
+  paperRoot: string,
+  destRoot: string,
+  answers: TemplateAnswers,
+): string[] {
   const written: string[] = [];
   for (const rel of listFiles(paperRoot)) {
     if (EXCLUDE_FROM_STAMP.has(rel.split('/')[0]!)) continue;
     if (rel === RENDER_PINS) writeRel(destRoot, rel, renderPins(paperRoot, answers));
     else if (rel === RENDER_CODEOWNERS)
-      writeRel(destRoot, rel, renderCodeowners(readFileSync(join(paperRoot, rel), 'utf8'), answers.owner));
+      writeRel(
+        destRoot,
+        rel,
+        renderCodeowners(readFileSync(join(paperRoot, rel), 'utf8'), answers.owner),
+      );
     else if (rel === RENDER_MYST) writeRel(destRoot, rel, renderMyst(paperRoot, answers));
     else copyRel(paperRoot, destRoot, rel);
     written.push(stampRel(rel));
@@ -207,7 +215,11 @@ export function renderPaperTemplate(paperRoot: string, destRoot: string, answers
  * edition file is renamed to `editions/<edition>.yml`; the rest is byte-copied. Excludes the
  * engine README. Returns written rel paths.
  */
-export function renderInstanceTemplate(instanceRoot: string, destRoot: string, answers: TemplateAnswers): string[] {
+export function renderInstanceTemplate(
+  instanceRoot: string,
+  destRoot: string,
+  answers: TemplateAnswers,
+): string[] {
   const written: string[] = [];
   for (const rel of listFiles(instanceRoot)) {
     if (EXCLUDE_FROM_STAMP.has(rel.split('/')[0]!)) continue;
@@ -278,10 +290,7 @@ export function renderSiteTemplate(
     if (rel === RENDER_MYST) {
       const doc = readDoc(join(siteRoot, rel));
       doc.setIn(['project', 'title'], journalName);
-      doc.setIn(
-        ['project', 'plugins', 0],
-        galleryPluginUrl(answers.engineRepo, answers.version),
-      );
+      doc.setIn(['project', 'plugins', 0], galleryPluginUrl(answers.engineRepo, answers.version));
       doc.setIn(['site', 'template'], themeZipUrl());
       writeRel(destRoot, rel, doc.toString());
     } else if (rel === RENDER_SITE_INDEX || rel === RENDER_SITE_PKG) {
@@ -358,7 +367,10 @@ export interface Provisioner {
    * Build a `review` branch = author content (from `sourceUrl`@`sourceRef`) with the entire
    * frozen `.github/` restored from `origin/main`, then push. Requires `main` to be seeded.
    */
-  ingestReviewBranch(repo: string, opts: { sourceUrl: string; sourceRef: string; message: string }): void;
+  ingestReviewBranch(
+    repo: string,
+    opts: { sourceUrl: string; sourceRef: string; message: string },
+  ): void;
   prExists(repo: string, head: string): boolean;
   openPr(repo: string, opts: { head: string; base: string; title: string; body: string }): string;
   /** Grant `org/team` write on `repo` (org-owned repos only). */
@@ -527,7 +539,9 @@ function declaredValues(v: {
   if (v.journalName !== undefined) {
     rows.push([
       msg.declared.labels.journalName,
-      v.journalName ? msg.declared.journalNameGiven(v.journalName) : msg.declared.journalNameDefault,
+      v.journalName
+        ? msg.declared.journalNameGiven(v.journalName)
+        : msg.declared.journalNameDefault,
     ]);
   }
   rows.push([
@@ -588,7 +602,8 @@ function resolveOwner(
   const ownerType = prov.ownerType(login);
   const ownerToken = input.owner ?? `@${input.authedUser}`;
   // A team grant only applies when the owner token names an `@org/team` on an org account.
-  const team = ownerType === 'Organization' && /^@[^/]+\/.+$/.test(ownerToken) ? ownerToken.slice(1) : null;
+  const team =
+    ownerType === 'Organization' && /^@[^/]+\/.+$/.test(ownerToken) ? ownerToken.slice(1) : null;
   return { ownerToken, team, ownerType };
 }
 
@@ -652,12 +667,17 @@ function applyProvisioning(
   }
 
   // labels
-  for (const l of LABELS) prov.createLabel(repo, l.name, { color: l.color, description: l.description });
+  for (const l of LABELS)
+    prov.createLabel(repo, l.name, { color: l.color, description: l.description });
   actions.labels = LABELS.map((l) => l.name).join(', ');
 }
 
 /** Set the provided secrets; collect a runbook for the ones left unset ([R25] floor). */
-function applySecrets(repo: string, secrets: SecretInputs, deps: BootstrapDeps): { set: string[]; runbook: string[] } {
+function applySecrets(
+  repo: string,
+  secrets: SecretInputs,
+  deps: BootstrapDeps,
+): { set: string[]; runbook: string[] } {
   const set: string[] = [];
   const missing: string[] = [];
   for (const { key, name } of SECRET_MAP) {
@@ -678,7 +698,10 @@ function applySecrets(repo: string, secrets: SecretInputs, deps: BootstrapDeps):
   return { set, runbook };
 }
 
-export async function cmdBootstrapPaper(input: BootstrapPaperInput, deps: BootstrapDeps): Promise<Outcome> {
+export async function cmdBootstrapPaper(
+  input: BootstrapPaperInput,
+  deps: BootstrapDeps,
+): Promise<Outcome> {
   const { prov, log } = deps;
   const { repo } = input;
   const mode = input.from ? 'ingest' : 'bare';
@@ -763,7 +786,9 @@ export async function cmdBootstrapPaper(input: BootstrapPaperInput, deps: Bootst
       : []),
     msg.bootstrap.planProvisioning,
     msg.bootstrap.planSecrets(
-      SECRET_MAP.filter((s) => input.secrets[s.key]).map((s) => s.name).join(', '),
+      SECRET_MAP.filter((s) => input.secrets[s.key])
+        .map((s) => s.name)
+        .join(', '),
     ),
   ];
   if (!(await deps.confirm(plan)))
@@ -825,7 +850,15 @@ export async function cmdBootstrapPaper(input: BootstrapPaperInput, deps: Bootst
 
   return {
     exitCode: 0,
-    result: { status: 'ok', repo, mode, actions, secrets_set: set, runbook, ...(prUrl ? { pr: prUrl } : {}) },
+    result: {
+      status: 'ok',
+      repo,
+      mode,
+      actions,
+      secrets_set: set,
+      runbook,
+      ...(prUrl ? { pr: prUrl } : {}),
+    },
   };
 }
 
@@ -857,7 +890,10 @@ export interface BootstrapJournalInput {
   resolved?: ResolvedFlags;
 }
 
-export async function cmdBootstrapJournal(input: BootstrapJournalInput, deps: BootstrapDeps): Promise<Outcome> {
+export async function cmdBootstrapJournal(
+  input: BootstrapJournalInput,
+  deps: BootstrapDeps,
+): Promise<Outcome> {
   const { prov, log } = deps;
   const { repo } = input;
   const external = input.tier === 'external';
@@ -968,7 +1004,10 @@ export async function cmdBootstrapJournal(input: BootstrapJournalInput, deps: Bo
     applyProvisioning(repo, owner, deps, actions, input.requireChecks);
     const { set, runbook } = applySecrets(repo, input.secrets, deps);
     for (const line of runbook) log(`  → ${line}`);
-    return { exitCode: 0, result: { status: 'ok', repo, tier: input.tier, actions, secrets_set: set, runbook } };
+    return {
+      exitCode: 0,
+      result: { status: 'ok', repo, tier: input.tier, actions, secrets_set: set, runbook },
+    };
   }
 
   // --- external -------------------------------------------------------------------

@@ -1,0 +1,19 @@
+# Build output and deps
+dist/
+node_modules/
+docs/_build/
+package-lock.json
+
+# Vendored: LaPreprint, MIT, (c) 2023 Rowan Cockett. Not ours to reformat.
+templates/typst/
+
+# Seeded into every tenant repo byte-for-byte. Reformatting these is a fleet-wide
+# `oak upgrade` diff in every paper repo, and their layout is deliberate (aligned
+# columns in CODEOWNERS, the typst_template options table in journal.yml). They are
+# content, not logic under review, so the formatter buys nothing here.
+templates/
+
+# Published prose. Prettier reflows markdown paragraphs, which would rewrite every
+# hand-wrapped line in the tenant docs for no gain and make their diffs unreadable.
+docs/
+*.md

@@ -21,8 +21,8 @@ site:
     favicon: ./favicon.svg
     logo_url: https://fixture.example.org
   nav:
-  - title: Gallery
-    url: https://fixture.example.org
+    - title: Gallery
+      url: https://fixture.example.org
 project:
   options:
     logo: ./logo-watermark.svg

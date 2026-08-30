@@ -11,7 +11,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseDocument } from 'yaml';
 import { renderPaperTemplate, type TemplateAnswers } from '../src/bootstrap.js';
-import { computeDrift, readAnswers, cmdUpgrade, type UpgradePr, type UpgradeDeps } from '../src/upgrade.js';
+import {
+  computeDrift,
+  readAnswers,
+  cmdUpgrade,
+  type UpgradePr,
+  type UpgradeDeps,
+} from '../src/upgrade.js';
 
 const TEMPLATE_ROOT = 'templates/paper';
 const tmp = (p = 'oak-up-') => mkdtempSync(join(tmpdir(), p));
@@ -52,7 +58,9 @@ describe('computeDrift', () => {
   it('reports a hand-edited repo file (reset-to-template)', () => {
     const repo = makeRepo();
     appendFileSync(join(repo, '.github/workflows/publish.yml'), '\n# hand edit\n');
-    expect(computeDrift(repo, TEMPLATE_ROOT, readAnswers(repo))).toEqual(['.github/workflows/publish.yml']);
+    expect(computeDrift(repo, TEMPLATE_ROOT, readAnswers(repo))).toEqual([
+      '.github/workflows/publish.yml',
+    ]);
   });
 });
 
@@ -90,7 +98,10 @@ describe('cmdUpgrade', () => {
     const repo = makeRepo();
     const before = readFileSync(join(repo, '.github/workflows/ci.yml'), 'utf8');
     const { pr, opened } = fakePr();
-    const out = await cmdUpgrade({ repoRoot: repo, mode: 'version-only' }, deps(pr, 'v2.0.0', () => TEMPLATE_ROOT));
+    const out = await cmdUpgrade(
+      { repoRoot: repo, mode: 'version-only' },
+      deps(pr, 'v2.0.0', () => TEMPLATE_ROOT),
+    );
     expect(out.result.version_bumped).toBe(true);
     const myst = parseDocument(readFileSync(join(repo, 'myst.yml'), 'utf8'));
     expect(myst.getIn(['project', 'options', 'oaktree-sapling', 'version'])).toBe('v2.0.0');
@@ -107,13 +118,18 @@ describe('cmdUpgrade', () => {
     appendFileSync(join(target, '.github/workflows/ci.yml'), '\n# upgraded\n');
 
     const { pr, opened } = fakePr();
-    const out = await cmdUpgrade({ repoRoot: repo, mode: 'files-only' }, deps(pr, 'v2.0.0', () => target));
+    const out = await cmdUpgrade(
+      { repoRoot: repo, mode: 'files-only' },
+      deps(pr, 'v2.0.0', () => target),
+    );
     expect(out.result.version_bumped).toBe(false);
     expect(out.result.drift).toEqual(['.github/workflows/ci.yml']);
     expect(readFileSync(join(repo, 'myst.yml'), 'utf8')).toBe(mystBefore); // version NOT bumped
     expect(readFileSync(join(repo, '.github/workflows/ci.yml'), 'utf8')).toContain('# upgraded'); // resynced
     expect(opened[0]!.paths).toEqual(['.github/workflows/ci.yml']);
-    expect(opened[0]!.paths.every((p) => p.startsWith('.github/') || p === 'CODEOWNERS')).toBe(true);
+    expect(opened[0]!.paths.every((p) => p.startsWith('.github/') || p === 'CODEOWNERS')).toBe(
+      true,
+    );
   });
 
   it('--both bumps version and resyncs drifted files', async () => {
@@ -123,7 +139,10 @@ describe('cmdUpgrade', () => {
     appendFileSync(join(target, '.github/workflows/ci.yml'), '\n# upgraded\n');
 
     const { pr, opened } = fakePr();
-    const out = await cmdUpgrade({ repoRoot: repo, mode: 'both' }, deps(pr, 'v3.0.0', () => target));
+    const out = await cmdUpgrade(
+      { repoRoot: repo, mode: 'both' },
+      deps(pr, 'v3.0.0', () => target),
+    );
     expect(out.result.version_bumped).toBe(true);
     expect(out.result.drift).toEqual(['.github/workflows/ci.yml']);
     expect(opened[0]!.paths).toContain('myst.yml');
@@ -133,7 +152,10 @@ describe('cmdUpgrade', () => {
   it('a clean repo already at target opens no PR', async () => {
     const repo = makeRepo(); // version v1.0.0, shim matches template
     const { pr, opened } = fakePr();
-    const out = await cmdUpgrade({ repoRoot: repo, mode: 'both' }, deps(pr, 'v1.0.0', () => TEMPLATE_ROOT));
+    const out = await cmdUpgrade(
+      { repoRoot: repo, mode: 'both' },
+      deps(pr, 'v1.0.0', () => TEMPLATE_ROOT),
+    );
     expect(out.result.up_to_date).toBe(true);
     expect(out.result.pr).toBeNull();
     expect(opened).toHaveLength(0);

@@ -29,7 +29,16 @@
  * in `gh.ts`. This module does NOT import myst-cli; the abstract text is read from the myst
  * HTML build's JSON artifacts on disk (keeping myst.ts the only myst-cli importer).
  */
-import { readFileSync, writeFileSync, existsSync, mkdirSync, rmSync, copyFileSync, readdirSync, statSync } from 'node:fs';
+import {
+  readFileSync,
+  writeFileSync,
+  existsSync,
+  mkdirSync,
+  rmSync,
+  copyFileSync,
+  readdirSync,
+  statSync,
+} from 'node:fs';
 import { join, resolve, basename, relative, isAbsolute } from 'node:path';
 import { createHash } from 'node:crypto';
 import AdmZip from 'adm-zip';
@@ -48,7 +57,13 @@ const ZENODO_EXTRA_PART = 'zenodo_extra_description';
 
 /** The engine's five fixed deposit files; a `deposit/` file may not collide with them ([R28]).
  *  Exported so the conformance harness (C3) can assert the GH Release carries exactly these. */
-export const RESERVED_BUNDLE_NAMES = ['paper.pdf', 'source.zip', 'myst.yml', 'publication-provenance.json', 'engine.zip'];
+export const RESERVED_BUNDLE_NAMES = [
+  'paper.pdf',
+  'source.zip',
+  'myst.yml',
+  'publication-provenance.json',
+  'engine.zip',
+];
 
 /** The CONDITIONAL sixth file: the resolved typst template's bytes, added only when the
  *  template is not already inside `engine.zip` ([R76], a tenant's or an author's). It is
@@ -120,7 +135,9 @@ export function createFetchTransport(): ZenodoTransport {
       });
       const text = await res.text();
       if (!res.ok) {
-        process.stderr.write(`\n[zenodo ${method} ${u.pathname}] ${res.status}\n  ${text.slice(0, 2000)}\n`);
+        process.stderr.write(
+          `\n[zenodo ${method} ${u.pathname}] ${res.status}\n  ${text.slice(0, 2000)}\n`,
+        );
       }
       return { ok: res.ok, status: res.status, text, json: () => (text ? JSON.parse(text) : null) };
     },
@@ -164,10 +181,15 @@ export class ZenodoApi {
     private readonly token: string,
   ) {}
 
-  private async call(method: string, path: string, opts: Parameters<ZenodoTransport['request']>[2] = {}): Promise<TransportResponse> {
+  private async call(
+    method: string,
+    path: string,
+    opts: Parameters<ZenodoTransport['request']>[2] = {},
+  ): Promise<TransportResponse> {
     const params = { ...opts.params, access_token: this.token };
     const res = await this.t.request(method, `${this.api}${path}`, { ...opts, params });
-    if (!res.ok) throw new ZenodoError(`Zenodo ${method} ${path} → ${res.status}`, res.status, res.text);
+    if (!res.ok)
+      throw new ZenodoError(`Zenodo ${method} ${path} → ${res.status}`, res.status, res.text);
     return res;
   }
 
@@ -193,11 +215,18 @@ export class ZenodoApi {
   }
 
   async createDeposition(metadata: Record<string, unknown>): Promise<Deposition> {
-    return (await this.call('POST', '/deposit/depositions', { json: { metadata } })).json() as Deposition;
+    return (
+      await this.call('POST', '/deposit/depositions', { json: { metadata } })
+    ).json() as Deposition;
   }
 
-  async updateMetadata(depId: string | number, metadata: Record<string, unknown>): Promise<Deposition> {
-    return (await this.call('PUT', `/deposit/depositions/${depId}`, { json: { metadata } })).json() as Deposition;
+  async updateMetadata(
+    depId: string | number,
+    metadata: Record<string, unknown>,
+  ): Promise<Deposition> {
+    return (
+      await this.call('PUT', `/deposit/depositions/${depId}`, { json: { metadata } })
+    ).json() as Deposition;
   }
 
   async uploadFile(bucketUrl: string, name: string, data: Uint8Array): Promise<void> {
@@ -321,7 +350,8 @@ export function partParagraphs(repoRoot: string, partName: string): string[] | n
   return null;
 }
 
-export const abstractParagraphs = (repoRoot: string): string[] | null => partParagraphs(repoRoot, 'abstract');
+export const abstractParagraphs = (repoRoot: string): string[] | null =>
+  partParagraphs(repoRoot, 'abstract');
 export const zenodoExtraParagraphs = (repoRoot: string): string[] | null =>
   partParagraphs(repoRoot, ZENODO_EXTRA_PART);
 
@@ -359,7 +389,17 @@ export interface MetadataInput {
 }
 
 export function buildMetadata(input: MetadataInput): Record<string, unknown> {
-  const { project, paperId, githubUrl, siteUrl, zenodo, version, publicationDate, abstractParas, extraDescParas } = input;
+  const {
+    project,
+    paperId,
+    githubUrl,
+    siteUrl,
+    zenodo,
+    version,
+    publicationDate,
+    abstractParas,
+    extraDescParas,
+  } = input;
 
   const creators: Array<Record<string, string>> = [];
   for (const a of project.authors ?? []) {
@@ -401,7 +441,8 @@ export function buildMetadata(input: MetadataInput): Record<string, unknown> {
     { identifier: githubUrl, relation: 'isVersionOf', scheme: 'url' },
   ];
   // id-first identity anchor ([R7]): survives a repo move that changes the github URL.
-  if (paperId) related.push({ identifier: paperUrn(paperId), relation: 'isVersionOf', scheme: 'urn' });
+  if (paperId)
+    related.push({ identifier: paperUrn(paperId), relation: 'isVersionOf', scheme: 'urn' });
   if (siteUrl) related.push({ identifier: siteUrl, relation: 'isIdenticalTo', scheme: 'url' });
   if (yt) related.push({ identifier: yt, relation: 'isSupplementedBy', scheme: 'url' });
 
@@ -464,8 +505,7 @@ export function readStampedTemplate(paperRoot: string): string | null {
     const path = join(paperRoot, file);
     if (!existsSync(path)) continue;
     const exports = readDoc(path).getIn(['project', 'exports']) as
-      | { toJSON?: () => unknown }
-      | undefined;
+      { toJSON?: () => unknown } | undefined;
     const list = (exports?.toJSON?.() ?? exports) as Array<Record<string, unknown>> | undefined;
     if (!Array.isArray(list)) continue;
     const typst = list.find((e) => e['format'] === 'typst' || e['id'] === 'typst-pdf');
@@ -606,7 +646,10 @@ export async function buildBundle(
     zip.addLocalFolder(templateDir);
     zip.writeZip(join(out, TEMPLATE_BUNDLE_NAME));
   }
-  writeFileSync(join(out, 'publication-provenance.json'), JSON.stringify(provenance, null, 2) + '\n');
+  writeFileSync(
+    join(out, 'publication-provenance.json'),
+    JSON.stringify(provenance, null, 2) + '\n',
+  );
   for (const n of extras) copyFileSync(join(depositDir, n), join(out, n));
 
   return readdirSync(out)
@@ -642,7 +685,10 @@ export interface Outcome {
   result: Record<string, unknown>;
 }
 
-const ok = (fields: Record<string, unknown>): Outcome => ({ exitCode: 0, result: { status: 'ok', ...fields } });
+const ok = (fields: Record<string, unknown>): Outcome => ({
+  exitCode: 0,
+  result: { status: 'ok', ...fields },
+});
 const err = (exitCode: number, message: string, fields: Record<string, unknown> = {}): Outcome => ({
   exitCode,
   result: { status: 'error', message, ...fields },
@@ -709,7 +755,10 @@ export async function cmdPrepare(input: PrepareInput): Promise<Outcome> {
   });
   md.prereserve_doi = true;
 
-  const existing = await api.findDeposit({ paperId: project.id ? String(project.id) : undefined, githubUrl });
+  const existing = await api.findDeposit({
+    paperId: project.id ? String(project.id) : undefined,
+    githubUrl,
+  });
   let dep: Deposition;
   if (existing && existing.submitted === false) {
     process.stderr.write(`[prepare] reusing draft ${existing.id}\n`);
@@ -763,16 +812,19 @@ function readTypstVersion(engineRoot: string): string | null {
  * committed DOI prefix (a tag can't hit the wrong env, [R4]); `--sandbox` must agree with it.
  */
 export async function cmdPublish(input: PublishInput): Promise<Outcome> {
-  const { mystPath, pdf, tag, siteUrl, sandbox, bundleOut, api, git, instanceRoot, engineRoot } = input;
+  const { mystPath, pdf, tag, siteUrl, sandbox, bundleOut, api, git, instanceRoot, engineRoot } =
+    input;
   const doc = readDoc(mystPath);
   const project = projectOf(doc);
 
   const conceptDoi: string | undefined = project.doi;
-  if (!conceptDoi) return err(2, 'project.doi missing; run prepare and merge that PR before tagging.');
+  if (!conceptDoi)
+    return err(2, 'project.doi missing; run prepare and merge that PR before tagging.');
   if (isSandboxDoi(conceptDoi) !== sandbox) {
     return err(2, `DOI prefix says sandbox=${isSandboxDoi(conceptDoi)} but --sandbox=${sandbox}.`);
   }
-  if (!/^v\d+\.\d+\.\d+$/.test(tag)) return err(2, `tag must match vMAJOR.MINOR.PATCH (got ${tag})`);
+  if (!/^v\d+\.\d+\.\d+$/.test(tag))
+    return err(2, `tag must match vMAJOR.MINOR.PATCH (got ${tag})`);
   const version = tag.slice(1);
 
   if (!existsSync(pdf)) return err(2, `--pdf not found: ${pdf}`);
@@ -853,7 +905,12 @@ export async function cmdPublish(input: PublishInput): Promise<Outcome> {
 
   dep = await api.getDeposition(dep.id);
   const versionDoi = dep.metadata?.doi ?? dep.doi ?? predictedVersionDoi;
-  return ok({ version_doi: versionDoi, draft_url: dep.links?.html, deposition_id: dep.id, bundle_dir: bundleOut });
+  return ok({
+    version_doi: versionDoi,
+    draft_url: dep.links?.html,
+    deposition_id: dep.id,
+    bundle_dir: bundleOut,
+  });
 }
 
 export interface StatusInput {

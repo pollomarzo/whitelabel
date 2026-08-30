@@ -8,7 +8,14 @@
  * dep only loads when actually building.
  */
 import { join, resolve } from 'node:path';
-import { existsSync, readFileSync, readdirSync, writeFileSync, mkdtempSync, watchFile } from 'node:fs';
+import {
+  existsSync,
+  readFileSync,
+  readdirSync,
+  writeFileSync,
+  mkdtempSync,
+  watchFile,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { parseDocument } from 'yaml';
@@ -146,7 +153,10 @@ function isJournalRepo(root: string): boolean {
   if (!existsSync(mystPath)) return true;
   try {
     const v = parseDocument(readFileSync(mystPath, 'utf8')).getIn([
-      'project', 'options', 'oaktree-sapling', 'version',
+      'project',
+      'options',
+      'oaktree-sapling',
+      'version',
     ]);
     return !(typeof v === 'string' && v);
   } catch {
@@ -156,7 +166,11 @@ function isJournalRepo(root: string): boolean {
 
 /** Everything `materializeDerived` needs except the myst edge, shared by build and start so a
  *  preview cannot compose from different inputs than the build it is previewing. */
-function materializeInputFrom(argv: string[], paperRoot: string, instanceRoot: string | null): Omit<MaterializeInput, 'edge'> {
+function materializeInputFrom(
+  argv: string[],
+  paperRoot: string,
+  instanceRoot: string | null,
+): Omit<MaterializeInput, 'edge'> {
   return {
     paperRoot,
     engineRoot: engineRoot(),
@@ -261,7 +275,8 @@ async function cmdStart(argv: string[]): Promise<number> {
     materializeDerived(input).then(
       () => process.stderr.write(msg.start.recomposed + '\n'),
       // A half-edited config is normal while typing: say what is stale and keep serving.
-      (e) => process.stderr.write(msg.start.recomposeFailed(String((e as Error)?.message ?? e)) + '\n'),
+      (e) =>
+        process.stderr.write(msg.start.recomposeFailed(String((e as Error)?.message ?? e)) + '\n'),
     );
   });
   return await never();
@@ -324,7 +339,9 @@ function narrated(result: Record<string, unknown>): string[] {
   const special = summarize(result);
   if (result.status !== 'ok') return special;
   const what = result.repo ?? result.target ?? '';
-  const links = [result.pr, result.site_url].filter((v): v is string => typeof v === 'string' && !!v);
+  const links = [result.pr, result.site_url].filter(
+    (v): v is string => typeof v === 'string' && !!v,
+  );
   return [`done: ${what}${links.length ? `; ${links.join('  ')}` : ''}`];
 }
 
@@ -379,10 +396,14 @@ async function cmdDeposit(argv: string[]): Promise<number> {
     // sandbox rehearsal with no gh/token just leaves the write for the human to PR.
     if (out.exitCode === 0 && !has(rest, 'no-pr') && process.env.GH_TOKEN) {
       try {
-        const url = gh.openDoiPr(resolve(mystPath, '..'), { conceptDoi: String(out.result.concept_doi) });
+        const url = gh.openDoiPr(resolve(mystPath, '..'), {
+          conceptDoi: String(out.result.concept_doi),
+        });
         process.stderr.write(msg.workflow.depositDoiPrOpened(url) + '\n');
       } catch (e) {
-        process.stderr.write(annotate('warning', msg.workflow.depositDoiPrFailed((e as Error).message)) + '\n');
+        process.stderr.write(
+          annotate('warning', msg.workflow.depositDoiPrFailed((e as Error).message)) + '\n',
+        );
       }
     }
     return out.exitCode;
@@ -396,9 +417,16 @@ async function cmdDeposit(argv: string[]): Promise<number> {
       return 2;
     }
     const out = await z.cmdPublish({
-      mystPath, pdf: resolve(pdf), tag, siteUrl, sandbox,
+      mystPath,
+      pdf: resolve(pdf),
+      tag,
+      siteUrl,
+      sandbox,
       bundleOut: resolve(flag(rest, 'bundle-out') ?? '_bundle'),
-      api, git: gh.realGitContext, instanceRoot, engineRoot: engineRoot(),
+      api,
+      git: gh.realGitContext,
+      instanceRoot,
+      engineRoot: engineRoot(),
     });
     emit(rest, out.result);
     return out.exitCode;
@@ -449,7 +477,8 @@ async function cmdRelease(argv: string[]): Promise<number> {
     return 2;
   }
   const sandbox = z.isSandboxDoi(doi);
-  const token = flag(argv, 'token') ?? (sandbox ? process.env.ZENODO_TOKEN_SANDBOX : process.env.ZENODO_TOKEN);
+  const token =
+    flag(argv, 'token') ?? (sandbox ? process.env.ZENODO_TOKEN_SANDBOX : process.env.ZENODO_TOKEN);
   if (!token) {
     process.stderr.write(msg.workflow.releaseNoToken(sandbox) + '\n');
     return 2;
@@ -464,9 +493,15 @@ async function cmdRelease(argv: string[]): Promise<number> {
   const api = new z.ZenodoApi(z.createFetchTransport(), z.apiBase(sandbox), token);
   const bundleOut = resolve(flag(argv, 'bundle-out') ?? '_bundle');
   const out = await z.cmdPublish({
-    mystPath, pdf, tag,
+    mystPath,
+    pdf,
+    tag,
     siteUrl: flag(argv, 'site-url') ?? process.env.SITE_URL,
-    sandbox, bundleOut, api, git: gh.realGitContext, instanceRoot: instanceRootOf(argv),
+    sandbox,
+    bundleOut,
+    api,
+    git: gh.realGitContext,
+    instanceRoot: instanceRootOf(argv),
     engineRoot: engineRoot(),
   });
   emit(argv, out.result);
@@ -476,13 +511,23 @@ async function cmdRelease(argv: string[]): Promise<number> {
       const files = readdirSync(bundleOut).map((f) => join(bundleOut, f));
       gh.uploadReleaseAsset(paperRoot, tag, files);
       const sha = await gh.realGitContext.headSha(paperRoot);
-      gh.postCommitComment(paperRoot, sha, msg.workflow.releaseCommitComment(String(out.result.draft_url ?? out.result.version_doi)));
+      gh.postCommitComment(
+        paperRoot,
+        sha,
+        msg.workflow.releaseCommitComment(String(out.result.draft_url ?? out.result.version_doi)),
+      );
     } catch (e) {
-      process.stderr.write(annotate('warning', msg.workflow.releasePostStepsFailed((e as Error).message)) + '\n');
+      process.stderr.write(
+        annotate('warning', msg.workflow.releasePostStepsFailed((e as Error).message)) + '\n',
+      );
     }
   } else if (out.exitCode !== 0 && process.env.GH_TOKEN) {
     try {
-      gh.openFailureIssue(paperRoot, msg.workflow.releaseFailureIssue(tag), String(out.result.message ?? 'unknown error'));
+      gh.openFailureIssue(
+        paperRoot,
+        msg.workflow.releaseFailureIssue(tag),
+        String(out.result.message ?? 'unknown error'),
+      );
     } catch {
       /* best-effort */
     }
@@ -505,7 +550,10 @@ async function cmdDeployPreview(argv: string[]): Promise<number> {
       repo: flag(argv, 'repo') ?? process.env.GITHUB_REPOSITORY ?? null,
       serverUrl: process.env.GITHUB_SERVER_URL ?? 'https://github.com',
       artifactRunId: process.env.PAPER_BUILD_RUN_ID,
-      cf: { apiToken: process.env.CLOUDFLARE_API_TOKEN, accountId: process.env.CLOUDFLARE_ACCOUNT_ID },
+      cf: {
+        apiToken: process.env.CLOUDFLARE_API_TOKEN,
+        accountId: process.env.CLOUDFLARE_ACCOUNT_ID,
+      },
       mystPath: mystPathOf(argv),
     },
     { deployer: gh.realPagesDeployer, gh: gh.realGhPr },
@@ -560,7 +608,10 @@ async function cmdNotify(argv: string[]): Promise<number> {
 function readEditionQuietly(paperRoot: string): string | null {
   try {
     const v = parseDocument(readFileSync(join(paperRoot, 'myst.yml'), 'utf8')).getIn([
-      'project', 'options', 'oaktree-sapling', 'edition',
+      'project',
+      'options',
+      'oaktree-sapling',
+      'edition',
     ]);
     return typeof v === 'string' && v ? v : null;
   } catch {
@@ -695,8 +746,14 @@ async function cmdValidate(argv: string[]): Promise<number> {
     // sentence: a stack in a Check Run summary tells an author nothing they can act on).
     const userFault = err instanceof UserError;
     const message = userFault ? (err as Error).message : String((err as Error)?.stack ?? err);
-    process.stderr.write(annotate('error', userFault ? message : msg.workflow.validateCrashLine(message)) + '\n');
-    writeFailureReport(reportPath, userFault ? msg.workflow.validateCouldNotRun : msg.workflow.validateCrashed, message);
+    process.stderr.write(
+      annotate('error', userFault ? message : msg.workflow.validateCrashLine(message)) + '\n',
+    );
+    writeFailureReport(
+      reportPath,
+      userFault ? msg.workflow.validateCouldNotRun : msg.workflow.validateCrashed,
+      message,
+    );
     return userFault ? 2 : 1;
   } finally {
     process.stdout.write = realStdoutWrite;
@@ -725,7 +782,14 @@ async function cmdValidate(argv: string[]): Promise<number> {
     writeFileSync(
       resolve(reportPath),
       JSON.stringify(
-        { status: out.status, errors: out.errors, warnings: out.warnings, checks: out.checks, notes: out.notes, checkRun: out.checkRun },
+        {
+          status: out.status,
+          errors: out.errors,
+          warnings: out.warnings,
+          checks: out.checks,
+          notes: out.notes,
+          checkRun: out.checkRun,
+        },
         null,
         2,
       ),
@@ -765,7 +829,10 @@ async function cmdCheckPost(argv: string[]): Promise<number> {
     base && verifiedHead ? frozenPathsTouched(gh.changedFiles(repo, base, verifiedHead)) : [];
   const out = run(
     { report, repo, sha, pr, shimTouched },
-    { checkRun: gh.realCheckRun, sticky: (root, prNum, header, body) => gh.realGhPr.sticky(root, prNum, header, body) },
+    {
+      checkRun: gh.realCheckRun,
+      sticky: (root, prNum, header, body) => gh.realGhPr.sticky(root, prNum, header, body),
+    },
   );
   emit(argv, { ...out });
   return 0;
@@ -842,7 +909,16 @@ async function cmdBootstrap(argv: string[]): Promise<number> {
     engineVersionFrom,
     engineRepoFrom: (flag(rest, 'engine-repo') ? 'flag' : 'default') as 'flag' | 'default',
   };
-  const deps = { prov: gh.realProvisioner, paperTemplateRoot, instanceTemplateRoot, siteTemplateRoot, mystRange, log: (m: string) => process.stderr.write(m + '\n'), confirm: makeConfirm(rest), workdir: workdir('oak-bootstrap-') };
+  const deps = {
+    prov: gh.realProvisioner,
+    paperTemplateRoot,
+    instanceTemplateRoot,
+    siteTemplateRoot,
+    mystRange,
+    log: (m: string) => process.stderr.write(m + '\n'),
+    confirm: makeConfirm(rest),
+    workdir: workdir('oak-bootstrap-'),
+  };
 
   if (sub === 'paper') {
     const out = await bootstrap.cmdBootstrapPaper(
@@ -996,7 +1072,11 @@ async function cmdConformance(argv: string[]): Promise<number> {
             },
           );
           const prUrl = (up.result.pr as string | null) ?? null;
-          return { upToDate: Boolean(up.result.up_to_date), prUrl, prNumber: prUrl ? Number(prUrl.split('/').pop()) : null };
+          return {
+            upToDate: Boolean(up.result.up_to_date),
+            prUrl,
+            prNumber: prUrl ? Number(prUrl.split('/').pop()) : null,
+          };
         },
       },
     );

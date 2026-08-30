@@ -44,7 +44,10 @@ describe('checkLayout', () => {
     expect(checkLayout('/paper', probes).some((r) => r.message.includes('index.md'))).toBe(true);
   });
   it('flags a stray nested myst.yml', () => {
-    const probes: FsProbes = { existsProbe: () => true, listTree: () => ['myst.yml', 'sub/myst.yml'] };
+    const probes: FsProbes = {
+      existsProbe: () => true,
+      listTree: () => ['myst.yml', 'sub/myst.yml'],
+    };
     expect(checkLayout('/paper', probes).some((r) => r.message.includes('stray'))).toBe(true);
   });
   it('passes a clean layout', () => {
@@ -72,7 +75,9 @@ describe('checkBrandFavicon ([R61])', () => {
     expect(checkBrandFavicon({ instanceRoot: '/i' }, allTrue).ok).toBe(false);
   });
   it('passes a URL favicon (resolves for HTML)', () => {
-    expect(checkBrandFavicon({ instanceRoot: '/i', favicon: 'https://x/f.ico' }, allFalse).ok).toBe(true);
+    expect(checkBrandFavicon({ instanceRoot: '/i', favicon: 'https://x/f.ico' }, allFalse).ok).toBe(
+      true,
+    );
   });
   it('warns an unresolvable local favicon', () => {
     expect(checkBrandFavicon({ instanceRoot: '/i', favicon: './f.svg' }, allFalse).ok).toBe(false);
@@ -84,7 +89,9 @@ describe('checkBrandFavicon ([R61])', () => {
 
 describe('checkBrandWatermark ([R62])', () => {
   it('warns a URL watermark (typst cannot fetch)', () => {
-    expect(checkBrandWatermark({ instanceRoot: '/i', logo: 'https://x/w.svg' }, allTrue).ok).toBe(false);
+    expect(checkBrandWatermark({ instanceRoot: '/i', logo: 'https://x/w.svg' }, allTrue).ok).toBe(
+      false,
+    );
   });
   it('passes a resolvable local watermark', () => {
     expect(checkBrandWatermark({ instanceRoot: '/i', logo: './w.svg' }, allTrue).ok).toBe(true);
@@ -95,16 +102,19 @@ describe('checkBrandWatermark ([R62])', () => {
 });
 
 describe('checkThumbnail ([R81])', () => {
-  it('passes when no thumbnail is declared (myst\'s first-image fallback is live)', () => {
+  it("passes when no thumbnail is declared (myst's first-image fallback is live)", () => {
     expect(checkThumbnail({ paperRoot: '/paper' }, allFalse).ok).toBe(true);
   });
   it('passes a URL thumbnail (myst downloads it for HTML)', () => {
-    expect(
-      checkThumbnail({ paperRoot: '/paper', thumbnail: 'https://x/t.png' }, allFalse).ok,
-    ).toBe(true);
+    expect(checkThumbnail({ paperRoot: '/paper', thumbnail: 'https://x/t.png' }, allFalse).ok).toBe(
+      true,
+    );
   });
   it('warns a declared thumbnail that does not resolve', () => {
-    const r = checkThumbnail({ paperRoot: '/paper', thumbnail: 'thumbnails/thumbnail.png' }, allFalse);
+    const r = checkThumbnail(
+      { paperRoot: '/paper', thumbnail: 'thumbnails/thumbnail.png' },
+      allFalse,
+    );
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.severity).toBe('warn');
   });
@@ -165,8 +175,9 @@ describe('checkTemplates ([R76])', () => {
   });
 
   it('says nothing when the author declares one and the journal does not', () => {
-    expect(ids(checkTemplates({ instanceRoot: '/i', authorTemplate: './mine' }, allFalse)))
-      .not.toContain('template-override');
+    expect(
+      ids(checkTemplates({ instanceRoot: '/i', authorTemplate: './mine' }, allFalse)),
+    ).not.toContain('template-override');
   });
 
   it('warns on a floating template in EITHER layer (symmetric)', () => {
@@ -243,7 +254,13 @@ describe('runValidate: exit codes over the fixture instance', () => {
     // and the author gets the full fix-list. Old behavior skipped Layer B on any Layer-A error.
     const bad = { id: 'fixture-template-placeholder', authors: [], abstract: '', keywords: [] };
     const out = await runValidate(
-      { paperRoot: '/paper', instanceRoot, edge: edgeReturning(bad, [{ id: 'abstract-exists', status: 'fail', message: 'no abstract' }]) },
+      {
+        paperRoot: '/paper',
+        instanceRoot,
+        edge: edgeReturning(bad, [
+          { id: 'abstract-exists', status: 'fail', message: 'no abstract' },
+        ]),
+      },
       { repo: 'open-scholar-nexus/fixture-sample-paper' },
       allTrue,
     );
@@ -260,7 +277,9 @@ describe('runValidate: exit codes over the fixture instance', () => {
       {
         paperRoot: '/paper',
         instanceRoot,
-        edge: edgeReturning(goodProject, [{ id: 'authors-have-orcid', status: 'fail', message: 'no ORCID' }]),
+        edge: edgeReturning(goodProject, [
+          { id: 'authors-have-orcid', status: 'fail', message: 'no ORCID' },
+        ]),
       },
       { repo: 'open-scholar-nexus/fixture-sample-paper' },
       allTrue,
@@ -302,7 +321,10 @@ describe('runValidate: exit codes over the fixture instance', () => {
   it('a blocking Layer-A error short-circuits Layer B instead of crashing (exit 1)', async () => {
     // index.md missing -> layout error -> Layer B is SKIPPED (its edge would throw). The run must
     // still resolve with the layout finding reported, not reject.
-    const probes: FsProbes = { existsProbe: (p) => p.endsWith('myst.yml'), listTree: () => ['myst.yml'] };
+    const probes: FsProbes = {
+      existsProbe: (p) => p.endsWith('myst.yml'),
+      listTree: () => ['myst.yml'],
+    };
     const out = await runValidate(
       { paperRoot: '/paper', instanceRoot, edge: edgeThrowingInLayerB(goodProject) },
       { repo: 'open-scholar-nexus/fixture-sample-paper' },
@@ -405,7 +427,12 @@ describe('checkLayerDisjointness: extends layers must own disjoint keys ([R72])'
   });
 
   it('tolerates empty / malformed layers', () => {
-    expect(checkLayerDisjointness([{ name: 'a', config: null }, { name: 'b', config: {} }])).toEqual([]);
+    expect(
+      checkLayerDisjointness([
+        { name: 'a', config: null },
+        { name: 'b', config: {} },
+      ]),
+    ).toEqual([]);
     expect(declaredKeys(undefined)).toEqual([]);
     expect(declaredKeys({ project: 'not-an-object' })).toEqual([]);
   });
@@ -487,7 +514,11 @@ describe('splitUnrunnableChecks: a check whose precondition is unmet is REPORTED
 describe('runValidate: degrading when there is nothing to compose ([R82])', () => {
   it('still reports, and SAYS it ran uncomposed', async () => {
     const out = await runValidate(
-      { paperRoot: '/paper', instanceRoot, edge: edgeReturning({ id: 'fixture-2026-sample-paper' }) },
+      {
+        paperRoot: '/paper',
+        instanceRoot,
+        edge: edgeReturning({ id: 'fixture-2026-sample-paper' }),
+      },
       { repo: 'open-scholar-nexus/fixture-sample-paper' },
       allTrue,
     );

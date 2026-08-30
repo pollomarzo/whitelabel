@@ -36,7 +36,8 @@ const COVERED = [
 ];
 
 /** A sink that puts its argument in front of a person. */
-const SINKS = /(?:stderr\.write|stdout\.write|\blog|\bwarn|\bemit)\(\s*(['"`])|(?:message|error|reason|title|body|description)\s*:\s*(['"`])/g;
+const SINKS =
+  /(?:stderr\.write|stdout\.write|\blog|\bwarn|\bemit)\(\s*(['"`])|(?:message|error|reason|title|body|description)\s*:\s*(['"`])/g;
 
 /** Prose = a literal with whitespace in it. `'main'`, `'ok'`, `'v*'` are identifiers. */
 function isProse(quote: string, rest: string): boolean {
@@ -64,14 +65,20 @@ describe('every tenant-facing string lives in messages.ts', () => {
         if (ALLOWED.some((a) => literal.includes(a))) continue;
         offenders.push(literal.slice(0, 80));
       }
-      expect(offenders, `move these into src/messages.ts:\n  ${offenders.join('\n  ')}`).toEqual([]);
+      expect(offenders, `move these into src/messages.ts:\n  ${offenders.join('\n  ')}`).toEqual(
+        [],
+      );
     });
   }
 
   it('messages.ts itself points at the surfaces it cannot hold', () => {
     // The review is only complete if the file says where the rest of the words are.
     const src = readFileSync(join(srcDir, 'messages.ts'), 'utf8');
-    for (const pointer of ['templates/paper/README.md', 'templates/instance/journal.yml', 'plugins/gallery.mjs']) {
+    for (const pointer of [
+      'templates/paper/README.md',
+      'templates/instance/journal.yml',
+      'plugins/gallery.mjs',
+    ]) {
       expect(src).toContain(pointer);
     }
   });

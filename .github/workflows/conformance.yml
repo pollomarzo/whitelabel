@@ -15,14 +15,14 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Engine version under test (e.g. v0.0.0-dev.18). Certifies push→main when set."
+        description: 'Engine version under test (e.g. v0.0.0-dev.18). Certifies push→main when set.'
         required: false
       only-reset:
-        description: "Run just the teardown of prior cert state, then stop (ignore tag)."
+        description: 'Run just the teardown of prior cert state, then stop (ignore tag).'
         type: boolean
         default: false
   workflow_run:
-    workflows: ["cut-engine-release"]
+    workflows: ['cut-engine-release']
     types: [completed]
 
 # The harness holds ONLY the fixture-scoped PAT (CONFORMANCE_PAT); CF/Zenodo creds stay the

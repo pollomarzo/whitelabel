@@ -183,7 +183,7 @@ describe('buildReviewTree (new-model ingest)', () => {
     const main = {
       '.github/actions/engine/pins.yml': 'engine_repo: me/engine',
       '.github/workflows/ci.yml': 'frozen ci',
-      'CODEOWNERS': '/.github/ @alice',
+      CODEOWNERS: '/.github/ @alice',
     };
     const review = buildReviewTree(author, main);
     expect(review['index.md']).toBe('author paper'); // author content survives
@@ -209,9 +209,18 @@ interface FakeState {
 
 function fakeProv(state: FakeState = {}) {
   const calls: Record<string, unknown[]> = {
-    createRepo: [], seedBranch: [], ingestReviewBranch: [], openPr: [], grantTeamWrite: [],
-    createRuleset: [], enablePages: [], upsertEnvironment: [], createBranchPolicy: [],
-    createLabel: [], setSecret: [], setRepoPublic: [],
+    createRepo: [],
+    seedBranch: [],
+    ingestReviewBranch: [],
+    openPr: [],
+    grantTeamWrite: [],
+    createRuleset: [],
+    enablePages: [],
+    upsertEnvironment: [],
+    createBranchPolicy: [],
+    createLabel: [],
+    setSecret: [],
+    setRepoPublic: [],
   };
   const rec = (k: string, ...args: unknown[]) => calls[k]!.push(args.length === 1 ? args[0] : args);
   const prov: Provisioner = {
@@ -245,7 +254,16 @@ function fakeProv(state: FakeState = {}) {
 }
 
 function deps(prov: Provisioner): BootstrapDeps {
-  return { prov, paperTemplateRoot: PAPER_ROOT, instanceTemplateRoot: INSTANCE_ROOT, siteTemplateRoot: SITE_ROOT, mystRange: MYST_RANGE, log: () => {}, confirm: async () => true, workdir: () => tmp('oak-seed-') };
+  return {
+    prov,
+    paperTemplateRoot: PAPER_ROOT,
+    instanceTemplateRoot: INSTANCE_ROOT,
+    siteTemplateRoot: SITE_ROOT,
+    mystRange: MYST_RANGE,
+    log: () => {},
+    confirm: async () => true,
+    workdir: () => tmp('oak-seed-'),
+  };
 }
 
 const paperInput = (over: Record<string, unknown> = {}) => ({
@@ -344,7 +362,10 @@ describe('cmdBootstrapPaper', () => {
       return false;
     };
     await cmdBootstrapPaper(
-      paperInput({ owner: '@org/editors', resolved: { engineVersionFrom: 'flag', engineRepoFrom: 'flag' } }),
+      paperInput({
+        owner: '@org/editors',
+        resolved: { engineVersionFrom: 'flag', engineRepoFrom: 'flag' },
+      }),
       d,
     );
     const plan = plans[0]!.join('\n');
@@ -381,7 +402,10 @@ describe('cmdBootstrapPaper', () => {
   it('an aborted run says why, and a re-run warns that main will not be re-stamped', async () => {
     // Two halves of the same UX defect: a bare "aborted" with no reason, printed for a re-run
     // that would not have changed pins.yml even if confirmed.
-    const { prov } = fakeProv({ repos: new Set(['me/paper']), branches: new Set(['me/paper/main']) });
+    const { prov } = fakeProv({
+      repos: new Set(['me/paper']),
+      branches: new Set(['me/paper/main']),
+    });
     const plans: string[][] = [];
     const d = deps(prov);
     d.confirm = async (plan) => {
@@ -398,10 +422,23 @@ describe('cmdBootstrapPaper', () => {
 
   it('protect-main requires "Journal checks" by default; --no-require-checks omits it', async () => {
     const bodyOf = (calls: Record<string, unknown[]>) =>
-      (calls.createRuleset as Array<{ b: { name: string; rules: Array<{ type: string; parameters?: { required_status_checks?: Array<{ context: string }> } }> } }>)
-        .find((c) => c.b.name === 'protect-main')!.b;
+      (
+        calls.createRuleset as Array<{
+          b: {
+            name: string;
+            rules: Array<{
+              type: string;
+              parameters?: { required_status_checks?: Array<{ context: string }> };
+            }>;
+          };
+        }>
+      ).find((c) => c.b.name === 'protect-main')!.b;
     const hasJournalCheck = (body: ReturnType<typeof bodyOf>) =>
-      body.rules.some((r) => r.type === 'required_status_checks' && (r.parameters?.required_status_checks ?? []).some((c) => c.context === 'Journal checks'));
+      body.rules.some(
+        (r) =>
+          r.type === 'required_status_checks' &&
+          (r.parameters?.required_status_checks ?? []).some((c) => c.context === 'Journal checks'),
+      );
 
     const on = fakeProv();
     await cmdBootstrapPaper(paperInput(), deps(on.prov));
@@ -441,10 +478,7 @@ describe('cmdBootstrapPaper', () => {
 
   it('sets provided secrets and prints a runbook for the missing ones', async () => {
     const { prov, calls } = fakeProv();
-    const out = await cmdBootstrapPaper(
-      paperInput({ secrets: { zenodoToken: 'zt' } }),
-      deps(prov),
-    );
+    const out = await cmdBootstrapPaper(paperInput({ secrets: { zenodoToken: 'zt' } }), deps(prov));
     expect(calls.setSecret).toHaveLength(1);
     expect(out.result.secrets_set).toEqual(['ZENODO_TOKEN']);
     const runbook = (out.result.runbook as string[]).join('\n');
@@ -455,15 +489,22 @@ describe('cmdBootstrapPaper', () => {
 
   it('org owner grants the team + uses a Team bypass; personal uses a repo-admin bypass', async () => {
     const org = fakeProv({ ownerType: 'Organization' });
-    await cmdBootstrapPaper(paperInput({ repo: 'org/paper', owner: '@org/editors' }), deps(org.prov));
+    await cmdBootstrapPaper(
+      paperInput({ repo: 'org/paper', owner: '@org/editors' }),
+      deps(org.prov),
+    );
     expect(org.calls.grantTeamWrite).toHaveLength(1);
-    const vTags = (org.calls.createRuleset as Array<{ b: any }>).find((c) => c.b.name === RULESET_V_TAGS)!.b;
+    const vTags = (org.calls.createRuleset as Array<{ b: any }>).find(
+      (c) => c.b.name === RULESET_V_TAGS,
+    )!.b;
     expect(vTags.bypass_actors[0].actor_type).toBe('Team');
 
     const personal = fakeProv({ ownerType: 'User' });
     await cmdBootstrapPaper(paperInput(), deps(personal.prov));
     expect(personal.calls.grantTeamWrite).toHaveLength(0);
-    const vt2 = (personal.calls.createRuleset as Array<{ b: any }>).find((c) => c.b.name === RULESET_V_TAGS)!.b;
+    const vt2 = (personal.calls.createRuleset as Array<{ b: any }>).find(
+      (c) => c.b.name === RULESET_V_TAGS,
+    )!.b;
     expect(vt2.bypass_actors[0].actor_type).toBe('RepositoryRole');
   });
 });
@@ -488,7 +529,16 @@ describe('cmdBootstrapJournal', () => {
     const { prov, calls } = fakeProv();
     const seedDirs: string[] = [];
     const out = await cmdBootstrapJournal(
-      { repo: 'me/config', tier: 'external', name: 'J', edition: 'ed-2026', engineVersion: 'v1', engineRepo: 'me/engine', authedUser: 'alice', secrets: {} },
+      {
+        repo: 'me/config',
+        tier: 'external',
+        name: 'J',
+        edition: 'ed-2026',
+        engineVersion: 'v1',
+        engineRepo: 'me/engine',
+        authedUser: 'alice',
+        secrets: {},
+      },
       journalDeps(prov, seedDirs),
     );
     expect((calls.createRepo[0] as { o: { private: boolean } }).o.private).toBe(false);
@@ -515,7 +565,17 @@ describe('cmdBootstrapJournal', () => {
     const { prov, calls } = fakeProv();
     const seedDirs: string[] = [];
     const out = await cmdBootstrapJournal(
-      { repo: 'me/config', tier: 'external', name: 'J', edition: 'ed-2026', engineVersion: 'v1', engineRepo: 'me/engine', authedUser: 'alice', site: false, secrets: {} },
+      {
+        repo: 'me/config',
+        tier: 'external',
+        name: 'J',
+        edition: 'ed-2026',
+        engineVersion: 'v1',
+        engineRepo: 'me/engine',
+        authedUser: 'alice',
+        site: false,
+        secrets: {},
+      },
       journalDeps(prov, seedDirs),
     );
     expect(calls.enablePages ?? []).toHaveLength(0);
@@ -527,18 +587,42 @@ describe('cmdBootstrapJournal', () => {
   });
 
   it('--external re-run does not re-enable Pages (GET-then-act)', async () => {
-    const { prov, calls } = fakeProv({ repos: new Set(['me/config']), branches: new Set(['me/config/main']), pages: new Set(['me/config']) });
+    const { prov, calls } = fakeProv({
+      repos: new Set(['me/config']),
+      branches: new Set(['me/config/main']),
+      pages: new Set(['me/config']),
+    });
     await cmdBootstrapJournal(
-      { repo: 'me/config', tier: 'external', edition: 'ed-2026', engineVersion: 'v1', engineRepo: 'me/engine', authedUser: 'alice', secrets: {} },
+      {
+        repo: 'me/config',
+        tier: 'external',
+        edition: 'ed-2026',
+        engineVersion: 'v1',
+        engineRepo: 'me/engine',
+        authedUser: 'alice',
+        secrets: {},
+      },
       deps(prov),
     );
     expect(calls.enablePages ?? []).toHaveLength(0);
   });
 
   it('--external re-run forces a private repo back to public', async () => {
-    const { prov, calls } = fakeProv({ repos: new Set(['me/config']), branches: new Set(['me/config/main']), visibility: 'private' });
+    const { prov, calls } = fakeProv({
+      repos: new Set(['me/config']),
+      branches: new Set(['me/config/main']),
+      visibility: 'private',
+    });
     await cmdBootstrapJournal(
-      { repo: 'me/config', tier: 'external', edition: 'ed-2026', engineVersion: 'v1', engineRepo: 'me/engine', authedUser: 'alice', secrets: {} },
+      {
+        repo: 'me/config',
+        tier: 'external',
+        edition: 'ed-2026',
+        engineVersion: 'v1',
+        engineRepo: 'me/engine',
+        authedUser: 'alice',
+        secrets: {},
+      },
       deps(prov),
     );
     expect(calls.setRepoPublic).toHaveLength(1);
@@ -554,7 +638,17 @@ describe('cmdBootstrapJournal', () => {
       return dir;
     };
     await cmdBootstrapJournal(
-      { repo: 'me/journal', tier: 'co-located', name: 'J', edition: 'ed-2026', engineVersion: 'v9', engineRepo: 'me/engine', authedUser: 'alice', requireChecks: true, secrets: {} },
+      {
+        repo: 'me/journal',
+        tier: 'co-located',
+        name: 'J',
+        edition: 'ed-2026',
+        engineVersion: 'v9',
+        engineRepo: 'me/engine',
+        authedUser: 'alice',
+        requireChecks: true,
+        secrets: {},
+      },
       d,
     );
     expect(calls.createRuleset).toHaveLength(2); // it IS a build unit
@@ -588,7 +682,17 @@ describe('cmdBootstrapJournal', () => {
       return true;
     };
     await cmdBootstrapJournal(
-      { repo: 'me/config', tier: 'external', name: 'J', engineVersion: 'v1', engineRepo: 'me/engine', authedUser: 'alice', requireChecks: true, secrets: {}, resolved: { engineVersionFrom: 'flag', engineRepoFrom: 'default' } },
+      {
+        repo: 'me/config',
+        tier: 'external',
+        name: 'J',
+        engineVersion: 'v1',
+        engineRepo: 'me/engine',
+        authedUser: 'alice',
+        requireChecks: true,
+        secrets: {},
+        resolved: { engineVersionFrom: 'flag', engineRepoFrom: 'default' },
+      },
       d,
     );
     const plan = plans[0]!.join('\n');
@@ -608,7 +712,17 @@ describe('cmdBootstrapJournal', () => {
       return false;
     };
     await cmdBootstrapJournal(
-      { repo: 'me/config', tier: 'external', name: 'J', edition: 'ed', engineVersion: 'v1', engineRepo: 'me/engine', authedUser: 'alice', requireChecks: true, secrets: {} },
+      {
+        repo: 'me/config',
+        tier: 'external',
+        name: 'J',
+        edition: 'ed',
+        engineVersion: 'v1',
+        engineRepo: 'me/engine',
+        authedUser: 'alice',
+        requireChecks: true,
+        secrets: {},
+      },
       ext,
     );
     expect(plans[0]!.join('\n')).not.toContain('review owner');
@@ -620,7 +734,17 @@ describe('cmdBootstrapJournal', () => {
       return false;
     };
     await cmdBootstrapJournal(
-      { repo: 'me/journal', tier: 'co-located', name: 'J', edition: 'ed', engineVersion: 'v1', engineRepo: 'me/engine', authedUser: 'alice', requireChecks: true, secrets: {} },
+      {
+        repo: 'me/journal',
+        tier: 'co-located',
+        name: 'J',
+        edition: 'ed',
+        engineVersion: 'v1',
+        engineRepo: 'me/engine',
+        authedUser: 'alice',
+        requireChecks: true,
+        secrets: {},
+      },
       colo,
     );
     expect(plans[1]!.join('\n')).toContain('review owner   : @alice');
@@ -629,7 +753,18 @@ describe('cmdBootstrapJournal', () => {
   it('--co-located --no-site is a usage ERROR, not a silent no-op', async () => {
     const { prov } = fakeProv();
     const out = await cmdBootstrapJournal(
-      { repo: 'me/journal', tier: 'co-located', site: false, name: 'J', edition: 'ed', engineVersion: 'v9', engineRepo: 'me/engine', authedUser: 'alice', requireChecks: true, secrets: {} },
+      {
+        repo: 'me/journal',
+        tier: 'co-located',
+        site: false,
+        name: 'J',
+        edition: 'ed',
+        engineVersion: 'v9',
+        engineRepo: 'me/engine',
+        authedUser: 'alice',
+        requireChecks: true,
+        secrets: {},
+      },
       journalDeps(prov, []),
     );
     // The tier never stamps a site, so a flag reading "turn the site off" must not look

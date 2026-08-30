@@ -142,9 +142,7 @@ export function cardFrom(entry, config) {
   if (entry.doi) {
     children.push({
       type: 'footer',
-      children: [
-        { type: 'paragraph', children: [{ type: 'text', value: `DOI: ${entry.doi}` }] },
-      ],
+      children: [{ type: 'paragraph', children: [{ type: 'text', value: `DOI: ${entry.doi}` }] }],
     });
   }
   return { type: 'card', url: siteUrl, children };

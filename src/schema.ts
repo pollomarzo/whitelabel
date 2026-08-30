@@ -186,8 +186,7 @@ export type Pins = z.infer<typeof Pins>;
  * ------------------------------------------------------------------------ */
 
 export type IdCheckResult =
-  | { ok: true }
-  | { ok: false; severity: 'error' | 'warn'; message: string };
+  { ok: true } | { ok: false; severity: 'error' | 'warn'; message: string };
 
 /**
  * Check A: sentinel + id-pattern. A pure function of the paper's own id and the

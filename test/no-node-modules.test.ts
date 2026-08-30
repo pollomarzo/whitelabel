@@ -81,10 +81,14 @@ describe.skipIf(bundleState() === 'absent')('the bundle runs with no node_module
     const r = spawnSync(
       'node',
       [
-        join(dir, 'dist', 'cli.cjs'), 'validate',
-        '--paper', join(dir, 'paper'),
-        '--instance', join(dir, 'instance'),
-        '--repo', 'open-scholar-nexus/fixture-sample-paper',
+        join(dir, 'dist', 'cli.cjs'),
+        'validate',
+        '--paper',
+        join(dir, 'paper'),
+        '--instance',
+        join(dir, 'instance'),
+        '--repo',
+        'open-scholar-nexus/fixture-sample-paper',
         '--json',
       ],
       // NODE_PATH would hand the resolver a directory outside the walk-up chain, which is the

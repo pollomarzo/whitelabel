@@ -82,8 +82,6 @@ describe.skipIf(!runnable)('fixture build through the bundled CLI', () => {
     expect(doc.getIn(['project', 'exports', 0, 'articles', 0, 'file'])).toBe('index.md');
     expect(doc.getIn(['project', 'exports', 0, 'output'])).toBe(TYPST_OUTPUT);
     // the author's sibling option survived the whole pipeline (finding 3)
-    expect(doc.getIn(['project', 'options', 'youtube'])).toBe(
-      'https://youtu.be/dQw4w9WgXcQ',
-    );
+    expect(doc.getIn(['project', 'options', 'youtube'])).toBe('https://youtu.be/dQw4w9WgXcQ');
   }, 60_000);
 });

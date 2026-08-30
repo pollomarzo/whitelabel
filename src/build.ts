@@ -40,7 +40,6 @@ import {
   DERIVED_CONFIG_FILE,
 } from './yaml-io.js';
 
-
 export interface RunBuildInput extends MaterializeInput {
   /** Defaults to a full build (HTML + exports). HTML-only is useful until the pinned
    *  typst-template release zip exists (exports would 404 fetching it). */
@@ -54,8 +53,14 @@ export interface RunBuildResult {
 }
 
 export async function runBuild(input: RunBuildInput): Promise<RunBuildResult> {
-  const { paperRoot, instanceRoot, engineRoot, baseUrl, buildOpts = { all: true, html: true }, edge } =
-    input;
+  const {
+    paperRoot,
+    instanceRoot,
+    engineRoot,
+    baseUrl,
+    buildOpts = { all: true, html: true },
+    edge,
+  } = input;
 
   const layerAWarnings: string[] = [];
   const { resolvedProject, extendsChain, warnings } = await materializeDerived(
@@ -79,12 +84,16 @@ export async function runBuild(input: RunBuildInput): Promise<RunBuildResult> {
       const blocking = layerA.filter((f) => f.severity === 'error' && f.klass === 'structural');
       if (blocking.length) {
         throw new Error(
-          msg.build.preflightFailed(blocking.map((f) => `  - [${f.check}] ${f.message}`).join('\n')),
+          msg.build.preflightFailed(
+            blocking.map((f) => `  - [${f.check}] ${f.message}`).join('\n'),
+          ),
         );
       }
       layerAWarnings.push(
         ...layerA
-          .filter((f) => f.severity === 'warn' || (f.severity === 'error' && f.klass !== 'structural'))
+          .filter(
+            (f) => f.severity === 'warn' || (f.severity === 'error' && f.klass !== 'structural'),
+          )
           .map((f) => `[${f.check}] ${f.message}`),
       );
     },
