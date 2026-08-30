@@ -239,30 +239,36 @@ export class ZenodoApi {
     if (!res.ok) throw new ZenodoError(`upload ${name} → ${res.status}`, res.status, res.text);
   }
 
-  /** id-first, github-URL fallback ([R7]). Targeted `q` queries first (each paginated); a
-   *  full unfiltered scan runs only when BOTH targeted queries came back empty, mirroring
-   *  the python's `if not items:` fallback, but keyed on the id URN before the github URL. */
+  /**
+   * id-first, github-URL fallback ([R7]). Targeted `q` queries first (each paginated), then a
+   * full unfiltered scan when neither FOUND the identifier.
+   *
+   * The scan is gated on "not found", not on "no rows came back". `q=related.identifier:"…"` is
+   * an ElasticSearch phrase match, so a deposit carrying `urn:oaktree-sapling:foo-bar-baz`
+   * matches a query for `foo-bar` and then fails `matchRelated`'s exact compare. Gating on rows
+   * meant such a near-miss suppressed the scan, `findDeposit` returned null, and `cmdPrepare`
+   * minted a SECOND concept DOI for a paper that already had one, which is the [R20] failure the
+   * scan exists to prevent. The python binds `items` to one query's result, so this is also what
+   * "mirrors the python's `if not items:` fallback" was always supposed to mean.
+   */
   async findDeposit(opts: { paperId?: string; githubUrl: string }): Promise<Deposition | null> {
     const urn = opts.paperId ? paperUrn(opts.paperId) : null;
-    let anyItems = false;
 
     if (urn) {
-      const items = await this.listMyDepositions({ q: `related.identifier:"${urn}"` });
-      anyItems ||= items.length > 0;
-      const hit = matchRelated(items, urn);
+      const hit = matchRelated(
+        await this.listMyDepositions({ q: `related.identifier:"${urn}"` }),
+        urn,
+      );
       if (hit) return hit;
     }
-    {
-      const items = await this.listMyDepositions({ q: `related.identifier:"${opts.githubUrl}"` });
-      anyItems ||= items.length > 0;
-      const hit = matchRelated(items, opts.githubUrl);
-      if (hit) return hit;
-    }
-    if (!anyItems) {
-      const all = await this.listMyDepositions();
-      return (urn && matchRelated(all, urn)) || matchRelated(all, opts.githubUrl) || null;
-    }
-    return null;
+    const byUrl = matchRelated(
+      await this.listMyDepositions({ q: `related.identifier:"${opts.githubUrl}"` }),
+      opts.githubUrl,
+    );
+    if (byUrl) return byUrl;
+
+    const all = await this.listMyDepositions();
+    return (urn && matchRelated(all, urn)) || matchRelated(all, opts.githubUrl) || null;
   }
 
   /** Newest deposition for a concept DOI (paginated, the third [R35.1] site). */
@@ -608,14 +614,19 @@ export function templateArchiveDir(paperRoot: string, engineRoot: string): strin
  * accident of the template happening to sit inside what `engine.zip` already captured; with
  * template precedence it becomes an explicit rule. See {@link templateArchiveDir}.
  */
-export async function buildBundle(
-  out: string,
-  pdf: string,
-  repoRoot: string,
-  engineRoot: string,
-  provenance: BundleProvenance,
-  git: GitContext,
-): Promise<string[]> {
+/**
+ * Everything about the working tree that can make a deposit impossible, resolved in one place so
+ * a caller can ask BEFORE it writes to Zenodo. Both failures are the tenant's to fix, and both
+ * used to surface only from inside `buildBundle`, which `cmdPublish` called AFTER it had already
+ * PUT the new metadata onto the draft: the run then died with a stack trace, leaving a public
+ * draft carrying v-tag metadata and no files.
+ *
+ * [R28] puts the collision check at VALIDATE time, which is where it belongs, since it is a
+ * property of the working tree an author could be told about on their PR. That is still not
+ * implemented anywhere (`validate.ts` does not know about `deposit/`); this only makes the late
+ * discovery harmless rather than destructive.
+ */
+export function assertBundlePreconditions(repoRoot: string, engineRoot: string): void {
   const depositDir = join(repoRoot, 'deposit');
   const extras = existsSync(depositDir)
     ? readdirSync(depositDir).filter((n) => statSync(join(depositDir, n)).isFile())
@@ -628,9 +639,23 @@ export async function buildBundle(
         `Rename them: ${reserved.join(', ')} are added by the engine.`,
     );
   }
+  templateArchiveDir(repoRoot, engineRoot);
+}
 
-  // Resolve BEFORE writing anything: an unarchivable non-engine template must abort the
-  // deposit, not leave a half-built bundle behind.
+export async function buildBundle(
+  out: string,
+  pdf: string,
+  repoRoot: string,
+  engineRoot: string,
+  provenance: BundleProvenance,
+  git: GitContext,
+): Promise<string[]> {
+  assertBundlePreconditions(repoRoot, engineRoot);
+  const depositDir = join(repoRoot, 'deposit');
+  const extras = existsSync(depositDir)
+    ? readdirSync(depositDir).filter((n) => statSync(join(depositDir, n)).isFile())
+    : [];
+
   const templateDir = templateArchiveDir(repoRoot, engineRoot);
 
   if (existsSync(out)) rmSync(out, { recursive: true, force: true });
@@ -832,6 +857,21 @@ export async function cmdPublish(input: PublishInput): Promise<Outcome> {
   const githubUrl: string | undefined = project.github;
   if (!githubUrl) return err(2, 'project.github missing; should have been set by prepare.');
 
+  const repoRoot = resolve(mystPath, '..');
+
+  // Before ANY write to Zenodo. These two failures are the tenant's to fix, and discovering them
+  // after `updateMetadata` left a public draft holding v-tag metadata and no files, reported as
+  // an engine crash. They reach the workflow through the result envelope like every other
+  // user-fixable condition.
+  try {
+    assertBundlePreconditions(repoRoot, engineRoot);
+  } catch (e) {
+    if (e instanceof BundleCollisionError || e instanceof TemplateArchiveError) {
+      return err(2, e.message);
+    }
+    throw e;
+  }
+
   const latestId = await api.latestVersionDepId(conceptDoi);
   if (latestId === null) {
     return err(2, `No Zenodo record matches ${conceptDoi} (token mismatch? deleted draft?)`);
@@ -864,7 +904,6 @@ export async function cmdPublish(input: PublishInput): Promise<Outcome> {
   }
   process.stderr.write(`[publish] reusing existing draft ${dep.id}\n`);
 
-  const repoRoot = resolve(mystPath, '..');
   const md = buildMetadata({
     project,
     paperId: project.id ? String(project.id) : undefined,

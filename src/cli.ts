@@ -377,7 +377,14 @@ async function cmdDeposit(argv: string[]): Promise<number> {
   const instanceRoot = instanceRootOf(rest);
   const sandbox = has(rest, 'sandbox');
   const siteUrl = flag(rest, 'site-url') ?? process.env.SITE_URL;
-  const token = flag(rest, 'token') ?? process.env.ZENODO_TOKEN;
+  // Same rule as `oak release` below: the environment picks the secret. In CI prepare.yml has
+  // already chosen and passes it as ZENODO_TOKEN, so this changes nothing there; locally, with
+  // both exported, `--sandbox` used to reach for the PRODUCTION token.
+  const token =
+    flag(rest, 'token') ??
+    (sandbox
+      ? (process.env.ZENODO_TOKEN_SANDBOX ?? process.env.ZENODO_TOKEN)
+      : process.env.ZENODO_TOKEN);
   if (!token) {
     process.stderr.write(msg.workflow.depositNoToken + '\n');
     return 2;
