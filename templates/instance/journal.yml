@@ -1,13 +1,13 @@
-# INSTANCE-CONFIG manifest (design §3): the tenant's journal identity. Data only, no
-# engine logic. `oak bootstrap journal` stamps this; additive-only (dec. 24), so an older
-# pinned engine ignores keys it doesn't know. MUST stay in a PUBLIC repo ([R32], dec. 16):
+# INSTANCE-CONFIG manifest: the tenant's journal identity. Data only, no
+# engine logic. `oak bootstrap journal` stamps this; additive-only, so an older
+# pinned engine ignores keys it doesn't know. MUST stay in a PUBLIC repo:
 # Stage-1 fork-PR builds clone it with no token.
 name: CHANGE-ME Journal
 # url: https://example.org
 
 tier: paper
 
-# id policy (design dec. 20). `id_sentinel` is the one id `oak validate` rejects (the
+# id policy. `id_sentinel` is the one id `oak validate` rejects (the
 # template placeholder). `id_pattern` is an anchored regex every real paper id must match:
 # customize to your journal's convention.
 id_sentinel: CHANGE-ME-template-placeholder
@@ -38,17 +38,17 @@ id_pattern: "^[a-z0-9]+-\\d{4}-[a-z0-9-]+$"
 
 preview:
   # 'artifact' degrades to a build-artifact link. Switch to 'cloudflare' + set
-  # cf_project_name once the paper repos carry the CLOUDFLARE_* secrets ([R6]).
+  # cf_project_name once the paper repos carry the CLOUDFLARE_* secrets.
   provider: artifact
   branch_pattern: paper-{repo}-{pr}
 
-# Optional per-tenant Zenodo config ([R19]); a fresh journal has neither.
+# Optional per-tenant Zenodo config; a fresh journal has neither.
 zenodo: {}
   # community: your-zenodo-community
   # description_blurb: >-
   #   Created as part of the CHANGE-ME Journal.
 
-# Journal-controlled editorial checks (slice 4 Layer B). The author cannot weaken this set:
+# Journal-controlled editorial checks. The author cannot weaken this set:
 # it lives here in instance-config; `oak validate` runs it and the PR check gates on it.
 checks:
   - id: authors-exist

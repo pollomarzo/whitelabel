@@ -1,6 +1,6 @@
 version: 1
 
-# The JOURNAL SITE: the page a reader lands on ([S1]/[S8]). It is a plain MyST project
+# The JOURNAL SITE: the page a reader lands on. It is a plain MyST project
 # living in this instance-config repo: `myst build --html`, no engine, no `oak`. This file
 # and `plugins/gallery.mjs` are the only bytes the engine owns here; everything else in the
 # site scaffold is yours to rewrite. `oak upgrade` does not touch it.
@@ -13,7 +13,7 @@ version: 1
 
 extends:
   # Your journal's brand, right here in this repo. A LOCAL path: no network, no cache
-  # staleness, and a single-entry chain has no siblings to race ([R72]).
+  # staleness, and a single-entry chain has no siblings to race.
   - ./brand/brand.yml
 
 project:
@@ -28,5 +28,5 @@ project:
     - file: pages/index.md
 
 site:
-  # The myst-theme fork release this engine version pins (design §7).
+  # The myst-theme fork release this engine version pins.
   template: STAMPED-AT-BOOTSTRAP

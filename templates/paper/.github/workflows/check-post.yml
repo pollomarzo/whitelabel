@@ -1,6 +1,6 @@
 name: Journal checks post
 
-# Stage 2 of the two-stage journal-checks flow (slice 4b). POST only, trusted: runs in
+# Stage 2 of the two-stage journal-checks flow. POST only, trusted: runs in
 # BASE-repo context after "Journal checks" (check.yml) completes, so it holds the write token
 # that fork PRs never get; the same split preview-deploy.yml uses. It ONLY downloads Stage
 # 1's precomputed report artifact and posts it; it NEVER re-runs validate or rebuilds paper
@@ -23,7 +23,7 @@ permissions:
   pull-requests: write # upsert the sticky checks comment
 
 concurrency:
-  # Key on head repo + branch so two forks PRing from `main` don't cancel each other ([R15]).
+  # Key on head repo + branch so two forks PRing from `main` don't cancel each other.
   group: check-post-${{ github.event.workflow_run.head_repository.full_name }}-${{ github.event.workflow_run.head_branch }}
   cancel-in-progress: true
 

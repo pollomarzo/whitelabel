@@ -1,4 +1,4 @@
-# Engine-generated build config ([R71]). `oak build` composes your myst.yml with the
+# Engine-generated build config. `oak build` composes your myst.yml with the
 # engine/edition/brand chain and writes the result here; your myst.yml is never modified.
 # Not auto-deleted: myst's HTML build process.exit(0)s on success, so no cleanup hook can
 # reliably run. Safe to delete by hand at any time.
