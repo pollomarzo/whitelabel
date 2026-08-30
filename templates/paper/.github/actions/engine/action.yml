@@ -31,7 +31,12 @@ runs:
       shell: bash
       run: |
         pins=.github/actions/engine/pins.yml
-        echo "engine=$(yq '.engine_repo' "$pins")" >> "$GITHUB_OUTPUT"
+        engine=$(yq '.engine_repo // ""' "$pins")
+        if [ -z "$engine" ] || [ "$engine" = "null" ]; then
+          echo "::error::engine_repo missing from $pins"
+          exit 1
+        fi
+        echo "engine=$engine" >> "$GITHUB_OUTPUT"
         echo "instance=$(yq '.instance_repo // "."' "$pins")" >> "$GITHUB_OUTPUT"
 
     # --- check out ENGINE@ref. The repository is pinned and only the ref floats, so the ref
