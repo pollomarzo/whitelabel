@@ -20,6 +20,7 @@ import {
   cmdPrepare,
   cmdPublish,
   BundleCollisionError,
+  assertBundlePreconditions,
   TemplateArchiveError,
   RESERVED_BUNDLE_NAMES,
   readStampedTemplate,
@@ -584,5 +585,78 @@ describe('cmdPublish', () => {
       engineRoot: mystPath.replace('myst.yml', ''),
     });
     expect(out.exitCode).toBe(2);
+  });
+});
+
+/**
+ * Pass A, P2. Each was run against the unfixed code first: the mutation named in each comment
+ * leaves the rest of this file green, which is how these survived.
+ */
+describe('P2 regressions', () => {
+  const id = 'foo-bar';
+  const gh = 'https://github.com/o/r';
+
+  it('scans when a targeted query returns rows that do not MATCH', async () => {
+    // `q=related.identifier:"..."` is a phrase match, so a LONGER urn comes back for a query
+    // about a shorter one. Gating the unfiltered scan on "rows returned" rather than "identifier
+    // found" made findDeposit return null here, and cmdPrepare then minted a second concept DOI,
+    // which is the [R20] duplicate the scan exists to prevent.
+    const nearMiss = dep({
+      id: 1,
+      metadata: { related_identifiers: [{ identifier: paperUrn('foo-bar-baz') }] },
+    });
+    const real = dep({ id: 2, metadata: { related_identifiers: [{ identifier: paperUrn(id) }] } });
+    let unfiltered = 0;
+    const { transport } = fakeTransport(({ opts }) => {
+      const q = opts.params?.q;
+      if (q === undefined) {
+        unfiltered++;
+        return { json: [nearMiss, real] };
+      }
+      // The urn query phrase-matches the near miss; the github query genuinely finds nothing
+      // (the repo was renamed, which is the case [R7] added the urn for).
+      return { json: String(q).includes(id) ? [nearMiss] : [] };
+    });
+    const api = new ZenodoApi(transport, 'x', 't');
+    const found = await api.findDeposit({ paperId: id, githubUrl: gh });
+    expect(found?.id, 'a near miss must not suppress the scan').toBe(2);
+    expect(unfiltered).toBe(1);
+  });
+
+  it('judges the working tree before any Zenodo write', () => {
+    const root = mkdtempSync(join(tmpdir(), 'oak-precond-'));
+    mkdirSync(join(root, 'deposit'), { recursive: true });
+    writeFileSync(join(root, 'deposit', 'paper.pdf'), 'x');
+    expect(() => assertBundlePreconditions(root, root)).toThrow(BundleCollisionError);
+  });
+
+  it('reports a collision through the envelope, having sent nothing to Zenodo', async () => {
+    // The check used to run inside buildBundle, which cmdPublish called AFTER updateMetadata: the
+    // draft was already overwritten, and cli.ts turned the throw into engineCrash(stack), exit 1.
+    const root = mkdtempSync(join(tmpdir(), 'oak-envelope-'));
+    mkdirSync(join(root, 'deposit'), { recursive: true });
+    writeFileSync(join(root, 'deposit', 'source.zip'), 'x');
+    writeFileSync(join(root, 'paper.pdf'), 'x');
+    writeFileSync(
+      join(root, 'myst.yml'),
+      'version: 1\nproject:\n  id: p\n  doi: 10.5072/zenodo.5\n  github: https://github.com/o/r\n',
+    );
+    const { transport, calls } = fakeTransport(() => ({ json: [] }));
+    const out = await cmdPublish({
+      mystPath: join(root, 'myst.yml'),
+      pdf: join(root, 'paper.pdf'),
+      tag: 'v1.0.0',
+      siteUrl: 'https://s',
+      sandbox: true,
+      bundleOut: join(root, '_bundle'),
+      api: new ZenodoApi(transport, 'x', 't'),
+      git: fakeGit,
+      instanceRoot: null,
+      engineRoot: root,
+    });
+    expect(out.result.status).toBe('error');
+    expect(out.exitCode).toBe(2);
+    expect(JSON.stringify(out.result)).toContain('source.zip');
+    expect(calls.length, 'nothing may reach Zenodo before the tree is judged').toBe(0);
   });
 });
