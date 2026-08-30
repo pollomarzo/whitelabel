@@ -1,11 +1,11 @@
-# conformance — release certification of the paper CI (plan-paper-ci-conformance.md).
+# conformance: release certification of the paper CI (plan-paper-ci-conformance.md).
 #
 # Drives the standing fixtures against an engine version V and asserts every shim path green
-# (build/Pages, journal checks, fork-safe preview, deposit chain). Deliberately advisory — NOT a
+# (build/Pages, journal checks, fork-safe preview, deposit chain). Deliberately advisory, NOT a
 # required status check, NOT per-commit: a release gate (real runs + workflow_run latency +
 # external round-trips). Two triggers:
-#   • workflow_dispatch — manual, pick a tag (or only-reset).
-#   • workflow_run (POST-CUT HOOK) — after `cut-engine-release` completes, certify the just-cut
+#   • workflow_dispatch: manual, pick a tag (or only-reset).
+#   • workflow_run (POST-CUT HOOK): after `cut-engine-release` completes, certify the just-cut
 #     (latest) release automatically ("release ⟺ certified"). If the `conformance` env still has
 #     a required reviewer the auto-run just waits for one click; drop it for fully hands-off.
 # The promotion gate on a green cert is deferred (impl [R78] / C5).
@@ -27,7 +27,7 @@ on:
 
 # The harness holds ONLY the fixture-scoped PAT (CONFORMANCE_PAT); CF/Zenodo creds stay the
 # fixture repo's own secrets, read back from the fixture run. The ambient GITHUB_TOKEN cannot
-# drive the fixture (cross-repo reach + the recursion guard) — see plan §credentials.
+# drive the fixture (cross-repo reach + the recursion guard); see plan §credentials.
 permissions:
   contents: read
 
@@ -38,7 +38,7 @@ concurrency:
 jobs:
   certify:
     runs-on: ubuntu-latest
-    # Skip the post-cut auto-trigger when the cut itself failed — nothing valid to certify.
+    # Skip the post-cut auto-trigger when the cut itself failed; nothing valid to certify.
     if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     # A cert run is a deliberate act: the PAT lives behind a required-reviewer environment
     # (personal-account interim home; org-shared secrets come with the open-scholar-nexus move).
@@ -59,7 +59,7 @@ jobs:
       # review IS the harness), so build it before invoking `oak conformance`.
       - run: npm run bundle
 
-      # Resolve what to certify: the dispatch input, or — on the post-cut hook — the just-cut
+      # Resolve what to certify: the dispatch input, or (on the post-cut hook) the just-cut
       # (latest) release. `only_reset` is dispatch-only. Both surface as string outputs.
       - name: Resolve tag + mode
         id: r
@@ -86,7 +86,7 @@ jobs:
           FIXTURE: ${{ vars.CONFORMANCE_FIXTURE_REPO }}
           TAG: ${{ steps.r.outputs.tag }}
           ONLY_RESET: ${{ steps.r.outputs.only_reset }}
-          # Optional fork-PR preview phase — the second-account fork + its own PAT. When either is
+          # Optional fork-PR preview phase: the second-account fork + its own PAT. When either is
           # unset (not yet provisioned) the flag is empty and the phase self-skips, so certs keep
           # working. The fork phase drives the fork via `gh api` under this PAT (not git), so it
           # needs no git-credential setup of its own.
@@ -106,14 +106,14 @@ jobs:
           set -e
 
       # Persist the tag-keyed cert record on the engine release (the C5 promotion-gate seam). Uses
-      # the ambient token — the fixture-scoped PAT can't write the engine repo.
+      # the ambient token; the fixture-scoped PAT can't write the engine repo.
       - name: Record cert verdict on the engine release
         if: ${{ steps.r.outputs.tag != '' && steps.r.outputs.only_reset != 'true' && hashFiles('cert.json') != '' }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release upload "${{ steps.r.outputs.tag }}" cert.json --clobber
 
-      # A cert FAILURE (1) reddens the run; an INCONCLUSIVE (2, third-party outage) does NOT —
+      # A cert FAILURE (1) reddens the run; an INCONCLUSIVE (2, third-party outage) does NOT:
       # "red must mean us". The verdict lives in the record + logs either way.
       - name: Reflect cert outcome
         if: ${{ steps.r.outputs.tag != '' && steps.r.outputs.only_reset != 'true' }}

@@ -1,12 +1,12 @@
 /**
- * preview.ts — the `deploy-preview` + `notify` verbs (slice 2-shim). Ports today's
+ * preview.ts: the `deploy-preview` + `notify` verbs (slice 2-shim). Ports today's
  * `maybe_preview-deploy.yml` + `notify-newversion.yml` into the engine, with the design's
  * corrections baked in:
  *
  *  - **Preview provider is a journal knob ([R6]/[R27]).** Cloudflare project name + preview
  *    branch pattern (hardcoded `oaktree-sapling` / `pr-<n>` today) come from `journal.yml`
  *    `preview:`; a tenant with no Cloudflare secrets DEGRADES to an artifact-link comment
- *    instead of failing — deploy-preview NEVER fails the run ([R16]).
+ *    instead of failing: deploy-preview NEVER fails the run ([R16]).
  *  - **`.pr-number` is stripped before serving ([R26]).** Stage 1 stashes the PR number in
  *    the artifact (workflow_run.pull_requests is empty for forks); Stage 2 reads it and
  *    DELETES it before the deploy, or it ships as a publicly served file on the preview.
@@ -22,7 +22,7 @@
  * SEAMS (so the logic is unit-testable with no network / no git): the Cloudflare deploy
  * (`PagesDeployer`) and the git/gh side (`GhPr`) are injected; the real implementations live
  * in `gh.ts` (mirroring `zenodo.ts`'s `ZenodoTransport` + `GitContext`). This module does NOT
- * import myst-cli — it only reads the built artifact + `journal.yml`.
+ * import myst-cli: it only reads the built artifact + `journal.yml`.
  */
 import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
@@ -37,7 +37,7 @@ import { JournalConfig, type PreviewConfig } from './schema.js';
 
 export interface PagesDeployer {
   /** Deploy a built site directory to Cloudflare Pages; resolves the deployment URL. The real
-   *  impl drives the CF Pages direct-upload protocol (via wrangler) — see gh.ts. */
+   *  impl drives the CF Pages direct-upload protocol (via wrangler); see gh.ts. */
   deploy(opts: {
     dir: string;
     accountId: string;
@@ -48,7 +48,7 @@ export interface PagesDeployer {
 }
 
 export interface GhPr {
-  /** Upsert a sticky comment (keyed by `header`) on a PR — create, else edit in place. */
+  /** Upsert a sticky comment (keyed by `header`) on a PR, create, else edit in place. */
   sticky(repoRoot: string, prNumber: string, header: string, body: string): void;
   /** Add a label to a PR, creating the label first if it does not exist. */
   addLabel(
@@ -57,13 +57,13 @@ export interface GhPr {
     label: string,
     opts?: { color?: string; description?: string },
   ): void;
-  /** `v*` tags — read from `gh api repos/{repo}/tags` ([R23]): the Stage-2 checkout is shallow,
+  /** `v*` tags, read from `gh api repos/{repo}/tags` ([R23]): the Stage-2 checkout is shallow,
    *  so `git tag --merged origin/main` has no history to see. `repo` may be null (⇒ no tags). */
   versionTags(repoRoot: string, repo: string | null): string[];
 }
 
 /* --------------------------------------------------------------------------
- * Result envelope (mirrors zenodo.ts — the workflows' `status` contract)
+ * Result envelope (mirrors zenodo.ts, the workflows' `status` contract)
  * ------------------------------------------------------------------------ */
 
 export interface Outcome {
@@ -77,7 +77,7 @@ const err = (exitCode: number, message: string, fields: Record<string, unknown> 
 });
 
 /* --------------------------------------------------------------------------
- * Sticky-comment headers + labels (stable identifiers — do not rename)
+ * Sticky-comment headers + labels (stable identifiers, do not rename)
  * ------------------------------------------------------------------------ */
 
 export const STICKY_PREVIEW = 'oak-preview';
@@ -85,11 +85,11 @@ export const STICKY_NEWVERSION = 'zenodo-newversion-reminder';
 export const LABEL_EDITOR_ACTION = 'editor-action-needed';
 
 /* --------------------------------------------------------------------------
- * journal.yml → tenant preview config ([R27]) — mirrors loadJournalZenodo
+ * journal.yml → tenant preview config ([R27]), mirrors loadJournalZenodo
  * ------------------------------------------------------------------------ */
 
 /** Read the tenant's `preview:` block from `<instanceRoot>/journal.yml`. A fresh tenant (or a
- *  build with no instance) has none — return the schema defaults (`provider: artifact`). */
+ *  build with no instance) has none, return the schema defaults (`provider: artifact`). */
 export function loadJournalPreview(instanceRoot: string | null): PreviewConfig {
   const empty = () => JournalConfig.parse({ name: 'x' }).preview;
   if (!instanceRoot) return empty();
@@ -103,7 +103,7 @@ export function loadJournalPreview(instanceRoot: string | null): PreviewConfig {
  * ------------------------------------------------------------------------ */
 
 /** Read `.pr-number` from the build dir and DELETE it ([R26]) so it never serves publicly.
- *  Returns null when absent (a push build, or a non-PR run) — the caller then no-ops. */
+ *  Returns null when absent (a push build, or a non-PR run); the caller then no-ops. */
 export function takePrNumber(siteDir: string): string | null {
   const f = join(siteDir, '.pr-number');
   if (!existsSync(f)) return null;
@@ -114,7 +114,7 @@ export function takePrNumber(siteDir: string): string | null {
 
 /** Apply `{repo}`/`{pr}` placeholders in the preview branch pattern, then slugify to a
  *  Cloudflare-Pages-safe branch alias (lowercase, `[a-z0-9-]`, ≤28 chars). `repo` may be
- *  `owner/name` — only the short name is used. */
+ *  `owner/name`: only the short name is used. */
 export function previewBranch(pattern: string, repo: string, pr: string): string {
   const shortRepo = repo.includes('/') ? repo.slice(repo.indexOf('/') + 1) : repo;
   return pattern
@@ -170,7 +170,7 @@ export function artifactComment(runUrl: string, reason: string): string {
 }
 
 /** Parse the Zenodo record URL from a concept DOI prefix (sandbox `10.5072` vs prod `10.5281`).
- *  Returns an error string for an unrecognized prefix — the caller fails loud, matching today's
+ *  Returns an error string for an unrecognized prefix; the caller fails loud, matching today's
  *  notify (a published paper with an unparseable DOI is an inconsistent state). */
 export function recordUrlForDoi(doi: string): { doi: string; recordUrl: string } | { error: string } {
   const map: Array<[string, string]> = [
@@ -200,10 +200,10 @@ export interface DeployPreviewInput {
   siteDir: string;
   repoRoot: string;
   instanceRoot: string | null;
-  /** GITHUB_REPOSITORY (owner/repo), GITHUB_SERVER_URL — used for the degrade link + labels. */
+  /** GITHUB_REPOSITORY (owner/repo), GITHUB_SERVER_URL, used for the degrade link + labels. */
   repo: string | null;
   serverUrl: string;
-  /** The Paper CI run id (workflow_run.id) holding the paper-build artifact — deep-links the
+  /** The Paper CI run id (workflow_run.id) holding the paper-build artifact, deep-links the
    *  degrade comment straight to that run, not the whole Actions tab. */
   artifactRunId?: string;
   cf: { apiToken?: string; accountId?: string };
@@ -217,7 +217,7 @@ export interface PreviewDeps {
 }
 
 /**
- * `oak deploy-preview <site>` — read+strip `.pr-number`, deploy the inert artifact to
+ * `oak deploy-preview <site>`: read+strip `.pr-number`, deploy the inert artifact to
  * Cloudflare Pages (or degrade to an artifact-link comment), post the sticky preview comment,
  * then run the new-version reminder ([R16]). NEVER fails the run: a Cloudflare error degrades
  * to the artifact comment, and a missing `.pr-number` no-ops.
@@ -252,7 +252,7 @@ export async function cmdDeployPreview(input: DeployPreviewInput, deps: PreviewD
       outcome = { preview: 'cloudflare', url, branch: plan.branch };
     } catch (e) {
       // The ONE meaningful degrade ([R16]): a CF outage / missing secrets still leaves the
-      // reviewer the artifact. This is not error-swallowing — it posts a different, useful
+      // reviewer the artifact. This is not error-swallowing; it posts a different, useful
       // comment. A gh failure below is NOT degraded: it throws and fails the run, loudly.
       const failure = (e as Error).message;
       process.stderr.write(annotate('warning', msg.workflow.cloudflareDegraded(failure)) + '\n');
@@ -269,7 +269,7 @@ export async function cmdDeployPreview(input: DeployPreviewInput, deps: PreviewD
     outcome = { preview: 'artifact', reason: plan.reason };
   }
 
-  // The new-version reminder rides here — base context holds pull-requests: write ([R16]).
+  // The new-version reminder rides here, base context holds pull-requests: write ([R16]).
   // Its failure (a real "published but unlinked" inconsistency, or a gh error) propagates.
   const notify = runNewVersionReminder({ repoRoot, mystPath, repo, pr }, deps.gh);
   return { exitCode: notify.exitCode, result: { status: notify.result.status, ...outcome, notify: notify.result } };
@@ -284,11 +284,11 @@ export interface NotifyInput {
 }
 
 /**
- * The new-version reminder ([R16]/[R23]). Reads `v*` tags (via `gh api` — the Stage-2 checkout
+ * The new-version reminder ([R16]/[R23]). Reads `v*` tags (via `gh api`, the Stage-2 checkout
  * is shallow) and, when the paper is already published, posts a sticky reminder + label.
  *
  * First deposit (no tags) is a clean no-op. A `v*` tag with an absent/unparseable DOI is the
- * "published but unlinked" inconsistency the original `notify-newversion.yml` `exit 1`s on — we
+ * "published but unlinked" inconsistency the original `notify-newversion.yml` `exit 1`s on; we
  * keep it a hard error (exit 1): it's a real repo-state problem, not something to paper over.
  * gh comment/label failures propagate too. (The only [R16] degrade is CF→artifact, upstream.)
  */

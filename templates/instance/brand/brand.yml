@@ -1,6 +1,6 @@
 version: 1
 
-# Brand (design §5) — the journal's visual identity. HTML assets (site.options.logo /
+# Brand (design §5): the journal's visual identity. HTML assets (site.options.logo /
 # favicon) may be absolute URLs; the typst PDF watermark MUST be a REAL local file, which
 # compose() absolutizes (`./logo.svg` → <instanceRoot>/brand/logo.svg). Replace logo.svg
 # with your own mark.

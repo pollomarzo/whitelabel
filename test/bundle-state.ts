@@ -1,5 +1,5 @@
 /**
- * bundle-state.ts — shared guard for the suites that drive the REAL bundle (`dist/cli.cjs`).
+ * bundle-state.ts: shared guard for the suites that drive the REAL bundle (`dist/cli.cjs`).
  *
  * Both integration suites exercise the bundled artifact rather than importing myst-cli
  * in-process ([R51]). That creates two distinct hazards, which must NOT be treated the same:
@@ -45,7 +45,7 @@ export function bundleState(): BundleState {
 export function assertBundleNotStale(): void {
   if (bundleState() === 'stale') {
     throw new Error(
-      `dist/cli.cjs is OLDER than src/ — this suite would exercise stale code and pass.\n` +
+      `dist/cli.cjs is OLDER than src/; this suite would exercise stale code and pass.\n` +
         `Run \`npm run bundle\` (\`npm test\` does it for you; \`test:watch\` does not).`,
     );
   }

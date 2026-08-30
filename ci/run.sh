@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # The ONLY bash in the engine (design §12). The composite action has already checked out
 # the engine at the pinned ref into ./.engine and set INSTANCE_REPO from pins.yml. This
-# does the CI-specific *materialization* §1b assigns it — typst on PATH, instance-config
-# cloned, BASE_URL by event — then dispatches to dist/cli.cjs, where all LOGIC lives.
+# does the CI-specific *materialization* §1b assigns it: typst on PATH, instance-config
+# cloned, BASE_URL by event, then dispatches to dist/cli.cjs, where all LOGIC lives.
 # (Resolves the §12 "5 lines" aspiration toward §1b: setup here, logic in the bundle.)
 set -euo pipefail
 
@@ -11,18 +11,18 @@ engine="$(cd "$here/.." && pwd)"
 verb="${1:-}"
 
 # A runnable engine ⟺ a release ([R57]): dist/cli.cjs is committed ONLY onto release-tag
-# leaves, never a branch tip. If it's absent the pinned ref is a branch (or a bad tag) —
+# leaves, never a branch tip. If it's absent the pinned ref is a branch (or a bad tag):
 # fail loud with the fix, not a raw "Cannot find module". This guard IS the enforcement of
 # "CI runs released tags only"; nothing else rejects a branch pin.
 if [ ! -f "$engine/dist/cli.cjs" ]; then
-  echo "::error::engine ref carries no dist/cli.cjs — pin a released tag, not a branch tip (a runnable engine ⟺ a release, [R57]; see RELEASING.md)"
+  echo "::error::engine ref carries no dist/cli.cjs; pin a released tag, not a branch tip (a runnable engine ⟺ a release, [R57]; see RELEASING.md)"
   exit 1
 fi
 
-# typst — prefer a binary shipped with the engine tag ([R34]); else rely on PATH.
+# typst: prefer a binary shipped with the engine tag ([R34]); else rely on PATH.
 # Test that it RUNS, not that its executable bit is set. The shipped binary is
 # linux-x86_64 (musl); on macOS or arm64 a Linux ELF still passes `-x`, and prepending it
-# there would SHADOW a working system typst with one that cannot exec — inverting the
+# there would SHADOW a working system typst with one that cannot exec, inverting the
 # fallback this line exists to provide. CI is always ubuntu-latest, so the probe costs one
 # spawn and changes nothing there; it is the tag-checkout-on-a-laptop case it fixes.
 if [ -x "$engine/bin/typst" ] && "$engine/bin/typst" --version >/dev/null 2>&1; then
@@ -44,7 +44,7 @@ if [ "$verb" = "build" ] || [ "$verb" = "release" ]; then
 fi
 
 # instance-config: public, depth-1, default branch (dec. 16/19). '.' = co-located
-# (repo=journal, deferred) — leave to the CLI's root resolution. build/release need it for
+# (repo=journal, deferred); leave to the CLI's root resolution. build/release need it for
 # the extends chain; deploy-preview needs it for the preview: knobs ([R27]/[R69]); validate
 # needs it for journal.yml `checks:` + the registry (id-uniqueness).
 if [ "$verb" = "build" ] || [ "$verb" = "release" ] || [ "$verb" = "deploy-preview" ] || [ "$verb" = "validate" ]; then
@@ -60,7 +60,7 @@ echo "engine dir : $engine"
 echo "verb       : $verb"
 echo "instance   : ${INSTANCE_REPO:-<co-located>}"
 echo "extra args : ${extra[*]:-<none>}"
-# Secret PRESENCE only — never the value (design §1a: echo what we resolved; aids a
+# Secret PRESENCE only, never the value (design §1a: echo what we resolved; aids a
 # tenant's first broken run, and lets the [R18] step-env-propagation spike be observed
 # on prepare/publish/preview-deploy without leaking anything). `:+present` is set -u safe.
 echo "GH_TOKEN     : ${GH_TOKEN:+present}"

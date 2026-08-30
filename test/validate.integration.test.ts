@@ -1,5 +1,5 @@
 /**
- * validate.integration.test.ts — the Layer-B editorial checks (Curvenote's MIT
+ * validate.integration.test.ts: the Layer-B editorial checks (Curvenote's MIT
  * @curvenote/check-implementations) run over the REAL fixture paper through the bundled CLI.
  *
  * Like integration.test.ts, this drives `node dist/cli.cjs` rather than importing myst-cli
@@ -31,14 +31,14 @@ function spawnValidate(paper: string): { exitCode: number; stdout: string; stder
   return { exitCode: r.status ?? 1, stdout: r.stdout ?? '', stderr: r.stderr ?? '' };
 }
 
-/** Run and parse the JSON payload. stdout must be PURE JSON — myst's progress logs are routed to
+/** Run and parse the JSON payload. stdout must be PURE JSON, myst's progress logs are routed to
  *  stderr (cmdValidate), so we parse it directly with no slicing; a stray stdout write would throw. */
 function runValidate(paper: string): { exitCode: number; out: any } {
   const { exitCode, stdout } = spawnValidate(paper);
   return { exitCode, out: JSON.parse(stdout) };
 }
 
-describe.skipIf(bundleState() === 'absent')('oak validate — curvenote Layer-B checks (bundled)', () => {
+describe.skipIf(bundleState() === 'absent')('oak validate, curvenote Layer-B checks (bundled)', () => {
   beforeAll(assertBundleNotStale);
   it('passes the well-formed fixture: the 5 journal-selected checks pass, exit 0, success', () => {
     const { exitCode, out } = runValidate(fixturePaper);
@@ -58,7 +58,7 @@ describe.skipIf(bundleState() === 'absent')('oak validate — curvenote Layer-B 
     expect(stdout.trimStart().startsWith('{')).toBe(true);
     expect(() => JSON.parse(stdout)).not.toThrow();
     // myst's chatter (the raw `new Session()` console.debug + the `📖/📚 Built` logger lines)
-    // must be diverted off stdout — it belongs on stderr.
+    // must be diverted off stdout: it belongs on stderr.
     expect(stdout).not.toMatch(/building myst-cli session|📖 Built|📚 Built/);
     expect(stderr).toMatch(/building myst-cli session with API URL/);
   }, 60_000);
@@ -94,7 +94,7 @@ describe.skipIf(bundleState() === 'absent')('oak validate — curvenote Layer-B 
     expect(r.status).toBe(0);
     expect(existsSync(reportPath)).toBe(true);
     const written = JSON.parse(readFileSync(reportPath, 'utf8'));
-    // The report always carries the full envelope — checkRun included, regardless of --json.
+    // The report always carries the full envelope, checkRun included, regardless of --json.
     expect(written.checkRun.conclusion).toBe('success');
     expect(Array.isArray(written.checks)).toBe(true);
     expect(written.status).toBe('ok');
@@ -104,7 +104,7 @@ describe.skipIf(bundleState() === 'absent')('oak validate — curvenote Layer-B 
 describe.skipIf(bundleState() === 'absent')('the COMPOSED view reaches the checks ([R82])', () => {
   beforeAll(assertBundleNotStale);
 
-  it('the thumbnail check FIRES in validate — it could not before ([R81])', () => {
+  it('the thumbnail check FIRES in validate: it could not before ([R81])', () => {
     // The whole point of [R82]. `paper-base.yml` pins `project.thumbnail`, which exists only
     // post-`extends`; on the author's own config validate saw nothing and passed silently. The
     // fixture paper genuinely ships no `thumbnails/`, so a composed run must now say so.
@@ -116,7 +116,7 @@ describe.skipIf(bundleState() === 'absent')('the COMPOSED view reaches the check
     expect(out.status).toBe('ok');
   }, 60_000);
 
-  it('and does NOT fire once the file is there — no false positive', () => {
+  it('and does NOT fire once the file is there, no false positive', () => {
     const tmp = mkdtempSync(join(tmpdir(), 'oak-val-thumb-'));
     copyFileSync(join(fixturePaper, 'bib.bib'), join(tmp, 'bib.bib'));
     copyFileSync(join(fixturePaper, 'index.md'), join(tmp, 'index.md'));
@@ -141,11 +141,11 @@ describe.skipIf(bundleState() === 'absent')('the COMPOSED view reaches the check
  * Instance resolution + the "engine crash" failure mode (UX-test bug hunt).
  *
  * Two defects from the same live run: the CI shim leaves `instance_repo: .` to "the CLI's
- * root resolution" (the [R38] co-located rung), which did not exist — and when the resulting
+ * root resolution" (the [R38] co-located rung), which did not exist, and when the resulting
  * usage error fired, `oak validate` exited 2 having written NOTHING, so Stage 1 could only
  * say "produced no valid report (engine crash)".
  * ------------------------------------------------------------------------ */
-describe.skipIf(bundleState() === 'absent')('oak validate — instance resolution + crash reporting', () => {
+describe.skipIf(bundleState() === 'absent')('oak validate, instance resolution + crash reporting', () => {
   beforeAll(assertBundleNotStale);
 
   /** A copy of the fixture paper, alone (no journal.yml beside it). */

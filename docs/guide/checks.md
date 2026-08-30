@@ -18,7 +18,7 @@ checks:
 
 ## What the seeded five mean
 
-All five read the paper's frontmatter — the `authors:`, `abstract` and `keywords:` a manuscript
+All five read the paper's frontmatter: the `authors:`, `abstract` and `keywords:` a manuscript
 declares in its `myst.yml` or at the top of `index.md`.
 
 `authors-exist`
@@ -30,11 +30,11 @@ declares in its `myst.yml` or at the top of `index.md`.
 
 `authors-have-credit-roles`
 : Every author has at least one `roles:` entry, and each role is a valid
-  [CRediT](https://credit.niso.org/) role. One result per author per role — a misspelled role
+  [CRediT](https://credit.niso.org/) role. One result per author per role, so a misspelled role
   fails on its own ("… has an invalid CRediT role of …") rather than being ignored.
 
 `abstract-exists`
-: The paper has an abstract. This is the abstract as MyST understands it — the `abstract:` part
+: The paper has an abstract. This is the abstract as MyST understands it: the `abstract:` part
   of the document, not a heading called "Abstract".
 
 `keywords-defined`
@@ -48,7 +48,7 @@ which GitHub shows as an inline annotation on the pull request.
 
 Edit `checks:`, commit, push. The next build of every paper picks it up.
 
-**Every selected check blocks by default.** Marking one `optional` makes it advisory — it still
+**Every selected check blocks by default.** Marking one `optional` makes it advisory: it still
 runs, still reports, and never fails the pull request:
 
 ```yaml
@@ -95,11 +95,11 @@ The catalog also contains checks mirroring MyST's own build rules (`image-exists
 way.
 
 **A typo is not silently ignored.** An id that is not in the catalog is reported as
-`unknown check id "…"`, which fails like any other blocking result — so a misspelled check is
+`unknown check id "…"`, which fails like any other blocking result, so a misspelled check is
 loud rather than an unnoticed hole in the gate.
 
 **`exports-exist` needs a build.** It inspects files a build produces, so a plain `oak validate`
-in a fresh checkout reports it as `requires build artifacts — run oak build first` and does not
+in a fresh checkout reports it as ``requires build artifacts; run `oak build` first`` and does not
 gate on it.
 
 ## Where the checks run
@@ -121,8 +121,8 @@ Without `--instance` there are no journal settings to read, so no editorial chec
 validate --no-instance` says so explicitly in its output and checks only what the engine can
 check on its own.
 
-The report mixes in the engine's own findings — a missing `index.md`, a paper id that breaks
-[the id rule](journal-yml.md#id-pattern), a brand image that does not resolve — in the same
+The report mixes in the engine's own findings (a missing `index.md`, a paper id that breaks
+[the id rule](journal-yml.md#id-pattern), a brand image that does not resolve) in the same
 table as the editorial results.
 
 (validate-runs-paper-code)=
@@ -141,6 +141,6 @@ holds no secrets. On your laptop there is no such box.
 Before validating a submission you have not read:
 
 - open the paper's `myst.yml` and look at `plugins:`. No entry, no risk from this.
-- if there is one, read it, or let CI do the run — the pull request already runs the same
+- if there is one, read it, or let CI do the run: the pull request already runs the same
   checks and posts the same report.
 :::

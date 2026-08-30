@@ -33,17 +33,17 @@ papers from `registry/papers.yml`. It is fetched over the network rather than co
 repository because it is code: a vendored copy would be a copy nobody updates.
 
 The tag in that URL is the engine release your repository was bootstrapped with. Bump it to the
-engine release you want the gallery's behaviour from — a newer card layout, a new directive
+engine release you want the gallery's behaviour from: a newer card layout, a new directive
 option.
 
 :::{tip} A wrong tag fails loudly, by design
 MyST treats a plugin it cannot fetch as a warning: it logs `Unknown plugin`, then
-`unknown directive: paper-cards`, and still exits successfully — which would quietly deploy a
+`unknown directive: paper-cards`, and still exits successfully, which would quietly deploy a
 journal front page with no papers on it, over a perfectly good one.
 
 The seeded workflow therefore does not trust the exit code. It greps the build log for the
 plugin announcing itself, and fails the run with
-`the gallery plugin did not load — check the pinned plugin URL in myst.yml (a bad tag 404s
+`the gallery plugin did not load: check the pinned plugin URL in myst.yml (a bad tag 404s
 silently)`. If you see that, the tag in the URL does not exist.
 :::
 
@@ -54,7 +54,7 @@ site:
   template: https://github.com/<theme-repo>/releases/download/<theme-tag>/book-theme.zip
 ```
 
-The theme is what the website looks like structurally — header, sidebar, navigation, the
+The theme is what the website looks like structurally: header, sidebar, navigation, the
 options `brand/brand.yml` sets.
 
 Worth knowing before you bump it: **paper builds use the theme version their engine pins**, not
@@ -84,7 +84,7 @@ a plugin, add the dependency here too.
 
 ## Not these: the pin inside a paper repository
 
-A paper repository carries a version pin of its own — the engine release its workflows run,
+A paper repository carries a version pin of its own: the engine release its workflows run,
 in `.github/actions/engine/pins.yml`, alongside the journal repository it belongs to. That one
 is a different mechanism with a different upgrade path (`oak upgrade` opens a pull request that
 moves it), and it is documented with the paper repository. That page is not written yet.

@@ -1,17 +1,17 @@
 /**
- * ref.ts — engine-ref classification + the floating-author trust policy.
+ * ref.ts: engine-ref classification + the floating-author trust policy.
  *
  * The shim runs `engine/ci/run.sh` at a ref read from the paper's own
  * `options.oaktree-sapling.version` (design §6a). For a *public* engine that accepts
  * PRs, "resolves inside the engine repo" (the [R9] guarantee from a pinned
- * `actions/checkout repository:`) also matches `refs/pull/N/merge` of any UNMERGED PR
- * — i.e. arbitrary contributor code. So the trust boundary is repo + ref-CLASS, not
+ * `actions/checkout repository:`) also matches `refs/pull/N/merge` of any UNMERGED PR,
+ * i.e. arbitrary contributor code. So the trust boundary is repo + ref-CLASS, not
  * the repo alone (dec. 23, [R41]).
  *
  * This module is the *pure, syntactic* half of the policy: classify a ref and decide
- * whether its class is allowed in a given trigger context. The *semantic* half —
+ * whether its class is allowed in a given trigger context. The *semantic* half:
  * "is this tag/SHA actually an ancestor of a released engine tag / on the default
- * branch" — needs the network (`gh api` / `git merge-base --is-ancestor`) and lives in
+ * branch": needs the network (`gh api` / `git merge-base --is-ancestor`) and lives in
  * `oak validate` at the CI edge; it is intentionally NOT here.
  */
 
@@ -60,7 +60,7 @@ export function decideRef(ref: string, ctx: RefContext): RefDecision {
       reason: `${refClass} accepted; ancestry check required before trust`,
     };
   }
-  // sha | pr-merge — dogfooding only
+  // sha | pr-merge: dogfooding only
   const permitted = !ctx.isFork || ctx.allowlisted === true;
   return {
     allowed: permitted,

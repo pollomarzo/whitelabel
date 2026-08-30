@@ -1,11 +1,11 @@
 # The paper-repo template (frozen shim + starter content)
 
 This is what `oak bootstrap paper` stamps a paper repo with (design §1, [R2]). The `.github/`
-set is **frozen and generic** — never edited after creation, CODEOWNERS-gated — because all
+set is **frozen and generic** (never edited after creation, CODEOWNERS-gated) because all
 *logic* lives in the engine behind `project.options.oaktree-sapling.version`, improvable by a
 one-line version bump instead of a scaffold round across N repos ([R17]). Alongside it sits a
 minimal starter `myst.yml`/`index.md`/`bib.bib` the author replaces. The journal scaffold is a
-*separate* template — `templates/instance/`, stamped by `oak bootstrap journal`.
+*separate* template: `templates/instance/`, stamped by `oak bootstrap journal`.
 
 | File | Role |
 |---|---|
@@ -21,7 +21,7 @@ minimal starter `myst.yml`/`index.md`/`bib.bib` the author replaces. The journal
 | `myst.yml` / `index.md` / `bib.bib` | starter paper content (the author replaces the placeholders) |
 
 `uses: ./.github/actions/engine` is a static *local* path, so no version literal is
-reintroduced (§6a). The four workflows keep only what GitHub forces to be static —
+reintroduced (§6a). The four workflows keep only what GitHub forces to be static:
 triggers, permissions, concurrency, artifact plumbing; every step of logic (DOI-PR
 opening, failure issues, sticky comments, token selection, preview-provider fallback)
 lives in the engine CLI.
@@ -29,7 +29,7 @@ lives in the engine CLI.
 ## What `oak bootstrap` renders (slice 5)
 
 **No scaffolding tool, no stored template marker.** `oak bootstrap`/`oak upgrade` are
-hand-rolled TypeScript over the `yaml` Document API — no Copier/cruft, no Python, no
+hand-rolled TypeScript over the `yaml` Document API: no Copier/cruft, no Python, no
 `.copier-answers.yml`. Only three files are *rendered* per tenant; every other file is
 byte-copied verbatim:
 
@@ -43,7 +43,7 @@ byte-copied verbatim:
 reconstructable from the answers already in the repo (`pins.yml` + `CODEOWNERS`). It renders
 each frozen file at the target engine tag and **2-way diffs** against the file on disk:
 
-- **`--version-only`** bumps `options.oaktree-sapling.version` in `myst.yml` (data — the
+- **`--version-only`** bumps `options.oaktree-sapling.version` in `myst.yml` (data; the
   scheduled `version-bump.yml` workflow's job).
 - **`--files-only`** overwrites the drifted frozen files with the target render (reset-to-
   template: any hand-edit is divergence). The PR touches only `/.github/` (+ `/CODEOWNERS`),

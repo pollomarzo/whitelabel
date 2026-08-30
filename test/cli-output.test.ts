@@ -1,5 +1,5 @@
 /**
- * cli-output.test.ts — the CLI's OUTPUT contract, driven through the real bundle: what a
+ * cli-output.test.ts: the CLI's OUTPUT contract, driven through the real bundle: what a
  * human sees by default, what a machine sees under `--json`, and what an unrecognized word
  * gets told. These are the assertable halves of the UX-test output pass; the rest (plan
  * wording) is asserted where the plans are built, in bootstrap.test.ts.
@@ -24,7 +24,7 @@ const fixtureRepo = 'open-scholar-nexus/fixture-sample-paper';
 /**
  * Run the bundle as a TENANT's terminal sees it. `CI`/`GITHUB_ACTIONS` are cleared deliberately:
  * they switch the output to GitHub annotations, and this suite is the contract for the human
- * side — inheriting them would make these assertions pass locally and fail in our own CI.
+ * side: inheriting them would make these assertions pass locally and fail in our own CI.
  */
 function oak(args: string[]): { code: number; stdout: string; stderr: string } {
   const env = { ...process.env };
@@ -53,7 +53,7 @@ describe.skipIf(bundleState() === 'absent')('an unrecognized command is an ERROR
     expect(stderr).not.toContain('did you mean');
   });
 
-  it('a BARE oak is not an error message — just the usage', () => {
+  it('a BARE oak is not an error message, just the usage', () => {
     const { code, stderr } = oak([]);
     expect(code).toBe(2);
     expect(stderr).not.toContain('unknown command');
@@ -114,7 +114,7 @@ describe.skipIf(bundleState() === 'absent')('--json gates the machine envelope',
     const { stderr } = oak(['validate', '--paper', paperOnly(), '--no-instance']);
     expect(stderr).toMatch(/oak validate: (PASS|FAIL)/);
     // The fixture has no thumbnail; uncomposed runs also carry a note. Either way, whatever
-    // the envelope holds is on screen — assert one representative warning reaches it.
+    // the envelope holds is on screen: assert one representative warning reaches it.
     expect(stderr).toMatch(/[✗!→]/);
   }, 60_000);
 

@@ -13,10 +13,10 @@ import {
 } from '../src/checks.js';
 
 // The editorial checks themselves come from @curvenote/check-implementations and read the myst
-// store, so they can only run against a real (bundled) session — covered end-to-end in
+// store, so they can only run against a real (bundled) session, covered end-to-end in
 // validate.integration.test.ts. What stays unit-testable here is our pure Check-Run REPORTER.
 
-describe('toCheckRun (reporting — GitHub Check Run, ours)', () => {
+describe('toCheckRun (reporting: GitHub Check Run, ours)', () => {
   it('fails the conclusion on a non-optional failure', () => {
     expect(
       toCheckRun([{ id: 'x', status: CheckStatus.fail, message: 'bad' }]).conclusion,
@@ -76,7 +76,7 @@ describe('toCheckRun (reporting — GitHub Check Run, ours)', () => {
 
   it('embeds notes above the table without touching the conclusion ([R82])', () => {
     // A degraded run must be visibly degraded where people read verdicts. It must NOT become
-    // a failure just for being degraded — the compose finding is what gates, not the note.
+    // a failure just for being degraded: the compose finding is what gates, not the note.
     const r = toCheckRun([{ id: 'authors-exist', status: CheckStatus.pass }], undefined, [
       'ran UNCOMPOSED: the derived config could not be produced (boom).',
     ]);
@@ -85,7 +85,7 @@ describe('toCheckRun (reporting — GitHub Check Run, ours)', () => {
     expect(r.summary.indexOf('UNCOMPOSED')).toBeLessThan(r.summary.indexOf('| Check |'));
   });
 
-  it('says nothing when there are no notes — a composed run stays quiet', () => {
+  it('says nothing when there are no notes, a composed run stays quiet', () => {
     const r = toCheckRun([{ id: 'authors-exist', status: CheckStatus.pass }]);
     expect(r.summary.startsWith('| Check |')).toBe(true);
   });
@@ -115,7 +115,7 @@ describe('toCheckRun (reporting — GitHub Check Run, ours)', () => {
       '/paper',
     );
     expect(r.annotations.map((a) => a.path)).toEqual(['index.md']);
-    // Dropped from the annotations, NOT from the report — it still gates and still shows.
+    // Dropped from the annotations, NOT from the report; it still gates and still shows.
     expect(r.conclusion).toBe('failure');
     expect(r.summary).toMatch(/no keywords/);
   });
@@ -155,7 +155,7 @@ describe('toCheckRun (reporting — GitHub Check Run, ours)', () => {
 });
 
 /* --------------------------------------------------------------------------
- * Stage-2 write-back — the sticky comment renderer + check-post orchestration.
+ * Stage-2 write-back: the sticky comment renderer + check-post orchestration.
  * ------------------------------------------------------------------------ */
 
 const report = (over: Partial<CheckRun> = {}): ChecksReport => ({
@@ -186,7 +186,7 @@ describe('checksComment (sticky PR-comment renderer)', () => {
   });
 
   it('carries a degraded run\'s note into the comment ([R82])', () => {
-    // check-post does not know notes exist — they ride inside checkRun.summary, which this
+    // check-post does not know notes exist; they ride inside checkRun.summary, which this
     // renders. That is the whole fix: the PR UI stops showing a degraded run as a normal one.
     const body = checksComment({
       status: 'ok',
@@ -279,7 +279,7 @@ describe('cmdCheckPost frozen-shim advisory', () => {
       deps,
     );
     expect(out.checkRunPosted).toBe(true);
-    // advisory only — the conclusion is NOT downgraded (must not gate; legit upgrades edit the shim)
+    // advisory only: the conclusion is NOT downgraded (must not gate; legit upgrades edit the shim)
     expect(runs[0]!.run.conclusion).toBe(report().checkRun.conclusion);
     expect(runs[0]!.run.title).toContain('CI shim modified');
     expect(runs[0]!.run.summary).toContain('changes the files that run the checks');

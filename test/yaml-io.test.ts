@@ -22,7 +22,7 @@ describe('readEngineCoordinateRaw (local yq equivalent, §6a)', () => {
     expect(c).toEqual({ version: 'v0.3.0', edition: 'fixture-edition' });
   });
 
-  it('throws clearly when the coordinate is absent — naming the file and the fix', () => {
+  it('throws clearly when the coordinate is absent, naming the file and the fix', () => {
     const doc = parseDocument('version: 1\nproject:\n  id: x\n');
     // A tenant-facing sentence (printed without a stack), not a bare internal message.
     expect(() => readEngineCoordinateRaw(doc, '/papers/one/myst.yml')).toThrow(
@@ -118,7 +118,7 @@ describe('readTenantTypstTemplate ([R76])', () => {
     return root;
   }
 
-  it('lifts the journal.yml value raw — never through the extends merge', () => {
+  it('lifts the journal.yml value raw, never through the extends merge', () => {
     const root = instanceWithJournal('name: J\ntypst_template: ./typst-template\n');
     expect(readTenantTypstTemplate(root)).toBe('./typst-template');
   });

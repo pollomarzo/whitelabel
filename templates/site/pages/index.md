@@ -1,7 +1,7 @@
 # {{journal_name}}
 
 Welcome. Rewrite this paragraph: say what the journal publishes, who it is for, and how to
-submit. This page is yours — the engine stamps it once and never touches it again.
+submit. This page is yours: the engine stamps it once and never touches it again.
 
 ## Papers
 

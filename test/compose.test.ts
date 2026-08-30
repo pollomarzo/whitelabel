@@ -10,7 +10,7 @@ const EDITION = 'fixture-edition';
 
 /** What loadConfig().project would return AFTER resolving paper-base + edition:
  *  the typst export carries `articles` (from the edition) and NO template (the edition
- *  no longer declares one — finding 2). Plus a sibling `youtube` option (finding 3). */
+ *  no longer declares one: finding 2). Plus a sibling `youtube` option (finding 3). */
 const resolvedProject: ResolvedProject = {
   id: 'fixture-2026-sample-paper',
   title: 'A Fixture Paper',
@@ -35,8 +35,8 @@ const base = (over: Partial<ComposeInput> = {}): ComposeInput => ({
   ...over,
 });
 
-describe('compose — extends chain', () => {
-  it('assembles engine ‹ edition ‹ brand (no trailing fragment — [R52])', () => {
+describe('compose: extends chain', () => {
+  it('assembles engine ‹ edition ‹ brand (no trailing fragment, [R52])', () => {
     const r = compose(base());
     expect(r.extendsChain).toEqual([
       `${ENGINE}/paper-base.yml`,
@@ -52,7 +52,7 @@ describe('compose — extends chain', () => {
   });
 });
 
-describe('compose — asset overrides on own config (finding 2 / [R5], [R52])', () => {
+describe('compose: asset overrides on own config (finding 2 / [R5], [R52])', () => {
   it('emits a COMPLETE typst entry (articles + engine template), not a partial', () => {
     const r = compose(base());
     const exp = r.ownOverride.project!.exports[0]!;
@@ -73,7 +73,7 @@ describe('compose — asset overrides on own config (finding 2 / [R5], [R52])', 
   });
 });
 
-describe('compose — brand asset absolutization ([R62])', () => {
+describe('compose: brand asset absolutization ([R62])', () => {
   const brandAssets = {
     site: {
       logo: './logo.svg',
@@ -135,7 +135,7 @@ describe('compose — brand asset absolutization ([R62])', () => {
   });
 });
 
-describe('compose — finding 3: never clobber sibling options', () => {
+describe('compose: finding 3: never clobber sibling options', () => {
   it('ownOverride touches only exports + site.template, never project.options', () => {
     const r = compose(base());
     expect(r.ownOverride.project).toEqual({
@@ -145,9 +145,9 @@ describe('compose — finding 3: never clobber sibling options', () => {
   });
 });
 
-describe('compose — typst template precedence: author > tenant > engine ([R76])', () => {
+describe('compose: typst template precedence: author > tenant > engine ([R76])', () => {
   const ENGINE_LOCAL = `${ENGINE}/templates/typst`;
-  /** A paper that declares its own template — the ONLY way a `template:` survives onto the
+  /** A paper that declares its own template: the ONLY way a `template:` survives onto the
    *  resolved export, since paper-base and editions never declare one. */
   const withAuthorTemplate = (template: string): ResolvedProject => ({
     ...resolvedProject,
@@ -175,7 +175,7 @@ describe('compose — typst template precedence: author > tenant > engine ([R76]
     expect(templateOf(r)).toBe(`${INSTANCE}/typst-template`);
   });
 
-  it('author template beats the tenant — with a warning, never a block', () => {
+  it('author template beats the tenant, with a warning, never a block', () => {
     const r = compose(
       base({
         resolvedProject: withAuthorTemplate('./my-template'),
@@ -205,7 +205,7 @@ describe('compose — typst template precedence: author > tenant > engine ([R76]
     expect(r.warnings.join(' ')).not.toMatch(/overrides/);
   });
 
-  it('honors a FLOATING author template — precedence never drops what is declared', () => {
+  it('honors a FLOATING author template, precedence never drops what is declared', () => {
     const floating = 'https://github.com/o/isp-lapreprint-typst.git';
     const r = compose(base({ resolvedProject: withAuthorTemplate(floating) }));
     expect(templateOf(r)).toBe(floating); // hygiene is a validate WARN, not a runtime drop
@@ -237,7 +237,7 @@ describe('compose — typst template precedence: author > tenant > engine ([R76]
   });
 });
 
-describe('compose — BASE_URL edge (design §12a)', () => {
+describe('compose: BASE_URL edge (design §12a)', () => {
   it('passes /<repo> in CI and "" locally', () => {
     expect(compose(base({ baseUrl: '/fixture-sample-paper' })).env.BASE_URL).toBe(
       '/fixture-sample-paper',
@@ -246,7 +246,7 @@ describe('compose — BASE_URL edge (design §12a)', () => {
   });
 });
 
-describe('compose — R36 cross-check (shim raw vs loader resolved)', () => {
+describe('compose: R36 cross-check (shim raw vs loader resolved)', () => {
   it('throws when an extended config overrides project.options.oaktree-sapling', () => {
     const skewed: ResolvedProject = {
       ...resolvedProject,

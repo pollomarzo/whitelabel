@@ -3,7 +3,7 @@
 
 Your paper has a repository of its own. It holds your manuscript and the GitHub Actions
 workflows that build it into a website and a PDF, check it against the journal's editorial
-rules, and — when an editor says so — deposit it to Zenodo for a DOI.
+rules, and (when an editor says so) deposit it to Zenodo for a DOI.
 
 The repository was created by an editor running `oak bootstrap paper`. You do not run that
 command, and you do not need `oak` installed to write your paper: everything below happens
@@ -13,7 +13,7 @@ and that is optional.
 :::{note} You may already have a pull request waiting
 If the editor imported an existing repository of yours (`oak bootstrap paper --from`), your
 files were copied onto a branch called `review` and a pull request from it to `main` is already
-open. That pull request is where the work below happens — there is no starter manuscript to
+open. That pull request is where the work below happens. There is no starter manuscript to
 replace, and you should not push to `main`.
 :::
 
@@ -27,7 +27,7 @@ cd <paper-repo>
 A fresh paper repository holds:
 
 ```text
-myst.yml       your paper's metadata — id, title, authors, keywords
+myst.yml       your paper's metadata: id, title, authors, keywords
 index.md       the manuscript
 bib.bib        your bibliography
 CODEOWNERS     the editors, who must approve changes to .github/
@@ -45,7 +45,7 @@ The seeded `myst.yml` is a form, and until you fill it in the build fails on pur
 
 `id`
 : Reads `CHANGE-ME-template-placeholder`. Replace it with a fresh, unique id in the shape the
-  journal requires — something like `oak-2026-tidal-flats`. This is the first thing to change:
+  journal requires, something like `oak-2026-tidal-flats`. This is the first thing to change:
   while the placeholder is there, every build of your paper is red. See
   [id_pattern](../guide/journal-yml.md#id-pattern) for the rule your id has to match.
 
@@ -55,7 +55,7 @@ The seeded `myst.yml` is a form, and until you fill it in the build fails on pur
 `authors:` and `keywords:`
 : Both are present but commented out. Uncomment and fill them. They are written out in full,
   with an ORCID and CRediT roles on the example author, because those are exactly the fields
-  the [editorial checks](../guide/checks.md) look for — the template shows you the shape rather
+  the [editorial checks](../guide/checks.md) look for: the template shows you the shape rather
   than making you guess it. They stay inert while commented, so nothing fake is ever published
   by accident.
 
@@ -70,7 +70,7 @@ the website, onto the PDF's cover page, and into the Zenodo deposit, so keep it 
 ## 3. Where the journal's settings come from
 
 Your paper's website and PDF carry the journal's name, colours and logo, and your submission is
-checked against the journal's rules — but none of that is in your repository. It is fetched at
+checked against the journal's rules, but none of that is in your repository. It is fetched at
 build time.
 
 The link is one file, `.github/actions/engine/pins.yml`, which names the journal's repository:
@@ -91,7 +91,7 @@ from, so `oak` has to be told where one is. See [previewing locally](#paper-prev
 
 ## 4. Open a pull request
 
-`main` is protected on a paper repository — you cannot push to it. Work on a branch and open a
+`main` is protected on a paper repository: you cannot push to it. Work on a branch and open a
 pull request:
 
 ```bash
@@ -108,7 +108,7 @@ inline annotations on the changed lines where the check can locate the problem, 
 ORCID points at the author it is missing from. This check has to pass before the pull request
 can merge.
 
-**A preview** of the built paper — the real website, with the journal's branding applied —
+**A preview** of the built paper (the real website, with the journal's branding applied)
 is deployed and linked in a comment. If the journal has not configured a preview host, the
 comment links the build artifact instead, which you download and open locally. Either way it
 is the same build that CI would publish.
@@ -130,7 +130,7 @@ is annoying. Install the engine, then:
 oak start --instance ../<journal-repo>
 ```
 
-`--instance` is a path to a local clone of the journal repository — the one named in
+`--instance` is a path to a local clone of the journal repository, the one named in
 `pins.yml`. `oak` does not fetch it for you, so clone it yourself alongside your paper. Without
 that path you can still preview, with `oak start --no-instance`, but you get an unbranded
 build: no logo, no colours, no edition metadata, and none of the journal's checks. It is useful

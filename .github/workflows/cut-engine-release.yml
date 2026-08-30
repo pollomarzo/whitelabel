@@ -1,6 +1,6 @@
-# cut-engine-release — the ONE way to make an engine *ref* runnable ([R57]).
+# cut-engine-release: the ONE way to make an engine *ref* runnable ([R57]).
 # Builds dist/cli.cjs and commits it onto the tag's leaf commit (never onto main), pushes only
-# the tag, and creates a GH (pre-)release. Manual dispatch — releases are deliberate, not on-push.
+# the tag, and creates a GH (pre-)release. Manual dispatch; releases are deliberate, not on-push.
 name: cut-engine-release
 
 on:

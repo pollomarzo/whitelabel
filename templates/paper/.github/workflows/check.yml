@@ -1,14 +1,14 @@
 name: Journal checks
 
 # Stage 1 of the two-stage journal-checks flow (slice 4b). COMPUTE only, untrusted: runs on
-# the `pull_request` event with a read-only, secret-less token — safe for fork content, which
+# the `pull_request` event with a read-only, secret-less token, safe for fork content, which
 # `oak validate` only READS. It writes the check report to an artifact and NEVER posts to the
 # PR. All PR write-back (the Check Run + the sticky comment) happens in Stage 2
 # (check-post.yml, a `workflow_run` job in base context), exactly like the preview split
 # (ci.yml → preview-deploy.yml): fork + same-repo PRs take the identical path, and the step
 # that runs untrusted paper content never holds a writable token.
 #
-# This job SUCCEEDS whenever a valid report was produced — even when checks FAIL — so Stage 2
+# This job SUCCEEDS whenever a valid report was produced (even when checks FAIL) so Stage 2
 # always fires and posts the (failing) Check Run that gates the merge. Only a genuine engine
 # crash (no report / invalid JSON) fails this job.
 
@@ -32,7 +32,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # `oak validate` exits 1 on a blocking failure (its contract, used by the merge gate +
-      # local runs). Here that must NOT fail Stage 1 — we only need the report file. So the
+      # local runs). Here that must NOT fail Stage 1: we only need the report file. So the
       # step tolerates a nonzero exit; the guard below re-imposes "fail on a genuine crash".
       - id: validate
         continue-on-error: true
@@ -43,16 +43,16 @@ jobs:
       # Last resort only: `oak validate` writes a failing report even for a usage error or an
       # unexpected throw, so reaching this branch means the engine died before it could write
       # anything at all. Point at the step that holds the real message rather than restating
-      # "crash" — a bare "no valid report" told the author nothing about what to fix.
+      # "crash": a bare "no valid report" told the author nothing about what to fix.
       - name: Ensure a valid report was produced
         run: |
           if ! jq -e '.checkRun.conclusion' report.json >/dev/null 2>&1; then
-            echo "::error::oak validate wrote no report at all — the engine died before it could report. The real error is in the '${{ steps.validate.outcome }}' validate step's log above; nothing was posted to the PR."
+            echo "::error::oak validate wrote no report at all. The engine died before it could report. The real error is in the '${{ steps.validate.outcome }}' validate step's log above; nothing was posted to the PR."
             exit 1
           fi
-          echo "report ok — conclusion: $(jq -r '.checkRun.conclusion' report.json)"
+          echo "report ok; conclusion: $(jq -r '.checkRun.conclusion' report.json)"
 
-      # Stash the PR HEAD sha (GITHUB_SHA is the ephemeral merge commit on a PR — a Check Run
+      # Stash the PR HEAD sha (GITHUB_SHA is the ephemeral merge commit on a PR; a Check Run
       # there never surfaces on the PR) and the PR number (workflow_run.pull_requests is EMPTY
       # for forks). Stage 2 reads both from the artifact.
       - name: Record head sha + PR number

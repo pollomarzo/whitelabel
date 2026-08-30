@@ -3,14 +3,14 @@
 
 `oak bootstrap journal` created a repository on GitHub, pushed one commit to it, and (unless
 you passed `--no-site`) turned on GitHub Pages so the journal website can deploy from a
-workflow. It left nothing on your machine — the seeding happens in a temporary clone that is
-thrown away — so the two things to do now are get a copy and edit `journal.yml`.
+workflow. It left nothing on your machine (the seeding happens in a temporary clone that is
+thrown away), so the two things to do now are get a copy and edit `journal.yml`.
 
 :::{note} This page describes `--external`
 `oak bootstrap journal` takes exactly one of `--external` or `--co-located`. `--external` is the
 usual choice and the one described here: the journal gets a repository of its own, and papers
 live in repositories that point back at it. A `--co-located` repository is both the journal and
-a single paper — it holds a manuscript and the workflows that build it, has no website, and is
+a single paper: it holds a manuscript and the workflows that build it, has no website, and is
 upgraded by `oak upgrade` like any paper repository. Only the journal settings below apply to
 it.
 :::
@@ -29,7 +29,7 @@ journal.yml          the journal's settings
 brand/brand.yml      logo, favicon, the text beside the logo
 brand/logo.svg       a placeholder mark, yours to replace
 editions/<id>.yml    one edition, named by --edition
-registry/papers.yml  the list of published papers — empty for now
+registry/papers.yml  the list of published papers, empty for now
 myst.yml             the journal website
 pages/index.md       the website's landing page
 package.json         the website's build dependencies
@@ -52,7 +52,7 @@ matter on day one:
 
 `id_pattern`
 : The shape every paper's id must have. The seeded value is
-  `^[a-z0-9]+-\d{4}-[a-z0-9-]+$` — for example `oak-2026-tidal-flats`. A paper whose id does
+  `^[a-z0-9]+-\d{4}-[a-z0-9-]+$`, for example `oak-2026-tidal-flats`. A paper whose id does
   not match fails its checks and cannot merge, so decide this before the first submission.
   See [id_pattern](../guide/journal-yml.md#id-pattern), including how to turn it off.
 
@@ -68,7 +68,7 @@ the heading in `pages/index.md`). Two more still say `CHANGE-ME Journal` after b
 by hand.
 :::
 
-Then rewrite `pages/index.md` — the landing page says "Rewrite this paragraph" for a reason —
+Then rewrite `pages/index.md` (the landing page says "Rewrite this paragraph" for a reason)
 and replace `brand/logo.svg`. See [branding](../guide/branding.md).
 
 (push-your-edits)=
@@ -86,7 +86,7 @@ git push
 That push does two things. It redeploys the website, because
 `.github/workflows/site.yml` runs on every push to `main`. And it changes what papers are
 checked against: a paper's build clones this repository at build time and reads the settings
-then, so the next build of every paper — not just new ones — uses the file you just pushed.
+then, so the next build of every paper, not just new ones, uses the file you just pushed.
 
 If you would rather review changes to the journal before they take effect, add a branch
 protection rule yourself; the engine does not impose one.
@@ -96,7 +96,7 @@ protection rule yourself; the engine does not impose one.
 
 The website is served at `https://<owner>.github.io/<journal-repo>/`. It appears only after the
 **Journal site** workflow run finishes, and GitHub Pages then takes a minute or two to start
-serving a brand-new site. A 404 immediately after your first push is expected — watch the run
+serving a brand-new site. A 404 immediately after your first push is expected: watch the run
 in the repository's **Actions** tab, then reload.
 
 If a later site build fails, the last successful deploy keeps serving. A bad entry in
@@ -108,7 +108,7 @@ intended trade.
 The website is a plain MyST project, so you can run it locally:
 
 ```bash
-npm install     # once — the paper gallery needs the dependencies listed in package.json
+npm install     # once; the paper gallery needs the dependencies listed in package.json
 oak start
 ```
 

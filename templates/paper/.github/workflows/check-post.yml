@@ -2,13 +2,13 @@ name: Journal checks post
 
 # Stage 2 of the two-stage journal-checks flow (slice 4b). POST only, trusted: runs in
 # BASE-repo context after "Journal checks" (check.yml) completes, so it holds the write token
-# that fork PRs never get — the same split preview-deploy.yml uses. It ONLY downloads Stage
+# that fork PRs never get; the same split preview-deploy.yml uses. It ONLY downloads Stage
 # 1's precomputed report artifact and posts it; it NEVER re-runs validate or rebuilds paper
 # content (that would reopen the injection hole through the shim's back door). The engine ref
 # + action code come from the BASE default branch (guaranteed by workflow_run).
 #
 # Posts BOTH a first-class "Journal checks" Check Run on the PR HEAD (gates merge + annotates)
-# and an always-on sticky PR comment (visibility — authors rarely click the Check Run
+# and an always-on sticky PR comment (visibility; authors rarely click the Check Run
 # "Details"). On a `push` to main it posts the success Check Run with no comment (no PR).
 
 on:
@@ -32,7 +32,7 @@ jobs:
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 — BASE default branch ⇒ engine ref AND action code from base
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1; BASE default branch ⇒ engine ref AND action code from base
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: journal-checks
@@ -42,8 +42,8 @@ jobs:
 
       # The artifact comes from the untrusted Stage-1 job; head-sha/pr-number flow from here into
       # the `args:` string spliced into a shell in ./.github/actions/engine. Validate shape and
-      # fail CLOSED before they leave this step — a git sha is [0-9a-f]{7,40}, a PR number is
-      # digits — so no newline (GITHUB_OUTPUT injection) or shell metacharacter can ride through
+      # fail CLOSED before they leave this step: a git sha is [0-9a-f]{7,40}, a PR number is
+      # digits, so no newline (GITHUB_OUTPUT injection) or shell metacharacter can ride through
       # even if Stage 1 gets attacker bytes into the files.
       - id: meta
         run: |
@@ -62,7 +62,7 @@ jobs:
             echo "pr=$pr" >> "$GITHUB_OUTPUT"
           fi
 
-      # Posts the precomputed report — the Check Run on the PR HEAD sha and, when a PR, the
+      # Posts the precomputed report: the Check Run on the PR HEAD sha and, when a PR, the
       # sticky comment. Best-effort inside the engine: a post failure degrades to a
       # `::warning::`, never fails this job.
       - uses: ./.github/actions/engine

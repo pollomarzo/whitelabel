@@ -1,12 +1,12 @@
 /**
- * docs-links.test.ts — the guard that keeps a printed documentation URL resolving.
+ * docs-links.test.ts: the guard that keeps a printed documentation URL resolving.
  *
  * `messages.ts` prints these URLs to tenants, and a URL that has been printed is a published
  * interface: the page it names outlives the release that named it. Two things can silently
  * break one, and neither shows up in a type check or in the docs build:
  *
  *   1. A page or a `(label)=` target in `docs/` is renamed, and `docs-links.ts` still names the
- *      old one. The docs build only checks links written INSIDE docs/ — it cannot see this
+ *      old one. The docs build only checks links written INSIDE docs/; it cannot see this
  *      table, so the anchor goes on resolving for MyST while the CLI sends people to a 404.
  *   2. Someone writes a docs URL as a literal instead of going through `docsUrl(DOCS.x)`,
  *      putting the domain back in a second place and escaping check 1 entirely.
@@ -38,7 +38,7 @@ describe('every documentation topic resolves', () => {
       const md = readFileSync(file, 'utf8');
       expect(
         md.includes(`(${anchor})=`),
-        `docs/${page}.md has no "(${anchor})=" target — either restore it or repoint DOCS.${symbol}`,
+        `docs/${page}.md has no "(${anchor})=" target, either restore it or repoint DOCS.${symbol}`,
       ).toBe(true);
     });
   }

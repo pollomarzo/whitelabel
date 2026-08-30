@@ -1,7 +1,7 @@
 /**
- * gallery.test.ts — the journal site's `paper-cards` plugin ([R80]).
+ * gallery.test.ts: the journal site's `paper-cards` plugin ([R80]).
  *
- * The plugin is a standalone `.mjs` myst loads at runtime by URL, not engine TypeScript —
+ * The plugin is a standalone `.mjs` myst loads at runtime by URL, not engine TypeScript,
  * so vitest imports it directly. The directive/transform shell is deliberately thin and the
  * decisions are exported as PURE helpers, which is what makes them testable here with no
  * myst session and no network.
@@ -13,7 +13,7 @@ import { describe, it, expect } from 'vitest';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-// @ts-expect-error — a plain .mjs consumed by myst at runtime; no types by design.
+// @ts-expect-error: a plain .mjs consumed by myst at runtime; no types by design.
 import {
   selectEntries,
   paperUrls,
@@ -55,7 +55,7 @@ describe('selectEntries', () => {
     ).toEqual(['a', 'c']);
   });
 
-  it('preserves REGISTRY FILE ORDER — the editor controls sequence by insertion point', () => {
+  it('preserves REGISTRY FILE ORDER: the editor controls sequence by insertion point', () => {
     const reversed = [...registry].reverse();
     expect(selectEntries(reversed).map((e: { slug: string }) => e.slug)).toEqual(['c', 'b', 'a']);
   });
@@ -77,7 +77,7 @@ describe('paperUrls', () => {
     expect(u.configUrl).toBe('https://raw.githubusercontent.com/me/alpha-paper/HEAD/myst.yml');
   });
 
-  it('respects location.path — what keeps the n>1 tier reachable', () => {
+  it('respects location.path: what keeps the n>1 tier reachable', () => {
     const u = paperUrls(entry({ location: { repo: 'me/journal', path: 'papers/alpha' } }));
     expect(u.configUrl).toBe(
       'https://raw.githubusercontent.com/me/journal/HEAD/papers/alpha/myst.yml',
@@ -119,7 +119,7 @@ describe('cardFrom', () => {
     expect(node.value).toBe('DOI: 10.5281/zenodo.123');
     // Regression guard for the first live run: myst turns any link whose url is a DOI into a
     // `cite` (dois.ts:239-242), which renders a citation label + a bibliography on the card
-    // and costs a rate-limited doi.org fetch per paper — one bad DOI reddens the journal.
+    // and costs a rate-limited doi.org fetch per paper; one bad DOI reddens the journal.
     expect(JSON.stringify(card)).not.toContain('doi.org');
   });
 
@@ -132,14 +132,14 @@ describe('cardFrom', () => {
     expect(cardFrom(entry(), { project: {} }).children[0].children[0].value).toBe('alpha');
   });
 
-  it('does NOT fetch the thumbnail itself — myst downloads the emitted URL (stage: document)', () => {
+  it('does NOT fetch the thumbnail itself; myst downloads the emitted URL (stage: document)', () => {
     // The card carries a REMOTE image url; transformImagesToDisk localizes it later, which
     // is also what makes a broken thumbnail an error-kind warning under --strict.
     expect(cardFrom(entry(), config()).children[1].url).toMatch(/^https:\/\//);
   });
 });
 
-describe('fetchPaperConfig — failure is HARD (a broken registry must be fixed)', () => {
+describe('fetchPaperConfig: failure is HARD (a broken registry must be fixed)', () => {
   it('throws with the offending slug AND url; the fix is a registry edit, so name it', async () => {
     const notFound = async () => ({ ok: false, status: 404, statusText: 'Not Found' });
     await expect(fetchPaperConfig(entry(), notFound)).rejects.toThrow(

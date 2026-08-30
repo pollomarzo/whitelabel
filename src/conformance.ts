@@ -1,24 +1,24 @@
 /**
- * conformance.ts — the paper-CI conformance harness (`oak conformance`).
+ * conformance.ts: the paper-CI conformance harness (`oak conformance`).
  *
- * Certifies that the CI an engine version V stamps into paper repos works in all its parts —
+ * Certifies that the CI an engine version V stamps into paper repos works in all its parts:
  * build, Pages deploy, fork-safe preview, journal checks, the Zenodo deposit chain, the
- * self-bump — by driving the standing fixtures against V and asserting each path green.
+ * self-bump: by driving the standing fixtures against V and asserting each path green.
  * See `whitelabel/plan-paper-ci-conformance.md`.
  *
- * Slice C0 (this file, so far): the `reset` subcommand — the repeatability floor. Every cert
+ * Slice C0 (this file, so far): the `reset` subcommand, the repeatability floor. Every cert
  * run works on ephemeral, namespaced state (`cert-*` branches/PRs, a `*-cert-*` throwaway tag);
  * `reset` tears that down so runs are repeatable. Idempotent: a second reset is a no-op.
  *
  * The GitHub operations are behind the `ConformanceGh` seam so the orchestration is unit-tested
  * with the network faked (the BootstrapDeps/Provisioner pattern); a real run injects
- * `realConformanceGh` from gh.ts. The harness holds ONLY the fixture-scoped PAT — CF/Zenodo
+ * `realConformanceGh` from gh.ts. The harness holds ONLY the fixture-scoped PAT, CF/Zenodo
  * creds stay the fixture repo's own secrets, read back from the fixture run (plan §credentials).
  */
 import { STICKY_PREVIEW } from './preview.js';
 import { RESERVED_BUNDLE_NAMES } from './zenodo.js';
 
-/** Label stamped on every PR the harness opens — the robust teardown signal (works for fork
+/** Label stamped on every PR the harness opens, the robust teardown signal (works for fork
  *  PRs whose head branch the harness does not name). Provisioned on the fixture in C0. */
 export const CONFORMANCE_LABEL = 'conformance';
 
@@ -26,12 +26,12 @@ export const CONFORMANCE_LABEL = 'conformance';
 export const CERT_BRANCH_PREFIX = 'cert-';
 
 /** Substring marking a throwaway cert *branch*-side tag (reset sweeps `*-cert-*`). NOT usable
- *  for the deposit tag — `oak release` requires a clean `vX.Y.Z` (see `CERT_DEPOSIT_TAG`). */
+ *  for the deposit tag: `oak release` requires a clean `vX.Y.Z` (see `CERT_DEPOSIT_TAG`). */
 export const CERT_TAG_MARKER = '-cert-';
 
 /** The C3 deposit tag. `oak release` rejects anything but `/^v\d+\.\d+\.\d+$/`, so it can't
  *  carry the `-cert-` marker; a reserved throwaway version (won't collide with the fixture's
- *  real `v0.0.1`/`v0.0.2`) is pushed, published, asserted, then deleted. Reused every run —
+ *  real `v0.0.1`/`v0.0.2`) is pushed, published, asserted, then deleted. Reused every run:
  *  the deposit draft is keyed by github/id, not the tag, so the version label is immaterial. */
 export const CERT_DEPOSIT_TAG = 'v0.0.0';
 
@@ -53,7 +53,7 @@ export interface ConformanceGh {
   // --- C1: install-V + push→main -------------------------------------------------------
   /** Add `label` to PR #n (so reset/teardown can find it). */
   labelPr(repo: string, prNumber: number, label: string): void;
-  /** The PR's HEAD commit sha — the ref the merge-gating Check Run is posted on. */
+  /** The PR's HEAD commit sha: the ref the merge-gating Check Run is posted on. */
   prHeadSha(repo: string, prNumber: number): string;
   /** Merge PR #n (delete its branch) and return the resulting merge-commit sha. */
   mergePr(repo: string, prNumber: number): string;
@@ -72,9 +72,9 @@ export interface ConformanceGh {
 
   // --- C3: deposit chain (publish/release half) ----------------------------------------
   /** The committed `project.doi` from the fixture's `myst.yml` on the default branch, or null
-   *  if unset — the C3 precondition (the fixture must carry a sandbox DOI). */
+   *  if unset: the C3 precondition (the fixture must carry a sandbox DOI). */
   committedDoi(repo: string): string | null;
-  /** The default branch (`main`) HEAD sha — the ref the throwaway cert tag points at. */
+  /** The default branch (`main`) HEAD sha, the ref the throwaway cert tag points at. */
   defaultBranchSha(repo: string): string;
   /** Create a lightweight tag `tag` → `sha` (the `v*` push that triggers publish.yml). */
   pushTag(repo: string, tag: string, sha: string): void;
@@ -87,7 +87,7 @@ export interface ConformanceGh {
   deleteRelease(repo: string, tag: string): void;
 
   // --- fork-PR preview path (optional, lab-tier) ---------------------------------------
-  /** Delete `refs/heads/<prefix>*` on the FORK (fork token) — idempotency for stale cert
+  /** Delete `refs/heads/<prefix>*` on the FORK (fork token), idempotency for stale cert
    *  branches a crashed run left behind. Returns the swept branch names. */
   sweepForkBranches(forkRepo: string, forkToken: string, prefix: string): string[];
   /** Open a CROSS-fork PR: on the fork (fork token) branch off its default branch and bump the
@@ -105,12 +105,12 @@ export interface ConformanceGh {
   /** Delete the fork's cert branch (fork token); tolerates an already-absent ref. */
   deleteForkBranch(forkRepo: string, forkToken: string, branch: string): void;
   /** Approve a workflow run awaiting the first-time-contributor gate (the gate is on the BASE
-   *  repo, so the PRIMARY token). TOLERANT — a no-op when approval isn't required. */
+   *  repo, so the PRIMARY token). TOLERANT: a no-op when approval isn't required. */
   approveWorkflowRun(repo: string, runId: number): void;
 }
 
 export interface WorkflowRun {
-  id: number; // the run id — needed to approve/poll a *specific* run (C3)
+  id: number; // the run id; needed to approve/poll a *specific* run (C3)
   name: string;
   status: string; // queued | in_progress | completed
   conclusion: string | null; // success | failure | … (null until completed)
@@ -128,17 +128,17 @@ export interface ConformanceDeps {
   log(msg: string): void;
   /** Await `ms` between polls (injected so tests run without real waits). */
   sleep(ms: number): Promise<void>;
-  /** HTTP status of a GET to `url` (0 on network error) — the Pages-serves assertion. */
+  /** HTTP status of a GET to `url` (0 on network error), the Pages-serves assertion. */
   probe(url: string): Promise<number>;
   /** Install engine `tag` into `repo` via `oak upgrade --both` (dogfoods the migration path).
    *  Returns the opened PR, or `upToDate` when the pin already equals `tag`. */
   installEngine(repo: string, tag: string): Promise<{ upToDate: boolean; prNumber: number | null; prUrl: string | null }>;
   /** The second-account fork (repo + its own PAT) for the optional fork-PR preview phase, or null
-   *  when unconfigured — the phase then self-skips so certs keep working pre-provisioning. */
+   *  when unconfigured: the phase then self-skips so certs keep working pre-provisioning. */
   fork?: { repo: string; token: string } | null;
 }
 
-/** reset needs only the teardown seam — kept narrow so its callers stay light. */
+/** reset needs only the teardown seam, kept narrow so its callers stay light. */
 export type ResetDeps = Pick<ConformanceDeps, 'gh' | 'log'>;
 
 export interface Outcome {
@@ -148,14 +148,14 @@ export interface Outcome {
 
 export interface ResetInput {
   /** The fixture paper repo, owner/name. Fork PRs surface here too (their head is on the fork,
-   *  which the reset never touches — the fork uses a standing head branch, plan C2). */
+   *  which the reset never touches: the fork uses a standing head branch, plan C2). */
   repo: string;
 }
 
 /**
  * Tear down the ephemeral state of prior cert runs so the fixture is a clean reset point.
  * Order: close labelled PRs first (so the PR list is clean even if a later branch delete is
- * denied), then delete `cert-*` branches, then `*-cert-*` tags. Every step is idempotent —
+ * denied), then delete `cert-*` branches, then `*-cert-*` tags. Every step is idempotent:
  * an absent target is skipped, not an error.
  */
 export async function cmdConformanceReset(input: ResetInput, deps: ResetDeps): Promise<Outcome> {
@@ -178,11 +178,11 @@ export async function cmdConformanceReset(input: ResetInput, deps: ResetDeps): P
 
   // Cert tags: the `*-cert-*` branch-side markers plus the reserved deposit tag (which carries
   // no marker). `listTags` is a substring match, so `v0.0.0` also catches any `v0.0.0-cert-*`
-  // leftover from the pre-fix tag scheme — the Set dedups the overlap.
+  // leftover from the pre-fix tag scheme; the Set dedups the overlap.
   const certTags = new Set([...gh.listTags(repo, CERT_TAG_MARKER), ...gh.listTags(repo, CERT_DEPOSIT_TAG)]);
   const deletedTags: string[] = [];
   for (const tag of certTags) {
-    // A crashed C3 run leaves a GH Release on the cert tag — clean it too. `deleteRelease`'s
+    // A crashed C3 run leaves a GH Release on the cert tag, clean it too. `deleteRelease`'s
     // `--cleanup-tag` also removes the tag, so the following `deleteTag` is a tolerated no-op.
     gh.deleteRelease(repo, tag);
     gh.deleteTag(repo, tag);
@@ -200,20 +200,20 @@ export async function cmdConformanceReset(input: ResetInput, deps: ResetDeps): P
 }
 
 /* ==========================================================================================
- * C1 — install V + certify the push→main path
+ * C1: install V + certify the push→main path
  * ======================================================================================== */
 
 /** Poll bounds for waiting on real runs. A push→main Paper CI + Pages deploy is minutes; be
  *  generous. Tests inject a no-op `sleep`. */
 const POLL = { tries: 80, intervalMs: 15_000 };
 
-/** Probe retry bounds — a preview/Pages URL can 5xx/refuse briefly right after deploy. */
+/** Probe retry bounds: a preview/Pages URL can 5xx/refuse briefly right after deploy. */
 const PROBE = { tries: 6, intervalMs: 5_000 };
 
 /**
- * A failure that is NOT the engine's fault — a third-party outage/slowness (Cloudflare, Pages,
+ * A failure that is NOT the engine's fault, a third-party outage/slowness (Cloudflare, Pages,
  * Zenodo, the GitHub API) or a poll timeout. It yields an **inconclusive** verdict, never a red
- * "the engine is broken": a cert red must mean *us* (design C4 — "red must mean us").
+ * "the engine is broken": a cert red must mean *us* (design C4, "red must mean us").
  */
 export class ThirdPartyError extends Error {
   constructor(message: string) {
@@ -224,7 +224,7 @@ export class ThirdPartyError extends Error {
 
 /**
  * Call `attempt` until it returns a value (ready), rethrowing whatever it throws (a definitive
- * failure — e.g. a concluded-but-failed run); `null` means "keep waiting". A timeout is treated
+ * failure: e.g. a concluded-but-failed run); `null` means "keep waiting". A timeout is treated
  * as third-party (a stuck/slow runner is not an engine defect).
  */
 async function pollUntil<T>(
@@ -238,13 +238,13 @@ async function pollUntil<T>(
     if (ready !== null) return ready;
     if (i < opts.tries - 1) await deps.sleep(opts.intervalMs);
   }
-  throw new ThirdPartyError(`timed out waiting for ${label} (${opts.tries}×${opts.intervalMs}ms) — slow/stuck third party`);
+  throw new ThirdPartyError(`timed out waiting for ${label} (${opts.tries}×${opts.intervalMs}ms); slow/stuck third party`);
 }
 
 /**
  * Assert a URL serves 200, retrying transient statuses (network error / 429 / 5xx) with backoff.
  * A persistent transient → `ThirdPartyError` (inconclusive); a definitive 4xx (e.g. 404 = nothing
- * deployed) → a normal Error (our break — the deploy produced no page).
+ * deployed) → a normal Error (our break: the deploy produced no page).
  */
 async function assertServes200(
   deps: { probe(url: string): Promise<number>; sleep(ms: number): Promise<void> },
@@ -259,7 +259,7 @@ async function assertServes200(
     if (!transient(status)) throw new Error(`${label} ${url} returned ${status}, expected 200`);
     if (i < PROBE.tries - 1) await deps.sleep(PROBE.intervalMs);
   }
-  throw new ThirdPartyError(`${label} ${url} still ${status} after ${PROBE.tries} tries — transient/outage`);
+  throw new ThirdPartyError(`${label} ${url} still ${status} after ${PROBE.tries} tries; transient/outage`);
 }
 
 /** null = still pending; the ref when it concluded success; throws when it concluded !success. */
@@ -295,7 +295,7 @@ function extractPreviewUrl(commentBody: string): string | null {
 /**
  * Certify the **push→main** path for engine version V: install V via the dogfooded migration
  * PR, let the fixture's required "Journal checks" gate the merge (which also exercises the PR
- * check→check-post path), then assert — at the *part* level, not just run conclusions — that
+ * check→check-post path), then assert (at the *part* level, not just run conclusions) that
  * Paper CI (build + Pages) is green, Pages actually serves 200, and the "Journal checks" Check
  * Run was posted on main. C2 (PR previews + sticky), C3 (deposit), C4 (verdict) append here.
  */
@@ -311,7 +311,7 @@ export async function cmdConformanceCertify(input: CertifyInput, deps: Conforman
     // 1. Clean baseline (idempotent teardown of any prior run's ephemeral state).
     await cmdConformanceReset({ repo }, { gh, log });
 
-    // 2. Install V by dogfooding the migration path (not a raw copy — the re-copy is under test).
+    // 2. Install V by dogfooding the migration path (not a raw copy; the re-copy is under test).
     const up = await installEngine(repo, tag);
     if (up.upToDate || up.prNumber === null) {
       return {
@@ -320,7 +320,7 @@ export async function cmdConformanceCertify(input: CertifyInput, deps: Conforman
           status: 'failed',
           tag,
           path: 'install',
-          failure: `no upgrade PR — the fixture pin already equals ${tag}. Cut a fresh dev tag so push→main has a change to certify.`,
+          failure: `no upgrade PR: the fixture pin already equals ${tag}. Cut a fresh dev tag so push→main has a change to certify.`,
         },
       };
     }
@@ -328,7 +328,7 @@ export async function cmdConformanceCertify(input: CertifyInput, deps: Conforman
     gh.labelPr(repo, prNumber, CONFORMANCE_LABEL);
     log(`upgrade PR #${prNumber}: ${up.prUrl}`);
 
-    // 3. Wait for the required "Journal checks" to pass on the PR — the merge gate, and the
+    // 3. Wait for the required "Journal checks" to pass on the PR, the merge gate, and the
     //    prerequisite that exercises the PR check→check-post path for free.
     const prSha = gh.prHeadSha(repo, prNumber);
     await pollUntil(
@@ -347,13 +347,13 @@ export async function cmdConformanceCertify(input: CertifyInput, deps: Conforman
       () => {
         const ci = gh.workflowRunsForCommit(repo, mergeSha).find((r) => r.name === 'Paper CI' && r.event === 'push');
         if (!ci || ci.status !== 'completed') return null;
-        if (ci.conclusion !== 'success') throw new Error(`Paper CI concluded ${ci.conclusion} — ${ci.url}`);
+        if (ci.conclusion !== 'success') throw new Error(`Paper CI concluded ${ci.conclusion}: ${ci.url}`);
         return ci;
       },
       { sleep, log },
     );
 
-    // 6. Pages actually SERVES (the part, not just the deploy job's conclusion — "green-but-empty").
+    // 6. Pages actually SERVES (the part, not just the deploy job's conclusion, "green-but-empty").
     const pagesUrl = pagesUrlFor(repo);
     await assertServes200({ probe, sleep }, pagesUrl, 'Pages');
     log(`Pages 200: ${pagesUrl}`);
@@ -374,19 +374,19 @@ export async function cmdConformanceCertify(input: CertifyInput, deps: Conforman
     gh.labelPr(repo, previewPr.number, CONFORMANCE_LABEL);
     log(`same-repo preview PR #${previewPr.number} (${branch})`);
 
-    // Stage 1: Paper CI build on the PR (secretless by design — the untrusted build job).
+    // Stage 1: Paper CI build on the PR (secretless by design, the untrusted build job).
     await pollUntil(
       `Paper CI (PR #${previewPr.number} build)`,
       () => {
         const ci = gh.workflowRunsForCommit(repo, previewPr.headSha).find((r) => r.name === 'Paper CI' && r.event === 'pull_request');
         if (!ci || ci.status !== 'completed') return null;
-        if (ci.conclusion !== 'success') throw new Error(`Paper CI (PR) concluded ${ci.conclusion} — ${ci.url}`);
+        if (ci.conclusion !== 'success') throw new Error(`Paper CI (PR) concluded ${ci.conclusion}: ${ci.url}`);
         return ci;
       },
       { sleep, log },
     );
 
-    // Stage 2: the preview sticky comment, posted from base context (workflow_run) — its very
+    // Stage 2: the preview sticky comment, posted from base context (workflow_run); its very
     // presence proves the fork-safe build→deploy split ran end to end.
     const previewBody = await pollUntil(
       `preview sticky comment on PR #${previewPr.number}`,
@@ -396,7 +396,7 @@ export async function cmdConformanceCertify(input: CertifyInput, deps: Conforman
 
     // The preview actually SERVES 200 (not just that a comment was posted).
     const previewUrl = extractPreviewUrl(previewBody);
-    if (!previewUrl) throw new Error('preview comment posted but carries no Cloudflare URL — degraded to artifact (fixture CF secrets missing?)');
+    if (!previewUrl) throw new Error('preview comment posted but carries no Cloudflare URL; degraded to artifact (fixture CF secrets missing?)');
     await assertServes200({ probe, sleep }, previewUrl, 'preview');
     log(`preview 200: ${previewUrl}`);
 
@@ -408,7 +408,7 @@ export async function cmdConformanceCertify(input: CertifyInput, deps: Conforman
     // ---- Phase: deposit chain (the publish/release half) --------------------------------
     // C3 certifies publish.yml → `oak release`: the tag push, the required-reviewer gate, and
     // the 5-file deposit bundle landing on the tag's GitHub Release ([R24]). It does NOT test
-    // prepare-from-scratch — the fixture already carries a committed sandbox DOI and cmdPrepare
+    // prepare-from-scratch: the fixture already carries a committed sandbox DOI and cmdPrepare
     // refuses when one is set (per-run DOI mutation is explicitly deferred). The harness holds
     // no Zenodo token, so it asserts the deposit token-free via the Release assets (same bytes).
     phase = 'deposit';
@@ -423,7 +423,7 @@ export async function cmdConformanceCertify(input: CertifyInput, deps: Conforman
     }
     log(`fixture sandbox DOI: ${doi}`);
 
-    // 2. Push the reserved deposit tag at main HEAD — a clean `vX.Y.Z` `oak release` accepts.
+    // 2. Push the reserved deposit tag at main HEAD, a clean `vX.Y.Z` `oak release` accepts.
     //    Delete any stale one first (a prior crash), so the push + `gh release create` are clean.
     const depositTag = CERT_DEPOSIT_TAG;
     gh.deleteRelease(repo, depositTag); // --cleanup-tag also drops the tag; tolerant of absence
@@ -442,11 +442,11 @@ export async function cmdConformanceCertify(input: CertifyInput, deps: Conforman
           .find((r) => r.name === 'Publish Zenodo deposit' && r.event === 'push');
         if (!run) return null;
         if (run.status === 'completed') {
-          // Concluded before we could approve (no gate, or a failure) — decide now.
-          if (run.conclusion !== 'success') throw new Error(`Publish Zenodo deposit concluded ${run.conclusion} — ${run.url}`);
+          // Concluded before we could approve (no gate, or a failure), decide now.
+          if (run.conclusion !== 'success') throw new Error(`Publish Zenodo deposit concluded ${run.conclusion}: ${run.url}`);
           return run;
         }
-        if (run.status !== 'waiting') return null; // queued/in_progress — keep waiting for the gate
+        if (run.status !== 'waiting') return null; // queued/in_progress; keep waiting for the gate
         return run;
       },
       { sleep, log },
@@ -460,13 +460,13 @@ export async function cmdConformanceCertify(input: CertifyInput, deps: Conforman
       () => {
         const run = gh.workflowRunsForCommit(repo, tagSha).find((r) => r.id === publishRun.id);
         if (!run || run.status !== 'completed') return null;
-        if (run.conclusion !== 'success') throw new Error(`Publish Zenodo deposit concluded ${run.conclusion} — ${run.url}`);
+        if (run.conclusion !== 'success') throw new Error(`Publish Zenodo deposit concluded ${run.conclusion}: ${run.url}`);
         return run;
       },
       { sleep, log },
     );
 
-    // 4. The deposit bundle (the exact deposited bytes) landed on the tag's GH Release — assert
+    // 4. The deposit bundle (the exact deposited bytes) landed on the tag's GH Release, assert
     //    all five reserved files are present. This is the token-free deposit assertion ([R24]).
     const releaseAssets = gh.releaseAssets(repo, depositTag);
     const missing = RESERVED_BUNDLE_NAMES.filter((n) => !releaseAssets.includes(n));
@@ -497,7 +497,7 @@ export async function cmdConformanceCertify(input: CertifyInput, deps: Conforman
       log(`fork PR #${forkPr.number} from ${fork.repo}:${forkBranch}`);
 
       // The fork PR's Paper CI run may sit in action_required (awaiting the first-time-contributor
-      // gate) — find it, then approve (tolerant: no-op if not gated).
+      // gate): find it, then approve (tolerant: no-op if not gated).
       const forkRun = await pollUntil(
         `fork PR #${forkPr.number} Paper CI run`,
         () => gh.workflowRunsForCommit(repo, forkPr.headSha).find((r) => r.name === 'Paper CI' && r.event === 'pull_request') ?? null,
@@ -511,7 +511,7 @@ export async function cmdConformanceCertify(input: CertifyInput, deps: Conforman
         () => {
           const r = gh.workflowRunsForCommit(repo, forkPr.headSha).find((x) => x.name === 'Paper CI' && x.event === 'pull_request');
           if (!r || r.status !== 'completed') return null;
-          if (r.conclusion !== 'success') throw new Error(`fork Paper CI concluded ${r.conclusion} — ${r.url}`);
+          if (r.conclusion !== 'success') throw new Error(`fork Paper CI concluded ${r.conclusion}: ${r.url}`);
           return r;
         },
         { sleep, log },
@@ -524,7 +524,7 @@ export async function cmdConformanceCertify(input: CertifyInput, deps: Conforman
         { sleep, log },
       );
       const forkPreviewUrl = extractPreviewUrl(forkBody);
-      if (!forkPreviewUrl) throw new Error('fork preview comment carries no Cloudflare URL — degraded to artifact?');
+      if (!forkPreviewUrl) throw new Error('fork preview comment carries no Cloudflare URL; degraded to artifact?');
       await assertServes200({ probe, sleep }, forkPreviewUrl, 'fork preview');
       log(`fork preview 200: ${forkPreviewUrl}`);
 
@@ -534,7 +534,7 @@ export async function cmdConformanceCertify(input: CertifyInput, deps: Conforman
       paths.push('preview-fork');
       forkResult = { forkPr: forkPr.number, forkPreviewUrl };
     } else {
-      log('fork preview phase SKIPPED (no fork configured — set CONFORMANCE_FORK_REPO/PAT to enable)');
+      log('fork preview phase SKIPPED (no fork configured; set CONFORMANCE_FORK_REPO/PAT to enable)');
     }
 
     log(`engine ${tag}: paper-CI CERTIFIED (${paths.join(', ')})`);

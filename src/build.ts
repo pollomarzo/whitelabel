@@ -1,5 +1,5 @@
 /**
- * build.ts — `oak build`, the two-pass orchestrator ([R52], design §12a).
+ * build.ts: `oak build`, the two-pass orchestrator ([R52], design §12a).
  *
  * The author's `myst.yml` is READ-ONLY ([R71]); both passes write the DERIVED config
  * (`myst.oak.yml`) beside it, and myst is pointed there via `Session({ configFiles })`.
@@ -9,11 +9,11 @@
  * Pass 2: compose(resolved) → ownOverride → write the complete engine typst entry +
  *         theme `site.template` into the derived config → build.
  *
- * Both passes live in `materializeDerived`, which `oak validate` calls too ([R82]) — one
+ * Both passes live in `materializeDerived`, which `oak validate` calls too ([R82]), one
  * materialization, so what validate checks cannot drift from what the build renders.
  *
  * The myst edge (loadConfig + build) is injected as `MystEdge` so this orchestration is
- * unit-testable with a fake — the real edge (myst.ts) pulls in the bundled myst-cli.
+ * unit-testable with a fake: the real edge (myst.ts) pulls in the bundled myst-cli.
  */
 import { join } from 'node:path';
 import type { ISession } from 'myst-cli';
@@ -35,7 +35,7 @@ import {
 export interface BuildOpts {
   all?: boolean;
   html?: boolean;
-  /** Build only the typst export, no HTML site — the offline canary path (site HTML
+  /** Build only the typst export, no HTML site, the offline canary path (site HTML
    *  needs a network theme zip; validated live in CI instead). */
   exportsOnly?: boolean;
 }
@@ -54,25 +54,25 @@ export interface StartOpts {
  * The seam to mystmd (myst.ts implements it with the bundled myst-cli).
  *
  * `configFile` selects WHICH config in `dir` myst reads, via `new Session({ configFiles })`
- * ([R71]). Omitted → myst's default (`myst.yml`/`myst.yaml`), i.e. the author's own config —
+ * ([R71]). Omitted → myst's default (`myst.yml`/`myst.yaml`), i.e. the author's own config,
  * which is only what a DEGRADED `oak validate` reads (nothing to compose, [R82]). `build` and a
  * composed `validate` both pass the derived config. Sessions are cached per config name in the
  * real edge.
  */
 export interface MystEdge {
-  /** loadConfig(session, dir).project — the resolved project frontmatter. */
+  /** loadConfig(session, dir).project, the resolved project frontmatter. */
   loadProject(dir: string, configFile?: string): Promise<ResolvedProject>;
   /** build(session, [], opts) from within `dir`. */
   build(dir: string, opts: BuildOpts, configFile?: string): Promise<void>;
   /**
-   * startServer(session, opts) from within `dir` — the dev server behind `oak start`.
+   * startServer(session, opts) from within `dir`, the dev server behind `oak start`.
    * Resolves once the server is UP (myst's own contract) and leaves it running, so the
    * caller must not let the process exit afterwards.
    */
   start(dir: string, opts: StartOpts, configFile?: string): Promise<void>;
   /**
    * Load AND process the project at `dir` (config + current-project pointer + mdast), then run
-   * `fn` against the myst Session with the current project set — so the curvenote Layer-B checks
+   * `fn` against the myst Session with the current project set, so the curvenote Layer-B checks
    * can read the store (`selectCurrentProjectConfig` needs the pointer, [R59]; `abstract-exists`
    * reads processed mdast). Frontmatter/abstract checks need this, NOT a full build/export.
    */
@@ -94,11 +94,11 @@ export interface MaterializeInput {
 }
 
 export interface MaterializeResult {
-  /** The pass-1 resolved project — the author's config with the `extends:` chain merged in.
+  /** The pass-1 resolved project: the author's config with the `extends:` chain merged in.
    *  It carries every layer-declared field (`thumbnail`, venue, license…) but NOT compose's
    *  pass-2 stamps; those live in the derived FILE, which is what a myst session reads. */
   resolvedProject: ResolvedProject;
-  /** The derived config on disk (`<paperRoot>/myst.oak.yml`) — point myst at it. */
+  /** The derived config on disk (`<paperRoot>/myst.oak.yml`), point myst at it. */
   derivedPath: string;
   extendsChain: string[];
   /** The edition read RAW from the author's config (pre-extends, the shim's `yq` read). */
@@ -108,7 +108,7 @@ export interface MaterializeResult {
 }
 
 /**
- * The two-pass derived-config materialization ([R71]) — shared by `oak build` and
+ * The two-pass derived-config materialization ([R71]), shared by `oak build` and
  * `oak validate` ([R82]) so neither can drift from what actually ships. Writes
  * `<paperRoot>/myst.oak.yml` and leaves it there (myst's `process.exit(0)` defeats cleanup;
  * the frozen paper template gitignores it).
@@ -116,7 +116,7 @@ export interface MaterializeResult {
  * `preflight` runs BETWEEN the passes, on the pass-1 resolved project, and may throw:
  * `oak build` gates itself there ([R21]) so a structurally broken paper never reaches compose
  * or pass 2. Keeping the hook inside rather than after preserves exactly which error a
- * doubly-broken paper reports — compose throws too (the R36 coordinate cross-check).
+ * doubly-broken paper reports: compose throws too (the R36 coordinate cross-check).
  */
 export async function materializeDerived(
   input: MaterializeInput,
@@ -124,7 +124,7 @@ export async function materializeDerived(
 ): Promise<MaterializeResult> {
   const { paperRoot, engineRoot, instanceRoot, engineRepo, baseUrl, assetOverrides, edge } = input;
 
-  // The author's config is an INPUT — read, never written ([R71]). Everything the engine
+  // The author's config is an INPUT: read, never written ([R71]). Everything the engine
   // injects goes to the DERIVED config beside it, which is what myst is pointed at.
   const authorPath = join(paperRoot, 'myst.yml');
   const derivedPath = join(paperRoot, DERIVED_CONFIG_FILE);
@@ -147,11 +147,11 @@ export async function materializeDerived(
 
   preflight?.(resolvedProject, { edition });
 
-  // Raw brand asset fields ([R62]) — read from brand.yml directly (not the merged config)
+  // Raw brand asset fields ([R62]), read from brand.yml directly (not the merged config)
   // so compose absolutizes only brand-declared assets against `<instanceRoot>/brand`.
   const brandAssets = instanceRoot ? readBrandAssetOptions(instanceRoot) : undefined;
 
-  // The tenant's own typst template ([R76]) — same raw-lift discipline, from journal.yml.
+  // The tenant's own typst template ([R76]), same raw-lift discipline, from journal.yml.
   const tenantTypstTemplate = instanceRoot ? readTenantTypstTemplate(instanceRoot) : undefined;
 
   // --- compose over the resolved config (runs the R36 cross-check) -------------------
@@ -170,7 +170,7 @@ export async function materializeDerived(
   });
 
   // --- Pass 2: apply the engine override to the derived config ----------------------
-  // This is the pass that stamps `template` AND `output` ([R71-out]) — without it a myst
+  // This is the pass that stamps `template` AND `output` ([R71-out]); without it a myst
   // session reading the derived config would resolve the export to myst's default path,
   // derived from the DECLARING file, which the build never writes.
   applyOwnOverride(doc, result.ownOverride);
@@ -211,7 +211,7 @@ export async function runBuild(input: RunBuildInput): Promise<RunBuildResult> {
         edition,
       });
       // Only STRUCTURAL invariants (missing index.md / stray myst.yml) gate the build. Identity
-      // errors (a placeholder/invalid/duplicate id) do NOT stop the build — the id is enforced at
+      // errors (a placeholder/invalid/duplicate id) do NOT stop the build; the id is enforced at
       // merge via the Journal-checks Check Run, so a fresh repo still renders a preview to look at
       // (id-gate-relocation). They surface as warnings alongside the brand warns.
       const blocking = layerA.filter((f) => f.severity === 'error' && f.klass === 'structural');
@@ -239,7 +239,7 @@ export interface RunStartInput extends MaterializeInput {
 }
 
 /**
- * `oak start` — compose exactly as `oak build` does, then hand the DERIVED config to myst's
+ * `oak start`: compose exactly as `oak build` does, then hand the DERIVED config to myst's
  * dev server. The point is that a local preview and the CI build read the same file: an author
  * previewing with a bare `myst start` sees their own myst.yml, without the journal's branding,
  * edition or export settings, and only finds out at PR time.

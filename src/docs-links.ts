@@ -1,5 +1,5 @@
 /**
- * docs-links.ts — the tenant-facing documentation link table.
+ * docs-links.ts: the tenant-facing documentation link table.
  *
  * Messages, seeded templates and errors reference a SYMBOL here, never a URL string. Two
  * consequences worth keeping: the domain lives in exactly one constant (`DOCS_BASE` in
@@ -7,7 +7,7 @@
  * prose.
  *
  * Each value is a TOPIC: a page path, optionally with an anchor. Every anchor names an
- * explicit `(label)=` target written into the page at that spot — never a heading slug,
+ * explicit `(label)=` target written into the page at that spot, never a heading slug,
  * which would move silently when the heading is reworded. `docs/` and this table are
  * therefore edited together; the docs build fails on a label that no longer resolves.
  */
@@ -21,7 +21,7 @@ export const DOCS = {
   /** Why the journal website 404s for a few minutes after the first push. */
   journalFirstDeploy: 'start/journal#first-deploy',
 
-  /** What to do with a paper repo an editor has just created — the author's first read. */
+  /** What to do with a paper repo an editor has just created, the author's first read. */
   paperStart: 'start/paper',
   /** How a paper repo reaches the journal's settings: `pins.yml`, resolved at build time. */
   paperJournalLink: 'start/paper#paper-journal-link',
@@ -39,7 +39,7 @@ export const DOCS = {
   checks: 'guide/checks',
   /** Adding, removing, and de-fanging checks. */
   checksChanging: 'guide/checks#changing-the-set',
-  /** `oak validate` runs the paper's own plugin code — read before validating a submission. */
+  /** `oak validate` runs the paper's own plugin code; read before validating a submission. */
   validateRunsPaperCode: 'guide/checks#validate-runs-paper-code',
 
   /** Branding: what each knob in `brand/brand.yml` actually changes. */

@@ -1,10 +1,10 @@
 /**
- * gallery.mjs — the journal site's `paper-cards` directive (design §5; [S2]).
+ * gallery.mjs: the journal site's `paper-cards` directive (design §5; [S2]).
  *
  * A port of `impact-scholars.github.io/plugins/paper-gallery.mjs`, re-pointed from
  * `papers.txt` + a hardcoded org constant to the **registry** (`registry/papers.yml`,
- * design §9). Every URL is derived from a registry entry's `location` — never from an org
- * constant — so the same plugin serves any tenant.
+ * design §9). Every URL is derived from a registry entry's `location`, never from an org
+ * constant, so the same plugin serves any tenant.
  *
  * This file is ENGINE-owned but is NOT engine TypeScript: myst consumes it at runtime by
  * tag-pinned raw URL (`project.plugins:` accepts remote `.mjs`, myst-cli `config.ts:415-419`),
@@ -12,19 +12,19 @@
  *
  * WHY IT MUST STAY DEPENDENCY-LIGHT: myst downloads a remote plugin into
  * `<project>/_build/cache/config-item-<hash>.mjs` and imports it from there, so every bare
- * import must resolve from the SITE repo's own `node_modules` — the mystmd install (an npx
+ * import must resolve from the SITE repo's own `node_modules`: the mystmd install (an npx
  * cache) is not on that resolution path. `js-yaml` is therefore declared in the site
  * scaffold's `package.json` and installed by the site workflow. Add nothing else here
  * without adding it there too.
  *
  * FAILURE IS HARD, ON PURPOSE. A registry entry whose `myst.yml` will not fetch is a broken
- * registry: it must be fixed, not papered over. A failed build is not an outage — Pages keeps
+ * registry: it must be fixed, not papered over. A failed build is not an outage, Pages keeps
  * serving the last successful deploy, so the live journal stays exactly as it was until the
  * entry is corrected. Degrading would publish a visibly broken card to readers and bury the
  * signal in a log nobody reads. Note the division of labour, CORRECTED by a live run ([R80]):
  * the `throw` below covers PER-PAPER failures (it propagates and crashes the build regardless
  * of flags); `--strict` covers errors raised while building a page (a bad DOI, a missing
- * image); and NEITHER covers "the plugin never loaded at all" — myst logs `Unknown plugin` +
+ * image); and NEITHER covers "the plugin never loaded at all"; myst logs `Unknown plugin` +
  * `unknown directive` and still exits 0, deploying a gallery-less page over a good one. That
  * third case is caught in the site workflow by asserting this plugin's `name` appears in the
  * build log, which is why the name below is load-bearing: do not rename it casually.
@@ -57,7 +57,7 @@ export function loadRegistry(file = REGISTRY_PATH) {
   } catch (err) {
     throw new Error(
       `paper-cards: cannot read the paper registry at "${file}" (${err.message}). ` +
-        `The gallery is built from this repo's registry — run the build from the repo root.`,
+        `The gallery is built from this repo's registry, run the build from the repo root.`,
     );
   }
   const entries = yaml.load(raw) ?? [];
@@ -68,7 +68,7 @@ export function loadRegistry(file = REGISTRY_PATH) {
 }
 
 /**
- * The papers a `:::{paper-cards}` block shows, in **registry file order** — the editor
+ * The papers a `:::{paper-cards}` block shows, in **registry file order**: the editor
  * controls sequence by where they insert the entry, which is the one ordering rule that
  * needs no extra field. `edition` omitted → every registered paper (what the scaffold's
  * single page uses); a fresh journal has exactly one edition, and a tenant who grows a
@@ -80,7 +80,7 @@ export function selectEntries(registry, opts = {}) {
 }
 
 /** `location.path` as a URL prefix: '.' / '' → '', 'papers/x' → 'papers/x/'. Kept even
- *  though every entry is `.` today — it is what keeps the repo=journal (n>1) tier reachable
+ *  though every entry is `.` today: it is what keeps the repo=journal (n>1) tier reachable
  *  without touching this plugin ([S7]). */
 function pathPrefix(path) {
   const trimmed = (path ?? '.').replace(/^\.$/, '').replace(/^\/+|\/+$/g, '');
@@ -136,7 +136,7 @@ export function cardFrom(entry, config) {
   // into a `cite` node (`myst-cli/transforms/dois.ts:239-242`, no per-node opt-out), which
   // on a gallery card is wrong twice over: the card would render a citation label plus a
   // stray bibliography instead of the identifier, and each card would cost a doi.org
-  // metadata fetch per build — rate-limited upstream, and one unreachable DOI fails the
+  // metadata fetch per build: rate-limited upstream, and one unreachable DOI fails the
   // whole journal under `--strict`. Found on the first live run, with a sandbox DOI.
   // The card itself already links to the paper, whose own page carries a real DOI link.
   if (entry.doi) {
@@ -217,7 +217,7 @@ function paperCardsTransform(opts, utils) {
 const plugin = {
   name: 'Paper Gallery',
   directives: [paperCardsDirective],
-  // `stage: 'document'` is load-bearing, not incidental — see the thumbnail note at the top.
+  // `stage: 'document'` is load-bearing, not incidental; see the thumbnail note at the top.
   transforms: [{ plugin: paperCardsTransform, stage: 'document' }],
 };
 

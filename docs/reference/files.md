@@ -16,14 +16,14 @@ What `oak bootstrap journal --external` leaves you with, and who reads each file
 | `.gitignore` | git | keeps `_build/` and `node_modules/` out of the repository |
 | `.github/workflows/site.yml` | GitHub Actions | builds and deploys the website |
 
-Two things this repository does not have: any engine machinery (no workflow runs `oak` here —
+Two things this repository does not have: any engine machinery (no workflow runs `oak` here;
 the website is a plain MyST build) and any branch protection (bootstrap adds none; see
 [pushing edits](../start/journal.md#push-your-edits)).
 
 It does have one hard requirement: **it must stay public.** Every paper build clones it without
 a token, including builds of pull requests opened from forks. `oak bootstrap journal` creates it
 public, and a later re-run of that command against an existing private repository makes it
-public again — but nothing watches the setting in between. Making this repository private breaks
+public again, but nothing watches the setting in between. Making this repository private breaks
 every paper's next build until someone notices.
 
 (file-journal-yml)=
@@ -31,7 +31,7 @@ every paper's next build until someone notices.
 
 The journal's settings: its name, the rule paper ids must follow, the editorial checks a
 submission must pass, how previews are served, and optional Zenodo details. It is the file to
-edit first, and it is data only — nothing in it is executed.
+edit first, and it is data only: nothing in it is executed.
 
 Field by field: [journal.yml](../guide/journal-yml.md).
 
@@ -50,7 +50,7 @@ fresh `brand.yml` sets the PDF image only. See [branding](../guide/branding.md#l
 (file-editions)=
 ## editions/&lt;edition&gt;.yml
 
-An edition is a batch of papers — a year, an issue, a cohort — and each paper names exactly one
+An edition is a batch of papers (a year, an issue, a cohort), and each paper names exactly one
 of them. The **filename is the edition's id**: `editions/2026.yml` is the edition `2026`, which
 is what a paper's `myst.yml` refers to. A paper naming an edition that has no file here fails to
 build.
@@ -69,18 +69,18 @@ project:
 ```
 
 `venue` is the journal name printed on the paper and its PDF, and bootstrap does **not**
-substitute `--name` here — a fresh edition file says `CHANGE-ME Journal`.
+substitute `--name` here: a fresh edition file says `CHANGE-ME Journal`.
 
 To add an edition, copy the file and name it after the new id. Two things not to do:
 
 - **Do not add `extends:`.** The engine assembles the list of configuration layers a paper build
-  uses — the engine's defaults, this edition, your brand — and checks that no two of them
+  uses (the engine's defaults, this edition, your brand), and checks that no two of them
   declare the same key, because MyST resolves that list in whatever order the files finish
   loading, so a key declared twice has no reliable winner. Keys pulled in by an edition's *own*
   `extends:` are invisible to that check, and a collision between one of them and your brand can
   land differently from one build to the next.
 - **Do not add keys MyST does not know**, such as a display title or a blurb for the edition.
-  MyST drops them — verified: `⚠️ 'config.project' extra keys ignored: display_title, blurb` —
+  MyST drops them (verified: `⚠️ 'config.project' extra keys ignored: display_title, blurb`),
   and the warning names the *paper's* configuration file rather than this one, because the file
   being read is the paper's, so the message points somewhere the key does not appear. Edition
   display text belongs on a page of the website.
@@ -88,7 +88,7 @@ To add an edition, copy the file and name it after the new id. Two things not to
 (file-registry)=
 ## registry/papers.yml
 
-The list of published papers — the source of the gallery on your landing page. It starts as an
+The list of published papers: the source of the gallery on your landing page. It starts as an
 empty list (`[]`), and an entry looks like:
 
 ```yaml
@@ -109,7 +109,7 @@ empty list (`[]`), and an entry looks like:
 : The short name used in the paper's URL path and its thumbnail path.
 
 `location`
-: Where the paper lives — `repo` as `owner/name`, and `path` within it (`.` for a repository
+: Where the paper lives. `repo` as `owner/name`, and `path` within it (`.` for a repository
   holding one paper).
 
 `edition`
@@ -123,7 +123,7 @@ empty list (`[]`), and an entry looks like:
   `https://<owner>.github.io/<repo-name>` from `location.repo`. Set it for a custom domain or
   hosting that is not GitHub Pages.
 
-Adding a paper is a manual edit here — deliberately, because it is the editorial act of
+Adding a paper is a manual edit here. That is deliberate: it is the editorial act of
 publishing. Since the website lives in this same repository, the commit that adds the entry is
 also what redeploys the gallery.
 
