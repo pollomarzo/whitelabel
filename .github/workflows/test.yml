@@ -31,6 +31,11 @@ jobs:
 
       - run: npm ci
 
+      # First because it is the cheapest failure to fix and the only one a contributor can
+      # resolve with a single command (`npm run format`). STYLE.md's enforced/convention table
+      # claims prettier is enforced; this step is what makes that true.
+      - run: npm run format:check
+
       # Not covered by the release canary: vitest transpiles TS through esbuild, which strips
       # types WITHOUT checking them, so a type error passes `npm test` and reaches a tag.
       - run: npm run typecheck
@@ -41,7 +46,7 @@ jobs:
       # check that esbuild still bundles myst-cli to CJS ([R51]'s live risk).
       - run: npm run bundle
 
-      # 147 of 148. test/integration.test.ts additionally guards on typst being on PATH and
+      # All but one. test/integration.test.ts additionally guards on typst being on PATH and
       # skips here: installing it would fork the version pinned by typst.version, and [R66] is
       # explicit that there is one source of truth for that. The PDF canary stays the release
       # gate's job, where the binary it renders with is the binary it ships.
