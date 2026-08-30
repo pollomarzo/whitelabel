@@ -14,7 +14,7 @@ import { execFileSync } from 'node:child_process';
 import { parseDocument } from 'yaml';
 import type { UpgradeMode } from './upgrade.js';
 import type { ComposeInput } from './compose.js';
-import type { MaterializeInput, StartOpts } from './build.js';
+import type { MaterializeInput, StartOpts } from './materialize.js';
 import * as msg from './messages.js';
 import { annotate, UserError } from './messages.js';
 
@@ -79,7 +79,8 @@ function readEngineRepo(paperRoot: string): string {
  * exists (compose siteTemplate: null).
  *
  * Shared by `oak build` and `oak validate`, which since [R82] materialize the SAME
- * `myst.oak.yml` through the same `materializeDerived`. Sharing the function is not enough
+ * `myst.oak.yml` through the same `materializeDerived` (`materialize.ts`). Sharing the function
+ * is not enough
  * to stop them drifting if they feed it different inputs: `templates/typst` exists in every
  * checkout including CI, so a validate that skipped these overrides stamped the release-zip
  * URL where the build stamps the local path, two different files under one name, and
@@ -245,7 +246,8 @@ async function cmdStart(argv: string[]): Promise<number> {
   }
   const input = { ...materializeInputFrom(argv, paperRoot, resolved.root), edge };
 
-  const { runStart, materializeDerived } = await import('./build.js');
+  const { runStart } = await import('./build.js');
+  const { materializeDerived } = await import('./materialize.js');
   process.stderr.write(msg.start.composed(paperRoot, resolved.root) + '\n');
   const first = await runStart({ ...input, startOpts: startOptsFrom(argv) });
   for (const w of first.warnings) process.stderr.write(annotate('warning', w) + '\n');
@@ -670,18 +672,17 @@ async function cmdValidate(argv: string[]): Promise<number> {
   try {
     out = await runValidate(
       {
-        paperRoot,
-        instanceRoot,
-        edge: createMystEdge(),
+        // The SAME inputs `oak build` materializes from, taken from the SAME builder rather
+        // than re-listed here. [R82] shared `materializeDerived` and claimed neither verb
+        // could drift; the function was shared but its inputs were not, and validate stamped
+        // a different `template:` than the build in the same tree. Spreading the builder is
+        // what makes that structural: a field added for build reaches validate with it.
         // [R72] disjointness needs the engine layer + which edition file to compare; the
         // engine root + instance are ALSO what let validate compose ([R82]); without both it
         // degrades to the author's config and says so in the report.
-        engineRoot: engineRoot(),
+        ...materializeInputFrom(argv, paperRoot, instanceRoot),
+        edge: createMystEdge(),
         edition: readEditionQuietly(paperRoot),
-        engineRepo: readEngineRepo(paperRoot),
-        // The SAME overrides `oak build` passes. Both verbs write one `myst.oak.yml`, so
-        // feeding them different inputs would put two different files under one name.
-        assetOverrides: assetOverridesFrom(argv),
       },
       { strict, repo, pathBase: process.env.GITHUB_WORKSPACE ?? paperRoot },
     );
