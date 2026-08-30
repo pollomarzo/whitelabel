@@ -20,7 +20,9 @@ permissions:
   contents: read # checkout only; the untrusted compute job holds nothing else
 
 concurrency:
-  group: ${{ github.event_name == 'pull_request' && format('check-{0}', github.head_ref) || 'check-main' }}
+  # Head repo as well as branch, for the reason in ci.yml: a cancelled Stage 1 uploads no
+  # artifact, so Stage 2 never fires and the PR waits on a check that will never arrive.
+  group: ${{ github.event_name == 'pull_request' && format('check-pr-{0}-{1}', github.event.pull_request.head.repo.full_name, github.head_ref) || 'check-push-main' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
