@@ -10,6 +10,7 @@
  * working-tree myst.yml write, which is enough for the slice-3 acceptance (a sandbox record).
  */
 import * as msg from './messages.js';
+import { UserError } from './messages.js';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { cpSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -157,6 +158,29 @@ function ghOkAs(token: string, args: string[]): boolean {
     return true;
   } catch {
     return false;
+  }
+}
+
+/**
+ * `--from` and `--source-ref` reach `git fetch` as POSITIONAL arguments, and git parses options
+ * positionally: a ref of `--upload-pack=<command>` runs that command. Demonstrated 2026-08-30,
+ * not theoretical. The values come from an author's submission and the editor pastes them, so
+ * this runs on a workstation holding the primary GH_TOKEN and, during bootstrap, the Zenodo and
+ * Cloudflare secrets. `ext::` is a second spelling of the same thing, which is why the URL is
+ * restricted to the two transports we actually support rather than merely screened for `-`.
+ *
+ * Userinfo is rejected rather than stripped: `--from` is copied verbatim into a public commit
+ * message and PR body, so a credentialed URL would be published, and an editor who pasted one
+ * should be told rather than quietly rewritten.
+ */
+const INGEST_URL =
+  /^(https:\/\/github\.com\/|git@github\.com:)[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+(\.git)?\/?$/;
+const INGEST_REF = /^[A-Za-z0-9_][A-Za-z0-9._/-]*$/;
+
+export function assertIngestSource(sourceUrl: string, sourceRef: string): void {
+  if (!INGEST_URL.test(sourceUrl)) throw new UserError(msg.bootstrap.ingestBadUrl(sourceUrl));
+  if (!INGEST_REF.test(sourceRef) || sourceRef.includes('..')) {
+    throw new UserError(msg.bootstrap.ingestBadRef(sourceRef));
   }
 }
 
@@ -346,26 +370,36 @@ export const realGhPr: GhPr = {
  *  artifact-link comment rather than failing the run ([R16]). */
 export const realPagesDeployer: PagesDeployer = {
   async deploy(opts) {
-    const out = execFileSync(
-      'npx',
-      [
-        '--yes',
-        'wrangler',
-        'pages',
-        'deploy',
-        opts.dir,
-        `--project-name=${opts.projectName}`,
-        `--branch=${opts.branch}`,
-      ],
-      {
-        encoding: 'utf8',
-        env: {
-          ...process.env,
-          CLOUDFLARE_API_TOKEN: opts.apiToken,
-          CLOUDFLARE_ACCOUNT_ID: opts.accountId,
+    // stderr is INHERITED, not captured. Node concatenates a captured child's stderr into the
+    // thrown error's `message`, and preview.ts puts that message in a public PR comment; wrangler
+    // names the API path it called, which carries the account id. Inherited, it goes to the run
+    // log instead, where Actions redacts registered secrets. The comment gets a fixed sentence.
+    let out: string;
+    try {
+      out = execFileSync(
+        'npx',
+        [
+          '--yes',
+          'wrangler',
+          'pages',
+          'deploy',
+          opts.dir,
+          `--project-name=${opts.projectName}`,
+          `--branch=${opts.branch}`,
+        ],
+        {
+          encoding: 'utf8',
+          stdio: ['ignore', 'pipe', 'inherit'],
+          env: {
+            ...process.env,
+            CLOUDFLARE_API_TOKEN: opts.apiToken,
+            CLOUDFLARE_ACCOUNT_ID: opts.accountId,
+          },
         },
-      },
-    );
+      );
+    } catch {
+      throw new Error(msg.workflow.wranglerFailed);
+    }
     const m = /https?:\/\/[^\s]*\.pages\.dev[^\s]*/.exec(out);
     if (!m) throw new Error(msg.workflow.wranglerNoUrl);
     return m[0];
@@ -451,6 +485,7 @@ export const realProvisioner: Provisioner = {
     gitRaw(['push', 'origin', `${branch}:${branch}`], tmp);
   },
   ingestReviewBranch(repo, opts) {
+    assertIngestSource(opts.sourceUrl, opts.sourceRef);
     const tmp = mkdtempSync(join(tmpdir(), 'oak-ingest-'));
     gh(['repo', 'clone', repo, tmp]);
     gitRaw(['fetch', 'origin', 'main'], tmp);
@@ -581,7 +616,9 @@ export const realProvisioner: Provisioner = {
     }
   },
   setSecret(repo, name, value) {
-    gh(['secret', 'set', name, '--repo', repo, '--body', value]);
+    // Through stdin, never `--body`: an argv is world-readable in /proc and lands in process
+    // accounting. This is the Zenodo and Cloudflare tokens.
+    gh(['secret', 'set', name, '--repo', repo], { input: value });
   },
   repoVisibility(repo) {
     return gh(['api', `repos/${repo}`, '--jq', '.visibility']) === 'private' ? 'private' : 'public';
