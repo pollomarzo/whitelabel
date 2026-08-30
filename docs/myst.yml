@@ -55,6 +55,9 @@ project:
     - title: Reference
       children:
         - file: reference/files.md
+    - title: Design
+      children:
+        - file: design/paper-ci.md
 
 site:
   template: book-theme

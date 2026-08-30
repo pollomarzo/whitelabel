@@ -1,15 +1,13 @@
 name: Journal checks post
 
-# Stage 2 of the two-stage journal-checks flow. POST only, trusted: runs in
-# BASE-repo context after "Journal checks" (check.yml) completes, so it holds the write token
-# that fork PRs never get; the same split preview-deploy.yml uses. It ONLY downloads Stage
-# 1's precomputed report artifact and posts it; it NEVER re-runs validate or rebuilds paper
-# content (that would reopen the injection hole through the shim's back door). The engine ref
-# + action code come from the BASE default branch (guaranteed by workflow_run).
+# Stage 2 of the journal checks: post only, in base context, holding the write token that fork
+# pull requests never get. It downloads Stage 1's report and posts it, as a "Journal checks"
+# Check Run on the head commit plus a sticky comment. It never re-runs validate and never
+# rebuilds paper content.
 #
-# Posts BOTH a first-class "Journal checks" Check Run on the PR HEAD (gates merge + annotates)
-# and an always-on sticky PR comment (visibility; authors rarely click the Check Run
-# "Details"). On a `push` to main it posts the success Check Run with no comment (no PR).
+# The artifact it reads is written by the untrusted half, so read the trust rules before
+# changing what this job takes from it:
+# https://scholar.nexus/oaktree-sapling/design/paper-ci
 
 on:
   workflow_run:
@@ -40,27 +38,29 @@ jobs:
           run-id: ${{ github.event.workflow_run.id }}
           github-token: ${{ github.token }}
 
-      # The artifact comes from the untrusted Stage-1 job; head-sha/pr-number flow from here into
-      # the `args:` string spliced into a shell in ./.github/actions/engine. Validate shape and
-      # fail CLOSED before they leave this step: a git sha is [0-9a-f]{7,40}, a PR number is
-      # digits, so no newline (GITHUB_OUTPUT injection) or shell metacharacter can ride through
-      # even if Stage 1 gets attacker bytes into the files.
+      # The PR number is the ONE value this job cannot read from its own event, because
+      # workflow_run.pull_requests is empty for forks. It therefore comes from the untrusted
+      # artifact and needs both checks below: the shape, matched against the whole string, and
+      # the ownership, against the commit this run is actually about. Do not add a third value
+      # here without reading why: https://scholar.nexus/oaktree-sapling/design/paper-ci
       - id: meta
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
-          sha=$(cat journal-checks/head-sha)
-          if ! printf '%s' "$sha" | grep -qE '^[0-9a-f]{7,40}$'; then
-            echo "::error::head-sha in artifact is not a valid git sha; refusing to post"
+          [ -f journal-checks/pr-number ] || exit 0
+          pr=$(cat journal-checks/pr-number)
+          if [[ ! "$pr" =~ ^[0-9]{1,10}$ ]]; then
+            echo "::error::pr-number in the artifact is not a number; refusing to comment"
             exit 1
           fi
-          echo "sha=$sha" >> "$GITHUB_OUTPUT"
-          if [ -f journal-checks/pr-number ]; then
-            pr=$(cat journal-checks/pr-number)
-            if ! printf '%s' "$pr" | grep -qE '^[0-9]{1,10}$'; then
-              echo "::error::pr-number in artifact is not a valid number; refusing to post"
-              exit 1
-            fi
-            echo "pr=$pr" >> "$GITHUB_OUTPUT"
+          pr_head=$(gh api "repos/$REPO/pulls/$pr" --jq .head.sha)
+          if [ "$pr_head" != "$HEAD_SHA" ]; then
+            echo "::error::PR #$pr heads at $pr_head, not the $HEAD_SHA this run checked; refusing to comment"
+            exit 1
           fi
+          echo "pr=$pr" >> "$GITHUB_OUTPUT"
 
       # Posts the precomputed report: the Check Run on the PR HEAD sha and, when a PR, the
       # sticky comment. Best-effort inside the engine: a post failure degrades to a
@@ -71,7 +71,7 @@ jobs:
             check-post
             --report journal-checks/report.json
             --repo ${{ github.repository }}
-            --sha ${{ steps.meta.outputs.sha }}
+            --sha ${{ github.event.workflow_run.head_sha }}
             --base ${{ github.event.repository.default_branch }}
             --verified-head ${{ github.event.workflow_run.head_sha }}
             ${{ steps.meta.outputs.pr && format('--pr {0}', steps.meta.outputs.pr) || '' }}

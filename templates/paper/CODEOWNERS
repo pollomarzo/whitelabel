@@ -1,9 +1,11 @@
-# The frozen shim is the trust boundary: action.yml runs engine code at a
-# ref, and pins.yml names the engine + instance repos (code-adjacent). Gate everything
-# under .github/ (including pins.yml and CODEOWNERS itself) behind the editors, so an
-# author PR can float the engine *ref* (data) but cannot redirect a token-bearing run to
-# unreviewed code. copier replaces the owner below at bootstrap. NB a personal-account repo
-# (the interim/lab tier) has no org team, so it names the user directly; an org
-# tenant uses a team like @your-org/editors.
+# Editors gate every file that can decide what CODE a job runs: the workflows and the composite
+# action, this file, and paper-environment.yml (installing a package runs its hooks, in the same
+# job as the tokens). The paper's own content is not gated, and neither is myst.yml, so an author
+# still moves their paper to a newer engine on their own.
+# Why these files and not others: https://scholar.nexus/oaktree-sapling/design/paper-ci
+#
+# The owner is replaced at bootstrap. A personal-account repo has no org team so it names a user;
+# an org tenant uses a team like @your-org/editors.
 /.github/                @pollomarzo
 /CODEOWNERS              @pollomarzo
+/paper-environment.yml   @pollomarzo

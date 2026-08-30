@@ -1,16 +1,14 @@
 name: Journal checks
 
-# Stage 1 of the two-stage journal-checks flow. COMPUTE only, untrusted: runs on
-# the `pull_request` event with a read-only, secret-less token, safe for fork content, which
-# `oak validate` only READS. It writes the check report to an artifact and NEVER posts to the
-# PR. All PR write-back (the Check Run + the sticky comment) happens in Stage 2
-# (check-post.yml, a `workflow_run` job in base context), exactly like the preview split
-# (ci.yml → preview-deploy.yml): fork + same-repo PRs take the identical path, and the step
-# that runs untrusted paper content never holds a writable token.
+# Stage 1 of the journal checks: compute only, no secrets, safe to run on a fork's content.
+# `oak validate` reads the paper and writes a report to an artifact; nothing is posted from
+# here. check-post.yml posts it from the base context.
 #
-# This job SUCCEEDS whenever a valid report was produced (even when checks FAIL) so Stage 2
-# always fires and posts the (failing) Check Run that gates the merge. Only a genuine engine
-# crash (no report / invalid JSON) fails this job.
+# This job succeeds whenever a valid report exists, even a failing one, so Stage 2 always fires
+# and posts the verdict that gates the merge. Only a crash that produces no report fails it.
+#
+# Why the flow is split, and what Stage 2 may take from the artifact this job writes:
+# https://scholar.nexus/oaktree-sapling/design/paper-ci
 
 on:
   pull_request:
@@ -52,12 +50,12 @@ jobs:
           fi
           echo "report ok; conclusion: $(jq -r '.checkRun.conclusion' report.json)"
 
-      # Stash the PR HEAD sha (GITHUB_SHA is the ephemeral merge commit on a PR; a Check Run
-      # there never surfaces on the PR) and the PR number (workflow_run.pull_requests is EMPTY
-      # for forks). Stage 2 reads both from the artifact.
-      - name: Record head sha + PR number
+      # Stash the PR number, which Stage 2 cannot get from its own event: workflow_run.pull_requests
+      # is EMPTY for forks. The head sha used to be stashed here too and is not any more, because
+      # Stage 2 has it as `workflow_run.head_sha` and this file is fork-controlled on a PR: a value
+      # Stage 2 can read from its own event must never be taken from this artifact instead.
+      - name: Record PR number
         run: |
-          echo "${{ github.event.pull_request.head.sha || github.sha }}" > head-sha
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             echo "${{ github.event.pull_request.number }}" > pr-number
           fi
