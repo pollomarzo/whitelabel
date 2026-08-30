@@ -295,6 +295,13 @@ export const bootstrap = {
   planReviewBranchExists: '  ✓ review branch exists',
   planReviewBranch: (from: string, ref: string): string =>
     `  ○ copy the author's files from ${from}@${ref} onto a "review" branch`,
+  ingestBadUrl: (url: string): string =>
+    `oak bootstrap: --from must be a GitHub repository URL (https://github.com/owner/repo or ` +
+    `git@github.com:owner/repo), got: ${url}. A URL carrying a username or password is refused ` +
+    `too, because --from is copied into a public commit message and pull request.`,
+  ingestBadRef: (ref: string): string =>
+    `oak bootstrap: --source-ref must be a branch, tag or commit name, got: ${ref}. git reads a ` +
+    `leading dash as an option, so a ref like --upload-pack=... would run a command here.`,
   planReviewPrExists: '  ✓ review → main PR open',
   planReviewPr: '  ○ open the review → main pull request',
 
@@ -774,6 +781,10 @@ export const workflow = {
     `no stable release on ${engineRepo} to move to. Pass --to <tag> to name one; ` +
     `pre-releases are excluded from "latest" on purpose, since a dev tag can be deleted.`,
   wranglerNoUrl: 'wrangler did not report a *.pages.dev deployment URL',
+  /** Deliberately carries no detail from wrangler: this reaches a PUBLIC pull request comment,
+   *  and wrangler names the Cloudflare API path it called, which contains the account id. The
+   *  diagnostics stay in the workflow log, where Actions redacts registered secrets. */
+  wranglerFailed: 'wrangler could not deploy the preview; see the workflow log for its output',
 };
 
 /* ═══════════════════════════════════════════════════════════════════════════════════════════
