@@ -30,6 +30,7 @@ moves with it; `--provenance` requires it to match the publishing repo.
 | `src/ref.ts` | engine-ref classification + the floating-author trust policy (dec. 23 / [R41]); syntactic half only; ancestry check is CI-side. |
 | `src/assets.ts` | version-matched typst-template + theme-zip URLs (closes [R5]). |
 | `src/yaml-io.ts` | config round-trips (Document API, never sed, [R3]) + `DERIVED_CONFIG_FILE`. The author's `myst.yml` is read-only; writes go to the derived `myst.oak.yml` ([R71]). |
+| `src/materialize.ts` | the `MystEdge` seam + the two-pass `materializeDerived` that writes `myst.oak.yml`. Shared by `build` and `validate` ([R82]); its own module so those two do not import each other. |
 | `src/build.ts` | **`oak build`**: the two-pass orchestrator ([R52]); myst edge injected for testing. |
 | `src/myst.ts` | the mystmd edge (the one module importing bundled myst-cli, [R51]); sets the current project+site pointers via `findCurrent*AndLoad` so `build` renders HTML ([R59]). |
 | `src/cli.ts` | `oak` entry point; every verb implemented (`build`, `validate`, `check-post`, `deposit`, `release`, `deploy-preview`, `notify`, `bootstrap`, `upgrade`, `conformance`); nothing stubbed. |

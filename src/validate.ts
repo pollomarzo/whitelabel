@@ -37,7 +37,7 @@ import {
   type CheckRun,
   type JournalCheck,
 } from './checks.js';
-import { materializeDerived, type MystEdge } from './build.js';
+import { materializeDerived, type MystEdge } from './materialize.js';
 import type { ComposeInput } from './compose.js';
 
 export interface FsProbes {

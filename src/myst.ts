@@ -26,7 +26,7 @@ import {
   findCurrentSiteAndLoad,
 } from 'myst-cli';
 import type { ISession } from 'myst-cli';
-import type { MystEdge, BuildOpts, StartOpts } from './build.js';
+import type { MystEdge, BuildOpts, StartOpts } from './materialize.js';
 import type { ResolvedProject } from './compose.js';
 
 export function createMystEdge(): MystEdge {
