@@ -17,7 +17,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseDocument } from 'yaml';
 import type { GitContext } from './zenodo.js';
-import type { GhPr, PagesDeployer } from './preview.js';
+import { LABEL_ZENODO_FAILED, type GhPr, type PagesDeployer } from './preview.js';
 import type { CheckRun } from './checks.js';
 import type { EnvironmentReviewer, Provisioner } from './bootstrap.js';
 import type { UpgradePr } from './upgrade.js';
@@ -323,7 +323,7 @@ export function postCommitComment(repoRoot: string, sha: string, body: string): 
 export function openFailureIssue(repoRoot: string, title: string, body: string): void {
   const repo = originRepo(repoRoot);
   const base = ['issue', 'create', ...(repo ? ['--repo', repo] : [])];
-  gh([...base, '--title', title, '--body', body, '--label', 'zenodo-publish-failed']);
+  gh([...base, '--title', title, '--body', body, '--label', LABEL_ZENODO_FAILED]);
 }
 
 /* --------------------------------------------------------------------------
@@ -507,6 +507,12 @@ export const realProvisioner: Provisioner = {
       '--description',
       opts.description,
     ]);
+  },
+  defaultBranch(repo) {
+    return gh(['api', `repos/${repo}`, '--jq', '.default_branch']);
+  },
+  setDefaultBranch(repo, branch) {
+    gh(['api', '-X', 'PATCH', `repos/${repo}`, '-f', `default_branch=${branch}`]);
   },
   branchExists(repo, branch) {
     return ghOk(['api', `repos/${repo}/branches/${branch}`]);

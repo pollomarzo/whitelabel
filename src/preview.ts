@@ -86,6 +86,9 @@ const err = (exitCode: number, message: string, fields: Record<string, unknown> 
 export const STICKY_PREVIEW = 'oak-preview';
 export const STICKY_NEWVERSION = 'zenodo-newversion-reminder';
 export const LABEL_EDITOR_ACTION = 'editor-action-needed';
+/** Here rather than beside the issue that carries it, so `oak bootstrap` provisions the name
+ *  `openFailureIssue` asks for ([R127]). */
+export const LABEL_ZENODO_FAILED = 'zenodo-publish-failed';
 
 /* --------------------------------------------------------------------------
  * journal.yml → tenant preview config ([R27]), mirrors loadJournalZenodo
