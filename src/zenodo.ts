@@ -71,6 +71,15 @@ export const RESERVED_BUNDLE_NAMES = [
  *  which is the always-present set the conformance harness asserts. */
 export const TEMPLATE_BUNDLE_NAME = 'template.zip';
 
+/** Every name the engine may write into the bundle, so a `deposit/` file may not take it. */
+export const RESERVED_DEPOSIT_NAMES = [...RESERVED_BUNDLE_NAMES, TEMPLATE_BUNDLE_NAME];
+
+/** The reserved names a `deposit/` folder takes. Pure, and the ONE model of [R28]'s rule:
+ *  `oak validate` reports it on the PR, `oak release` refuses on it ([R101]). */
+export function depositCollisions(names: string[]): string[] {
+  return names.filter((n) => RESERVED_DEPOSIT_NAMES.includes(n));
+}
+
 export function apiBase(sandbox: boolean): string {
   return sandbox ? ZENODO_SANDBOX : ZENODO_PROD;
 }
@@ -609,20 +618,18 @@ export function templateArchiveDir(paperRoot: string, engineRoot: string): strin
  */
 /**
  * What can make a deposit impossible, in one place so a caller can ask before writing to Zenodo
- * ([R101]). [R28] wants the collision check at validate time; validate does not know about
- * `deposit/` yet, so this only makes the late discovery harmless.
+ * ([R101]). `oak validate` reports the same collision at PR time, off {@link depositCollisions}.
  */
 export function assertBundlePreconditions(repoRoot: string, engineRoot: string): void {
   const depositDir = join(repoRoot, 'deposit');
   const extras = existsSync(depositDir)
     ? readdirSync(depositDir).filter((n) => statSync(join(depositDir, n)).isFile())
     : [];
-  const reserved = [...RESERVED_BUNDLE_NAMES, TEMPLATE_BUNDLE_NAME];
-  const collisions = extras.filter((n) => reserved.includes(n));
+  const collisions = depositCollisions(extras);
   if (collisions.length) {
     throw new BundleCollisionError(
       `deposit/ file(s) collide with engine-reserved names: ${collisions.join(', ')}. ` +
-        `Rename them: ${reserved.join(', ')} are added by the engine.`,
+        `Rename them: ${RESERVED_DEPOSIT_NAMES.join(', ')} are added by the engine.`,
     );
   }
   templateArchiveDir(repoRoot, engineRoot);

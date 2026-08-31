@@ -4,7 +4,8 @@
  * Two layers:
  *   A. Engine pre-flight INVARIANTS (pure): id sentinel/pattern/uniqueness ([R12]), the
  *      canonical layout ([R46]/[R50]), brand favicon/watermark resolvability
- *      ([R61]/[R62]) and the paper's thumbnail ([R81]). These are the engine's own contract (not tenant-editorial) and also
+ *      ([R61]/[R62]), the paper's thumbnail ([R81]) and its `deposit/` names ([R28]).
+ *      These are the engine's own contract (not tenant-editorial) and also
  *      run as the mandatory first phase of `oak build` (fail fast, [R21]).
  *   B. Journal-CONFIGURED editorial checks (checks.ts), selected by `journal.yml` `checks:`.
  *
@@ -22,7 +23,7 @@ import {
   checkIdUniqueness,
   type IdCheckResult,
 } from './schema.js';
-import { isAbsolute, join } from 'node:path';
+import { dirname, isAbsolute, join } from 'node:path';
 import { resolveBrandAssetPath, isBrandAssetUrl, isInstanceRelativeTemplate } from './compose.js';
 import { readBrandAssetOptions, readAuthorTypstTemplate, DERIVED_CONFIG_FILE } from './yaml-io.js';
 import {
@@ -34,6 +35,7 @@ import {
   type JournalCheck,
 } from './checks.js';
 import { materializeDerived, type MystEdge } from './materialize.js';
+import { depositCollisions, RESERVED_DEPOSIT_NAMES } from './zenodo.js';
 import type { ComposeInput } from './compose.js';
 
 export interface FsProbes {
@@ -176,6 +178,31 @@ export function checkThumbnail(
         severity: 'warn',
         message: msg.validate.thumbnailUnresolved(thumbnail),
       };
+}
+
+/**
+ * A `deposit/` file whose name the engine also writes into the bundle ([R28]).
+ *
+ * Reported at PR time, not just refused at the tag. Shares {@link depositCollisions} with
+ * `oak release`. Top level only, as in the bundle.
+ */
+export function checkDepositNames(input: { paperRoot: string }, probes: FsProbes): NamedFinding[] {
+  const entries = probes
+    .listTree(join(input.paperRoot, 'deposit'))
+    .map((f) => f.replace(/\\/g, '/'));
+  const files = entries.filter(
+    (e) => !e.includes('/') && !entries.some((o) => o.startsWith(`${e}/`)),
+  );
+  const collisions = depositCollisions(files);
+  if (!collisions.length) return [];
+  return [
+    {
+      check: 'deposit-names',
+      severity: 'error',
+      message: msg.validate.depositCollision(collisions, RESERVED_DEPOSIT_NAMES),
+      klass: 'config',
+    },
+  ];
 }
 
 /* ---- typst template hygiene ([R76]) -------------------------------------- */
@@ -357,6 +384,46 @@ function readLayer(path: string, probes: FsProbes): unknown | null {
   }
 }
 
+/** A config's own `extends:`, which myst takes as a string or a list. */
+function extendsRefs(config: unknown): string[] {
+  const raw = (config as { extends?: unknown } | null)?.extends;
+  const list = Array.isArray(raw) ? raw : [raw];
+  return list.filter((r): r is string => typeof r === 'string' && !!r);
+}
+
+/**
+ * Each named layer plus everything its own `extends:` pulls in ([R119]b).
+ *
+ * A nested layer folds into its parent's accumulator, so a key one file down races as if
+ * declared in the layer itself; named `<parent> -> <ref>`. A ref this cannot follow comes back
+ * in `unreadable`, since an unread layer makes the disjointness verdict unsound.
+ */
+export function expandLayers(
+  roots: Array<{ name: string; path: string }>,
+  probes: FsProbes,
+): { layers: Array<{ name: string; config: unknown }>; unreadable: string[] } {
+  const layers: Array<{ name: string; config: unknown }> = [];
+  const unreadable: string[] = [];
+  const seen = new Set<string>();
+  const walk = (name: string, path: string) => {
+    if (seen.has(path)) return;
+    seen.add(path);
+    const config = readLayer(path, probes);
+    if (config == null) return;
+    layers.push({ name, config });
+    for (const ref of extendsRefs(config)) {
+      const target = isBrandAssetUrl(ref) ? null : isAbsolute(ref) ? ref : join(dirname(path), ref);
+      if (!target || !probes.existsProbe(target)) {
+        unreadable.push(`${ref} (from ${name})`);
+        continue;
+      }
+      walk(`${name} -> ${ref}`, target);
+    }
+  };
+  for (const r of roots) walk(r.name, r.path);
+  return { layers, unreadable };
+}
+
 /* ---- Layer A aggregate --------------------------------------------------- */
 
 export function runLayerA(
@@ -406,6 +473,17 @@ export function runLayerA(
   }
   const journal = loaded ?? JournalConfig.parse({ name: 'unknown' });
 
+  // Both id keys are optional. The sentinel is engine-owned (ENGINE_ID_SENTINEL); the pattern
+  // is the tenant's, so its absence is stated rather than overridden ([R119]a).
+  if (instanceRoot && loaded && !loaded.id_pattern) {
+    findings.push({
+      check: 'id-policy',
+      severity: 'warn',
+      message: msg.validate.idNoPattern,
+      klass: 'config',
+    });
+  }
+
   if (!project.id) {
     findings.push({
       check: 'id-present',
@@ -451,15 +529,26 @@ export function runLayerA(
     checkThumbnail({ paperRoot, thumbnail: project.thumbnail }, probes),
   );
 
+  findings.push(...checkDepositNames({ paperRoot }, probes));
+
   // [R72]: the three extends layers must own disjoint keys, or precedence is a race.
   if (engineRoot && instanceRoot && edition) {
-    const layers = [
-      { name: 'paper-base.yml', path: join(engineRoot, 'paper-base.yml') },
-      { name: `editions/${edition}.yml`, path: join(instanceRoot, 'editions', `${edition}.yml`) },
-      { name: 'brand/brand.yml', path: join(instanceRoot, 'brand', 'brand.yml') },
-    ]
-      .map((l) => ({ name: l.name, config: readLayer(l.path, probes) }))
-      .filter((l) => l.config != null);
+    const { layers, unreadable } = expandLayers(
+      [
+        { name: 'paper-base.yml', path: join(engineRoot, 'paper-base.yml') },
+        { name: `editions/${edition}.yml`, path: join(instanceRoot, 'editions', `${edition}.yml`) },
+        { name: 'brand/brand.yml', path: join(instanceRoot, 'brand', 'brand.yml') },
+      ],
+      probes,
+    );
+    if (unreadable.length) {
+      findings.push({
+        check: 'extends-unreadable',
+        severity: 'error',
+        message: msg.validate.layerExtendsUnreadable(unreadable.join(', ')),
+        klass: 'config',
+      });
+    }
     for (const r of checkLayerDisjointness(layers)) {
       findings.push({
         check: 'extends-disjoint',

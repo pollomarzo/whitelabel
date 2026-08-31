@@ -9,10 +9,10 @@
  * the repo alone (dec. 23, [R41]).
  *
  * This module is the *pure, syntactic* half of the policy: classify a ref and decide
- * whether its class is allowed in a given trigger context. The *semantic* half:
- * "is this tag/SHA actually an ancestor of a released engine tag / on the default
- * branch": needs the network (`gh api` / `git merge-base --is-ancestor`) and lives in
- * `oak validate` at the CI edge; it is intentionally NOT here.
+ * whether its class is allowed in a given trigger context.
+ *
+ * **Nothing calls it, and dec. 23 is unenforced** ([R118]). The enforcement point is the
+ * composite action, before the checkout, not the engine judging its own ref.
  */
 
 export type RefClass = 'tag' | 'sha' | 'pr-merge' | 'branch';

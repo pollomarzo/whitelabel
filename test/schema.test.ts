@@ -10,6 +10,7 @@ import {
   Pins,
   checkIdShape,
   checkIdUniqueness,
+  ENGINE_ID_SENTINEL,
   toJsonSchemas,
 } from '../src/schema.js';
 
@@ -102,6 +103,18 @@ describe('checkIdShape (check A: catches the live geetha bug [R12])', () => {
 
   it('accepts a well-formed unique id', () => {
     expect(checkIdShape('fixture-2026-sample-paper', policy).ok).toBe(true);
+  });
+
+  it("rejects the engine's own placeholder under an EMPTY policy ([R119]a)", () => {
+    // A tenant deleting id_sentinel + id_pattern must not turn the engine's contract off.
+    expect(checkIdShape(ENGINE_ID_SENTINEL, {}).ok).toBe(false);
+    expect(checkIdShape(ENGINE_ID_SENTINEL, policy).ok).toBe(false);
+    expect(checkIdShape('fixture-2026-sample-paper', {}).ok).toBe(true);
+  });
+
+  it('is the id the paper template actually ships', () => {
+    const template = read('../templates/paper/myst.yml');
+    expect(template.project.id).toBe(ENGINE_ID_SENTINEL);
   });
 });
 

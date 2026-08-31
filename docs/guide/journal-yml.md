@@ -24,8 +24,9 @@ to an older engine.
 : `paper`, and leave it there. The other values name granularities that are not built.
 
 `id_sentinel`
-: The one id that is always rejected: the placeholder that ships in the paper template. It
-  stops a submission going out with the template's id still in it. See below.
+: An id that is always rejected, on top of the placeholder that ships in the paper template
+  (which is rejected whatever you write here). Set it if your papers start from a template of
+  your own. See below.
 
 `id_pattern`
 : The shape every other paper id must have. See below.
@@ -72,8 +73,9 @@ which admits `oak-2026-tidal-flats` and rejects `Tidal Flats`, `oak-26-tidal-fla
 
 `oak validate` checks a paper's id three ways, and the first two come from this file:
 
-1. **The sentinel.** An id equal to `id_sentinel` fails: `paper id "…" is the template
-   placeholder; every paper needs a fresh unique id`.
+1. **The sentinel.** An id equal to `id_sentinel`, or to the paper template's own
+   placeholder, fails: `paper id "…" is the template placeholder; every paper needs a fresh
+   unique id`.
 2. **The pattern.** An id that does not match fails: `paper id "…" does not match the journal
    id pattern /…/`.
 3. **Uniqueness.** An id already in `registry/papers.yml` under a different paper fails.
@@ -98,10 +100,11 @@ so the gate stays hard there. The first two checks never soften.
 - **Test it before you push.** It runs as a JavaScript regular expression:
   `node -e 'console.log(/^[a-z0-9]+-\d{4}-[a-z0-9-]+$/.test("oak-2026-tidal-flats"))'`.
 - **Deleting the key turns the pattern check off.** Both `id_pattern` and `id_sentinel` are
-  optional; drop either and that check stops running. Uniqueness still applies. If your journal
-  has no id convention worth enforcing, dropping `id_pattern` is a legitimate choice, but keep
-  `id_sentinel`, because a submission still carrying the template's id is a real mistake and
-  the only thing that catches it.
+  optional; drop either and that check stops running. Uniqueness still applies, and so does the
+  paper template's own placeholder, which is rejected with or without this file. If your
+  journal has no id convention worth enforcing, dropping `id_pattern` is a legitimate choice:
+  every paper's checks then carry a warning saying any id shape is accepted, so the decision
+  stays visible rather than looking like a gate that passed.
 
 :::{warning} Tightening the pattern is retroactive
 Papers are re-checked on every pull request against them, using the pattern as it is *now*.

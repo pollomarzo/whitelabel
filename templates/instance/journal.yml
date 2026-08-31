@@ -7,9 +7,10 @@ name: CHANGE-ME Journal
 
 tier: paper
 
-# id policy. `id_sentinel` is the one id `oak validate` rejects (the
-# template placeholder). `id_pattern` is an anchored regex every real paper id must match:
-# customize to your journal's convention.
+# id policy. `id_sentinel` is an id `oak validate` rejects outright, on top of the paper
+# template's own placeholder, which it always rejects. `id_pattern` is an anchored regex every
+# real paper id must match: customize to your journal's convention. Drop `id_pattern` and any
+# shape is accepted; every paper's checks then say so.
 id_sentinel: CHANGE-ME-template-placeholder
 id_pattern: "^[a-z0-9]+-\\d{4}-[a-z0-9-]+$"
 
