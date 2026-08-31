@@ -717,7 +717,8 @@ export async function runValidate(
     id: f.check,
     status: CheckStatus.fail,
     message: f.message,
-    optional: f.severity === 'warn',
+    // --strict blocks warnings, so they gate the Check Run too ([R119]).
+    optional: opts.strict ? false : f.severity === 'warn',
   }));
   // Relativize curvenote's (sometimes absolute) annotation paths against the repo checkout root
   // so GitHub can resolve them; default to the paper root (== repo root in the n=1 model).
@@ -731,7 +732,9 @@ export async function runValidate(
     (c) => (c.status === CheckStatus.fail || c.status === CheckStatus.error) && !c.optional,
   );
   const hasError = errors.length > 0 || blockingCheckFail;
-  const exitCode = hasError ? 1 : opts.strict && warnings.length ? 1 : 0;
+  // --strict warnings block the verdict and the Check Run, not just the exit code ([R119]).
+  const failed = hasError || (opts.strict && warnings.length > 0);
+  const exitCode = failed ? 1 : 0;
 
-  return { status: hasError ? 'error' : 'ok', errors, warnings, checks, checkRun, notes, exitCode };
+  return { status: failed ? 'error' : 'ok', errors, warnings, checks, checkRun, notes, exitCode };
 }

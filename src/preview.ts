@@ -308,7 +308,15 @@ export interface NotifyInput {
  */
 export function runNewVersionReminder(input: NotifyInput, gh: GhPr): Outcome {
   const { repoRoot, mystPath, repo, pr } = input;
-  const tags = gh.versionTags(repoRoot, repo);
+  let tags: string[];
+  try {
+    tags = gh.versionTags(repoRoot, repo);
+  } catch (e) {
+    // An unreadable tag list must not read as "never published" ([R108]).
+    const why = String((e as Error).message ?? e);
+    process.stderr.write(annotate('error', msg.workflow.notifyTagsFailed(why)) + '\n');
+    return err(1, why, { reminder: 'error' });
+  }
   if (!hasVersionTag(tags)) {
     return ok({ reminder: 'skipped', reason: msg.workflow.notifyFirstDeposit });
   }

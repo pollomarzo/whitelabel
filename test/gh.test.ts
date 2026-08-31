@@ -98,6 +98,13 @@ describe('gh.ts argument vectors', () => {
     expect(fetchLine).toBeGreaterThan(-1);
     expect(guardLine).toBeLessThan(fetchLine);
   });
+
+  it('a versionTags API failure propagates instead of reading as "no tags"', () => {
+    // [] would read as "never published" ([R108]).
+    const vt = /versionTags\([^)]*\)\s*\{([\s\S]*?)\n  \},/.exec(SRC('gh.ts'));
+    expect(vt, 'versionTags not found; this lint needs updating').toBeTruthy();
+    expect(codeOnly(vt![1])).not.toMatch(/\bcatch\b/);
+  });
 });
 
 describe('labelChildOutput', () => {
