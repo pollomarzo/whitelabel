@@ -23,8 +23,7 @@ import { readDoc, writeDoc } from './yaml-io.js';
 import { renderPins, renderCodeowners, type TemplateAnswers } from './bootstrap.js';
 import * as msg from './messages.js';
 
-/** Branch `oak upgrade` opens its PR from. Exported so the conformance reset can sweep it: the
- *  harness's own repeatability depends on the two agreeing ([R117]). */
+/** Exported so `conformance reset` sweeps the same prefix it opens ([R117]). */
 export const UPGRADE_BRANCH_PREFIX = 'oak/upgrade-';
 
 const PINS_REL = posix.join('.github', 'actions', 'engine', 'pins.yml');

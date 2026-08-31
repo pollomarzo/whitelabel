@@ -173,11 +173,8 @@ export async function cmdConformanceReset(input: ResetInput, deps: ResetDeps): P
     log(`closed PR #${pr.number} (${pr.headRef})`);
   }
 
-  // Both prefixes: `cert-*` is what the preview phases open, `oak/upgrade-*` is what the install
-  // phase's dogfooded `oak upgrade` opens. Sweeping only the first made certify a once-per-tag
-  // operation, because `gh pr create` refuses a second PR from the same branch and the run then
-  // reported FAILED for leftover state ([R117]). Deleting the branch closes its PR, so this also
-  // catches an upgrade PR nothing labelled, which is what the live run tripped over.
+  // Both prefixes: the install phase's own `oak upgrade` opens the second, and sweeping only the
+  // first made certify once-per-tag ([R117]). Deleting a branch closes its PR.
   const deletedBranches: string[] = [];
   for (const prefix of [CERT_BRANCH_PREFIX, UPGRADE_BRANCH_PREFIX]) {
     for (const branch of gh.listBranches(repo, prefix)) {

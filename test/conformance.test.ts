@@ -559,9 +559,7 @@ describe('cmdConformanceCertify', () => {
 
 describe('reset sweeps what the run creates ([R117])', () => {
   it('deletes the upgrade branch, not just cert-*', async () => {
-    // The install phase dogfoods `oak upgrade`, which opens oak/upgrade-<tag>. Reset swept only
-    // cert-*, so a second certify of the same tag hit "a pull request for branch ... already
-    // exists" and reported FAILED for leftover state. Found by a live run.
+    // Sweeping only cert-* made certify once-per-tag ([R117]).
     const branches = ['cert-123', 'oak/upgrade-v0.0.2', 'main'];
     const deleted: string[] = [];
     const out = await cmdConformanceReset(

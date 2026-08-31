@@ -574,10 +574,8 @@ describe('runValidate: degrading when there is nothing to compose ([R82])', () =
 });
 
 describe('an unloadable journal policy blocks ([R116])', () => {
-  // Everything the gate enforces is read from journal.yml, so an absent one used to make every
-  // Layer-A id rule and every Layer-B check no-op, silently.
-  // Also denies papers.yml: `loadRegistry` readFileSyncs whatever the probe admits, so a probe
-  // that claims a file the fs lacks throws before the assertion.
+  // Every rule the gate enforces is read from journal.yml ([R116]).
+  // Denies papers.yml too: loadRegistry readFileSyncs whatever the probe admits ([R119]e).
   const noJournal: FsProbes = {
     existsProbe: (p: string) => !p.endsWith('journal.yml') && !p.endsWith('papers.yml'),
     listTree: () => [],

@@ -260,8 +260,7 @@ export function checkTemplates(
 
 /* ---- instance-config readers -------------------------------------------- */
 
-/** null = an instance root was resolved but carries no `journal.yml`, which is a broken instance
- *  and not the same thing as `--no-instance` ([R116]). */
+/** null = a resolved instance root with no `journal.yml`: broken, not `--no-instance` ([R116]). */
 function loadJournal(instanceRoot: string | null, probes: FsProbes): JournalConfig | null {
   if (instanceRoot) {
     const p = join(instanceRoot, 'journal.yml');
@@ -396,9 +395,7 @@ export function runLayerA(
   const loaded = loadJournal(instanceRoot, probes);
   const registry = loadRegistry(instanceRoot, probes);
 
-  // An absent policy must not read as a passing one: with no journal.yml every Layer-A id rule
-  // and every Layer-B check silently no-ops, so a paper still carrying the template's placeholder
-  // id merged green ([R116]).
+  // An absent policy is not a passing one: every id rule and every Layer-B check no-ops ([R116]).
   if (loaded === null) {
     findings.push({
       check: 'journal-config',
@@ -675,9 +672,7 @@ export async function runValidate(
   // hiding the very Layer-A finding that explains the failure. So we short-circuit: skip Layer B
   // when Layer A already blocks. And even when Layer A is clean we GUARD the Layer-B call, so an
   // unexpected myst/curvenote throw degrades to a reported check error, never a crashed gate.
-  // Layer A has already reported an absent policy as a blocking finding ([R116]); here the empty
-  // default only keeps the shape, and the short-circuit below stops Layer B from claiming a clean
-  // run against a policy that was never loaded.
+  // Layer A already blocked on an absent policy ([R116]); the default just keeps the shape.
   const journal =
     loadJournal(input.instanceRoot, probes) ?? JournalConfig.parse({ name: 'unknown' });
   let checks: EngineCheckResult[] = [];
