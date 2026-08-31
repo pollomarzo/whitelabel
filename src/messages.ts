@@ -583,6 +583,10 @@ export const validate = {
     'export) was not checked here.',
 
   // ── the paper's id (checked against the journal's policy) ──────────────────────────────
+  journalMissing: (instanceRoot: string): string =>
+    `no journal.yml in ${instanceRoot}, so the journal's own rules (the paper id policy and the ` +
+    `editorial checks) could not be loaded and nothing was enforced. Point --instance at the ` +
+    `journal repository, or pass --no-instance to validate the paper on its own.`,
   idPlaceholder: (id: string): string =>
     `paper id "${id}" is the template placeholder; every paper needs a fresh unique id: ` +
     `${docsUrl(DOCS.idPattern)}`,

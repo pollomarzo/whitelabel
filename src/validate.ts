@@ -260,10 +260,12 @@ export function checkTemplates(
 
 /* ---- instance-config readers -------------------------------------------- */
 
-function loadJournal(instanceRoot: string | null, probes: FsProbes): JournalConfig {
+/** null = a resolved instance root with no `journal.yml`: broken, not `--no-instance` ([R116]). */
+function loadJournal(instanceRoot: string | null, probes: FsProbes): JournalConfig | null {
   if (instanceRoot) {
     const p = join(instanceRoot, 'journal.yml');
-    if (probes.existsProbe(p)) return JournalConfig.parse(parse(readFileSync(p, 'utf8')));
+    if (!probes.existsProbe(p)) return null;
+    return JournalConfig.parse(parse(readFileSync(p, 'utf8')));
   }
   return JournalConfig.parse({ name: 'unknown' });
 }
@@ -390,8 +392,19 @@ export function runLayerA(
     if (!r.ok) findings.push({ check, severity: r.severity, message: r.message, klass });
   };
 
-  const journal = loadJournal(instanceRoot, probes);
+  const loaded = loadJournal(instanceRoot, probes);
   const registry = loadRegistry(instanceRoot, probes);
+
+  // An absent policy is not a passing one: every id rule and every Layer-B check no-ops ([R116]).
+  if (loaded === null) {
+    findings.push({
+      check: 'journal-config',
+      severity: 'error',
+      message: msg.validate.journalMissing(instanceRoot!),
+      klass: 'config',
+    });
+  }
+  const journal = loaded ?? JournalConfig.parse({ name: 'unknown' });
 
   if (!project.id) {
     findings.push({
@@ -659,7 +672,9 @@ export async function runValidate(
   // hiding the very Layer-A finding that explains the failure. So we short-circuit: skip Layer B
   // when Layer A already blocks. And even when Layer A is clean we GUARD the Layer-B call, so an
   // unexpected myst/curvenote throw degrades to a reported check error, never a crashed gate.
-  const journal = loadJournal(input.instanceRoot, probes);
+  // Layer A already blocked on an absent policy ([R116]); the default just keeps the shape.
+  const journal =
+    loadJournal(input.instanceRoot, probes) ?? JournalConfig.parse({ name: 'unknown' });
   let checks: EngineCheckResult[] = [];
   // Only STRUCTURAL Layer-A errors (missing index.md / stray myst.yml) stop myst from
   // processing → skip Layer B. A bad id (identity) does NOT stop processing, so editorial

@@ -23,6 +23,9 @@ import { readDoc, writeDoc } from './yaml-io.js';
 import { renderPins, renderCodeowners, type TemplateAnswers } from './bootstrap.js';
 import * as msg from './messages.js';
 
+/** Exported so `conformance reset` sweeps the same prefix it opens ([R117]). */
+export const UPGRADE_BRANCH_PREFIX = 'oak/upgrade-';
+
 const PINS_REL = posix.join('.github', 'actions', 'engine', 'pins.yml');
 const CODEOWNERS_REL = 'CODEOWNERS';
 
@@ -231,7 +234,7 @@ export async function cmdUpgrade(input: UpgradeInput, deps: UpgradeDeps): Promis
   }
 
   const url = deps.pr.open(repoRoot, {
-    branch: `oak/upgrade-${target}`,
+    branch: `${UPGRADE_BRANCH_PREFIX}${target}`,
     title: msg.upgrade.prTitle(target),
     body: upgradeBody(target, versionChanged, drift),
     paths,

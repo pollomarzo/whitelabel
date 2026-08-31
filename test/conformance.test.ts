@@ -20,6 +20,7 @@ import {
   type CheckRunRef,
 } from '../src/conformance.js';
 import { RESERVED_BUNDLE_NAMES } from '../src/zenodo.js';
+import { UPGRADE_BRANCH_PREFIX } from '../src/upgrade.js';
 
 const REPO = 'me/fixture-paper-repo';
 
@@ -553,6 +554,40 @@ describe('cmdConformanceCertify', () => {
     expect(out.result).toMatchObject({ status: 'failed', path: 'deposit' });
     expect(out.result.failure).toContain('Publish Zenodo deposit');
     expect(gh.deletedReleases).toEqual([CERT_DEPOSIT_TAG]); // only the pre-push cleanup ran (failed before post-success cleanup)
+  });
+});
+
+describe('reset sweeps what the run creates ([R117])', () => {
+  it('deletes the upgrade branch, not just cert-*', async () => {
+    // Sweeping only cert-* made certify once-per-tag ([R117]).
+    const branches = ['cert-123', 'oak/upgrade-v0.0.2', 'main'];
+    const deleted: string[] = [];
+    const out = await cmdConformanceReset(
+      { repo: 'o/r' },
+      {
+        log: () => {},
+        gh: {
+          listOpenPrs: () => [],
+          closePr: () => {},
+          listBranches: (_r: string, prefix: string) =>
+            branches.filter((b) => b.startsWith(prefix)),
+          deleteBranch: (_r: string, b: string) => {
+            deleted.push(b);
+          },
+          listTags: () => [],
+          deleteTag: () => {},
+          deleteRelease: () => {},
+        } as unknown as Parameters<typeof cmdConformanceReset>[1]['gh'],
+      },
+    );
+    expect(deleted).toContain('oak/upgrade-v0.0.2');
+    expect(deleted).toContain('cert-123');
+    expect(deleted).not.toContain('main');
+    expect(out.exitCode).toBe(0);
+  });
+
+  it('uses the prefix `oak upgrade` actually opens', () => {
+    expect(UPGRADE_BRANCH_PREFIX).toBe('oak/upgrade-');
   });
 });
 

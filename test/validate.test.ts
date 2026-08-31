@@ -572,3 +572,35 @@ describe('runValidate: degrading when there is nothing to compose ([R82])', () =
     expect(out.notes.some((n) => /own myst\.yml ONLY/.test(n))).toBe(true);
   });
 });
+
+describe('an unloadable journal policy blocks ([R116])', () => {
+  // Every rule the gate enforces is read from journal.yml ([R116]).
+  // Denies papers.yml too: loadRegistry readFileSyncs whatever the probe admits ([R119]e).
+  const noJournal: FsProbes = {
+    existsProbe: (p: string) => !p.endsWith('journal.yml') && !p.endsWith('papers.yml'),
+    listTree: () => [],
+  };
+  const layerA = (instanceRoot: string | null, probes: FsProbes) =>
+    runLayerA(
+      {
+        paperRoot: '/paper',
+        instanceRoot,
+        project: { id: 'anything-at-all' },
+        repo: null,
+        engineRoot: null,
+        edition: null,
+      },
+      probes,
+    );
+
+  it('fails when a resolved instance root carries no journal.yml', () => {
+    const f = layerA('/instance', noJournal).find((x) => x.check === 'journal-config');
+    expect(f, 'a missing journal.yml must be reported').toBeTruthy();
+    expect(f!.severity).toBe('error');
+  });
+
+  it('stays silent when there is deliberately no instance', () => {
+    // --no-instance is a tenant choice, not a broken instance.
+    expect(layerA(null, noJournal).some((x) => x.check === 'journal-config')).toBe(false);
+  });
+});
