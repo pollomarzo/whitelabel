@@ -117,7 +117,7 @@ A second delivery path, and **not yet the one CI uses**: papers still run the en
 exactly as above. What follows is what the package is and is not, so nobody infers a guarantee from
 its existence.
 
-**Two coordinate systems, deliberately.** `package.json`'s `version` (`0.0.1`) is independent of the
+**Two coordinate systems, deliberately.** `package.json`'s `version` is independent of the
 release tag (`vX.Y.Z-dev.N`), which `cut-engine-release.sh` takes as an argument. npm versions are
 effectively permanent (72 h unpublish window) and must be real semver, so they cannot follow the
 disposable dev tags. **Nothing currently keeps the two in step** (the cut script has no npm step)

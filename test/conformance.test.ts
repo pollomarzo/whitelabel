@@ -4,6 +4,8 @@
  * tags, is idempotent (a second run is a no-op), and leaves unrelated refs untouched.
  */
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import {
   cmdConformanceReset,
   cmdConformanceCertify,
@@ -464,7 +466,10 @@ describe('cmdConformanceCertify', () => {
       { repo: REPO, tag: TAG },
       certDeps(gh, { probe: async (url) => (url.includes('pages.dev') ? 503 : 200) }),
     );
-    expect(out.exitCode).toBe(2); // inconclusive, not a red
+    // 3, not 2: exit 2 is the CLI's generic usage/UserError code, and the conformance workflow
+    // treats every non-1 code as green, so sharing it made "never started" look like "a third
+    // party was slow". Inconclusive is still not a red.
+    expect(out.exitCode).toBe(3);
     expect(out.result).toMatchObject({ status: 'inconclusive', path: 'preview-same-repo' });
     expect(out.result.reason).toContain('503');
   });
@@ -483,7 +488,7 @@ describe('cmdConformanceCertify', () => {
       ],
     });
     const out = await cmdConformanceCertify({ repo: REPO, tag: TAG }, certDeps(gh));
-    expect(out.exitCode).toBe(2);
+    expect(out.exitCode).toBe(3);
     expect(out.result).toMatchObject({ status: 'inconclusive', path: 'push-main' });
     expect(out.result.reason).toContain('timed out');
   });
@@ -551,5 +556,65 @@ describe('cmdConformanceCertify', () => {
     expect(out.result).toMatchObject({ status: 'failed', path: 'deposit' });
     expect(out.result.failure).toContain('Publish Zenodo deposit');
     expect(gh.deletedReleases).toEqual([CERT_DEPOSIT_TAG]); // only the pre-push cleanup ran (failed before post-success cleanup)
+  });
+});
+
+/**
+ * Pass A, P4. The release chain certifies everything else, so a false green here is a false green
+ * everywhere. These cover the gate itself rather than the logic behind it, because that is where
+ * the defects were: the shell script and the workflow have no other test.
+ */
+describe('P4: the gate cannot pass without a verdict', () => {
+  const read = (p: string) => readFileSync(join(import.meta.dirname, '..', p), 'utf8');
+
+  it('does not reuse the CLI usage exit code for a verdict', () => {
+    // `oak conformance certify` with a missing --repo exits 2, the CLI's generic UserError code.
+    // The workflow used to pass every non-1 code, so an unset fixture variable certified nothing
+    // and reported green, permanently, writing no record to notice it by.
+    const wf = read('.github/workflows/conformance.yml');
+    expect(wf).not.toContain('[ "$CODE" = "1" ] && exit 1 || exit 0');
+    expect(wf, 'a missing record must redden the run').toContain('if [ ! -f cert.json ]');
+    expect(wf, 'only a real inconclusive verdict may stay green').toMatch(/^\s*3\)/m);
+  });
+
+  it('unstages the release artifacts on ANY exit from the cut', () => {
+    // dist/cli.cjs and bin/typst are force-added into the developer's real index. Left staged by
+    // an interrupted cut, the next ordinary commit puts them on a branch, and the shim's guard is
+    // a file-existence test, so that branch becomes a runnable engine ref.
+    const cut = read('scripts/cut-engine-release.sh');
+    const trap = cut.indexOf('trap ');
+    const add = cut.indexOf('git add -f dist/cli.cjs');
+    expect(trap, 'no trap; an interrupted cut leaves them staged').toBeGreaterThan(-1);
+    expect(trap).toBeLessThan(add);
+  });
+
+  it('does not leave a pushed tag without its release', () => {
+    // A runnable engine is a release ([R57]). A tag pushed before `gh release create` succeeds
+    // breaks that in the direction that matters, and burns the version: the clobber guard then
+    // refuses to re-cut it.
+    const cut = read('scripts/cut-engine-release.sh');
+    expect(cut).toMatch(/if ! gh release create/);
+    expect(cut, 'the tag must be removed when the release does not follow').toContain(
+      'git push origin --delete',
+    );
+  });
+
+  it('typechecks before cutting', () => {
+    // esbuild strips types without checking them, so a type error passes `npm test`. The workflow
+    // that does typecheck is deliberately not a required check.
+    // Strip comments first: this lint passed against a `# npm run typecheck` line on its own
+    // first run, which is the same shape of mistake as trusting a guard nobody tested.
+    const code = read('scripts/cut-engine-release.sh')
+      .split('\n')
+      .filter((l) => !l.trim().startsWith('#'))
+      .join('\n');
+    expect(code).toContain('npm run typecheck');
+  });
+
+  it('fails the fixture render when no PDF is produced', () => {
+    // The gate step aimed at the green-but-empty class ([R67]) reported "(not produced)" and
+    // exited 0, so it could not fail for the thing it exists to catch.
+    const f = read('scripts/build-fixture.mjs');
+    expect(f).toMatch(/if \(!pdf\)[\s\S]*process\.exit\(1\)/);
   });
 });

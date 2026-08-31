@@ -593,13 +593,17 @@ export async function cmdConformanceCertify(
       },
     };
   } catch (err) {
-    // Attribute the failure: a ThirdPartyError (outage/timeout) is INCONCLUSIVE (exit 2), never
+    // Attribute the failure: a ThirdPartyError (outage/timeout) is INCONCLUSIVE (exit 3), never
     // a red "the engine is broken"; anything else is a definitive cert FAILURE (exit 1).
     const message = err instanceof Error ? err.message : String(err);
     if (err instanceof ThirdPartyError) {
       log(`engine ${tag}: paper-CI INCONCLUSIVE at ${phase}: ${message}`);
       return {
-        exitCode: 2,
+        // NOT 2. Exit 2 is the CLI's generic usage/UserError code, and the conformance
+        // workflow treats every non-1 code as green, so sharing it meant "I never started" and
+        // "a third party was slow" were the same signal: an unset fixture var certified nothing,
+        // forever, with a green check. INCONCLUSIVE gets a code of its own.
+        exitCode: 3,
         result: { status: 'inconclusive', tag, path: phase, repo, reason: message },
       };
     }
