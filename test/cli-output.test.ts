@@ -10,7 +10,7 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, copyFileSync, readFileSync, writeFileSync, cpSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { bundleState, assertBundleNotStale, bundlePath } from './bundle-state.js';
 import { labelChildOutput } from '../src/gh.js';
@@ -218,6 +218,94 @@ describe.skipIf(bundleState() === 'absent')('a broken paper gets a sentence, nev
     const { stderr } = oak([]);
     expect(stderr).toMatch(/oak start/);
     expect(stderr).toContain("mystmd's live preview");
+  });
+});
+
+describe.skipIf(bundleState() === 'absent')('bootstrap preflight ([R110], [R125], [R127])', () => {
+  beforeAll(assertBundleNotStale);
+
+  /** Run the bundle with gh unreachable (node by absolute path, PATH a dir without gh), or
+   *  with a gh stub that answers --version but is logged out. */
+  function oakOffline(
+    args: string[],
+    opts: { ghStub?: string; env?: NodeJS.ProcessEnv } = {},
+  ): { code: number; stderr: string } {
+    if (opts.ghStub) {
+      writeFileSync(
+        opts.ghStub,
+        '#!/bin/sh\n[ "$1" = "--version" ] && exit 0\necho "not logged in" >&2\nexit 1\n',
+        { mode: 0o755 },
+      );
+    }
+    const env = {
+      ...process.env,
+      ...opts.env,
+      PATH: opts.ghStub ? dirname(opts.ghStub) : mkdtempSync(join(tmpdir(), 'oak-nopath-')),
+    };
+    delete env.CI;
+    delete env.GITHUB_ACTIONS;
+    const r = spawnSync(process.execPath, [bundlePath, ...args], { encoding: 'utf8', env });
+    return { code: r.status ?? 1, stderr: r.stderr ?? '' };
+  }
+
+  it('no gh on PATH is a sentence naming the fix, not a stack or a "no stable release"', () => {
+    const { code, stderr } = oakOffline([
+      'bootstrap',
+      'paper',
+      '--repo',
+      'me/p',
+      '--instance',
+      'me/i',
+      '--edition',
+      'e',
+    ]);
+    expect(code).toBe(2);
+    expect(stderr).toContain('gh');
+    expect(stderr).toContain('not on PATH');
+    expect(stderr).toContain('gh auth login');
+    // The preflight precedes the engine-release probe, which prints a misleading
+    // "no stable release" when gh is the actual problem.
+    expect(stderr).not.toContain('no stable release');
+    expect(stderr).not.toMatch(/\bat \w+ \(/);
+  });
+
+  it('a gh that is installed but logged out says gh auth login', () => {
+    const ghStub = join(mkdtempSync(join(tmpdir(), 'oak-fakegh-')), 'gh');
+    const { code, stderr } = oakOffline(
+      ['bootstrap', 'paper', '--repo', 'me/p', '--instance', 'me/i', '--edition', 'e'],
+      { ghStub },
+    );
+    expect(code).toBe(2);
+    expect(stderr).toContain('no account is logged in');
+    expect(stderr).toContain('gh auth login');
+    expect(stderr).not.toContain('no stable release');
+  });
+
+  it('a typed secret flag on bootstrap journal --external is refused, before any gh call', () => {
+    const { code, stderr } = oakOffline([
+      'bootstrap',
+      'journal',
+      '--repo',
+      'me/j',
+      '--external',
+      '--zenodo-token',
+      't',
+    ]);
+    expect(code).toBe(2);
+    expect(stderr).toContain('--zenodo-token');
+    expect(stderr).toContain('oak bootstrap paper');
+    // The refusal is decidable without the network, so it precedes the preflight.
+    expect(stderr).not.toContain('not on PATH');
+  });
+
+  it('an env-derived token does not trigger the refusal', () => {
+    const { code, stderr } = oakOffline(['bootstrap', 'journal', '--repo', 'me/j', '--external'], {
+      env: { ZENODO_TOKEN: 'zt' },
+    });
+    expect(code).toBe(2);
+    // It stopped at the preflight, not at a secrets refusal.
+    expect(stderr).toContain('not on PATH');
+    expect(stderr).not.toContain('--zenodo-token');
   });
 });
 

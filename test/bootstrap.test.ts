@@ -847,3 +847,163 @@ describe('buildReviewTree drops author files under editor-controlled paths ([R12
     expect(Object.keys(tree).sort()).toEqual(['.github/workflows/ci.yml', 'index.md']);
   });
 });
+
+/* --------------------------------------------------------------------------
+ * A failed step is recorded, not thrown ([R125])
+ * ------------------------------------------------------------------------ */
+
+describe('a failing provisioning step ([R125])', () => {
+  it('a settings failure is recorded, the other settings still run, and the run reports incomplete', async () => {
+    // A 403 at the first ruleset used to discard the actions map and print a stack, leaving
+    // a repo whose remaining settings were never attempted.
+    const { prov, calls } = fakeProv();
+    prov.createRuleset = () => {
+      throw new Error('gh api failed (exit 1): 403 rulesets are not available on private repos');
+    };
+    const out = await cmdBootstrapPaper(paperInput(), deps(prov));
+    expect(out.exitCode).toBe(1);
+    expect(out.result.status).toBe('incomplete');
+    const actions = out.result.actions as Record<string, string>;
+    expect(actions.repo).toBe('created');
+    expect(actions.main).toBe('seeded');
+    expect(actions.protect_main).toMatch(/^failed: .*403/);
+    expect(actions.v_tags).toMatch(/^failed: /);
+    // Independent steps are all attempted: the whole picture, not the first exception.
+    expect(actions.pages).toBe('enabled');
+    expect(calls.enablePages).toHaveLength(1);
+    expect(calls.createLabel).toHaveLength(2);
+    expect((out.result.failed as string[]).join('\n')).toContain('protect_main');
+    const runbook = (out.result.runbook as string[]).join('\n');
+    expect(runbook).toContain('protect_main');
+    expect(runbook).toContain('re-run');
+  });
+
+  it('a repo that cannot be created stops the run, but in the same envelope, not a stack', async () => {
+    const { prov, calls } = fakeProv();
+    prov.createRepo = () => {
+      throw new Error('gh repo create failed (exit 1): 403 name already taken');
+    };
+    const out = await cmdBootstrapPaper(paperInput(), deps(prov));
+    expect(out.exitCode).toBe(1);
+    expect(out.result.status).toBe('incomplete');
+    expect((out.result.actions as Record<string, string>).repo).toMatch(/^failed: /);
+    // Nothing downstream can act on a repo that does not exist.
+    expect(calls.seedBranch).toHaveLength(0);
+    expect(calls.createRuleset).toHaveLength(0);
+  });
+
+  it('a seed failure skips the ingest chain, but the settings are still provisioned', async () => {
+    const { prov, calls } = fakeProv();
+    prov.seedBranch = () => {
+      throw new Error('git push failed (exit 1): remote hung up');
+    };
+    const out = await cmdBootstrapPaper(paperInput({ from: 'https://github.com/a/b' }), deps(prov));
+    expect(out.result.status).toBe('incomplete');
+    // No main means no base to restore the frozen .github/ from and no PR base.
+    expect(calls.ingestReviewBranch).toHaveLength(0);
+    expect(calls.openPr).toHaveLength(0);
+    expect(calls.createRuleset).toHaveLength(2);
+    expect((out.result.actions as Record<string, string>).main).toMatch(/^failed: /);
+  });
+
+  it('a secret gh refuses lands in the by-hand list; the others are still set', async () => {
+    const { prov } = fakeProv();
+    const setCalls: string[] = [];
+    prov.setSecret = (_r, name) => {
+      setCalls.push(name);
+      if (name === 'ZENODO_TOKEN')
+        throw new Error('gh secret set failed (exit 1): resource not accessible');
+    };
+    const out = await cmdBootstrapPaper(
+      paperInput({ secrets: { zenodoToken: 'zt', cfToken: 'ct' } }),
+      deps(prov),
+    );
+    expect(setCalls).toEqual(['ZENODO_TOKEN', 'CLOUDFLARE_API_TOKEN']); // the loop carried on
+    expect(out.result.secrets_set).toEqual(['CLOUDFLARE_API_TOKEN']);
+    expect((out.result.runbook as string[]).join('\n')).toContain('ZENODO_TOKEN');
+    expect(out.result.status).toBe('incomplete');
+  });
+
+  it('the external journal tier reports a failed Pages step the same way', async () => {
+    const { prov } = fakeProv();
+    prov.enablePages = () => {
+      throw new Error('gh api failed (exit 1): 403');
+    };
+    const out = await cmdBootstrapJournal(
+      {
+        repo: 'me/config',
+        tier: 'external',
+        name: 'J',
+        edition: 'ed-2026',
+        engineVersion: 'v1',
+        engineRepo: 'me/engine',
+        authedUser: 'alice',
+        secrets: {},
+      },
+      deps(prov),
+    );
+    expect(out.exitCode).toBe(1);
+    expect(out.result.status).toBe('incomplete');
+    expect((out.result.actions as Record<string, string>).pages).toMatch(/^failed: /);
+    expect(out.result.site_url).toBeTruthy();
+    expect((out.result.runbook as string[]).join('\n')).toContain("'pages'");
+  });
+
+  it('the co-located journal tier: a settings failure still seeds main and reports incomplete', async () => {
+    const { prov, calls } = fakeProv();
+    prov.createRuleset = () => {
+      throw new Error('gh api failed (exit 1): 403');
+    };
+    const out = await cmdBootstrapJournal(
+      {
+        repo: 'me/journal',
+        tier: 'co-located',
+        name: 'J',
+        edition: 'ed-2026',
+        engineVersion: 'v1',
+        engineRepo: 'me/engine',
+        authedUser: 'alice',
+        requireChecks: true,
+        secrets: {},
+      },
+      deps(prov),
+    );
+    expect(calls.seedBranch).toHaveLength(1);
+    expect(out.result.status).toBe('incomplete');
+    expect((out.result.actions as Record<string, string>).protect_main).toMatch(/^failed: /);
+  });
+
+  it('an existing zenodo-publish environment is left alone when there is no reviewer to add ([R127])', async () => {
+    // The PUT carries the whole environment, so re-PUTting it to add nobody cleared any
+    // field a tenant set by hand; the plan invites re-running.
+    const { prov, calls } = fakeProv({
+      ownerType: 'Organization',
+      environments: new Set(['org/paper/zenodo-publish']),
+    });
+    const out = await cmdBootstrapPaper(
+      paperInput({ repo: 'org/paper', owner: '@org' }),
+      deps(prov),
+    );
+    expect(calls.upsertEnvironment).toHaveLength(0);
+    expect((out.result.actions as Record<string, string>).zenodo_reviewers).toBe('none');
+    expect((out.result.runbook as string[]).join('\n')).toContain('settings/environments');
+    expect(out.result.status).toBe('ok'); // no reviewer is a runbook item, not a failure
+  });
+
+  it('--private warns in the plan that the settings steps need a paid plan ([R127])', async () => {
+    const { prov } = fakeProv();
+    const plans: string[][] = [];
+    const d = deps(prov);
+    d.confirm = async (plan) => {
+      plans.push(plan);
+      return false;
+    };
+    await cmdBootstrapPaper(paperInput({ private: true }), d);
+    const plan = plans[0]!.join('\n');
+    expect(plan).toContain('403');
+    expect(plan).toContain('rulesets or Pages');
+    // The warning is tied to the flag, not printed on every plan.
+    await cmdBootstrapPaper(paperInput(), d);
+    expect(plans[1]!.join('\n')).not.toContain('free plan');
+  });
+});

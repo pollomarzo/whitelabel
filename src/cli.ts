@@ -880,6 +880,9 @@ function secretsFrom(argv: string[]) {
   };
 }
 
+/** The typed secret flags, for the refusals that distinguish a typed one from an env value. */
+const SECRET_FLAGS = ['zenodo-token', 'zenodo-token-sandbox', 'cf-token', 'cf-account'] as const;
+
 /** `oak bootstrap <paper|journal>`: onboarding (slice 5). */
 async function cmdBootstrap(argv: string[]): Promise<number> {
   const sub = argv[0];
@@ -896,6 +899,22 @@ async function cmdBootstrap(argv: string[]): Promise<number> {
     process.stderr.write(msg.workflow.bootstrapNoRepo + '\n');
     return 2;
   }
+  // Argument-shape refusals come before any gh call: they are decidable without the
+  // network, and a wrong flag must not die as a gh failure ([R127]).
+  const external = sub === 'journal' && has(rest, 'external');
+  if (sub === 'journal') {
+    if (external === has(rest, 'co-located')) {
+      process.stderr.write(msg.workflow.bootstrapJournalTier + '\n');
+      return 2;
+    }
+    // The external tier sets no secrets on its repo; a TYPED secret flag there is silently
+    // discarded, so refuse it. Env-derived values are tolerated ([R127]).
+    if (external && SECRET_FLAGS.some((f) => flag(rest, f))) {
+      process.stderr.write(msg.workflow.bootstrapSecretsNeedPaper + '\n');
+      return 2;
+    }
+  }
+  gh.assertGhReady();
   const engineRepo = flag(rest, 'engine-repo') ?? ENGINE_REPO_DEFAULT;
   let engineVersion = flag(rest, 'engine-version');
   // How the version was arrived at is part of the plan, not a detail: "the newest release
@@ -953,12 +972,6 @@ async function cmdBootstrap(argv: string[]): Promise<number> {
   }
 
   if (sub === 'journal') {
-    const external = has(rest, 'external');
-    const coLocated = has(rest, 'co-located');
-    if (external === coLocated) {
-      process.stderr.write(msg.workflow.bootstrapJournalTier + '\n');
-      return 2;
-    }
     const out = await bootstrap.cmdBootstrapJournal(
       {
         repo,
