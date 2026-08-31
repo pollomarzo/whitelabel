@@ -105,3 +105,16 @@ describe('labelChildOutput', () => {
     expect(labelChildOutput('git', 'a\n\nb')).toBe('  [git] a\n  [git] b');
   });
 });
+
+describe('ingest restores the editor-side .github ([R121])', () => {
+  it('deletes before restoring, so an author-only path cannot survive', () => {
+    // `git checkout <tree> -- .github` overwrites the paths that tree HAS and leaves the rest,
+    // so an author workflow at a path main lacks reached a branch pushed to the base repo.
+    const src = SRC('gh.ts');
+    const del = src.indexOf("'rm', '-rqf', '--ignore-unmatch', '--', '.github'");
+    const restore = src.indexOf("'checkout', 'origin/main', '--', '.github'");
+    expect(del, 'no delete before the restore').toBeGreaterThan(-1);
+    expect(restore).toBeGreaterThan(-1);
+    expect(del).toBeLessThan(restore);
+  });
+});
