@@ -757,6 +757,10 @@ export const workflow = {
   notifyBadDoi: (doi: string): string =>
     `unrecognized DOI prefix: ${doi} (expected 10.5281/zenodo.* or 10.5072/zenodo.*)`,
   notifyFirstDeposit: 'no v* tags on main (first-deposit case)',
+  /** [R108]: a gh failure reading the tags must not be answerable as "no tags". */
+  notifyTagsFailed: (why: string): string =>
+    `notify: gh could not list the repo's version tags (${why}); whether the paper is ` +
+    'already published is unknown, and the reminder is not skipped on a guess.',
 
   // check-post
   checkPostArgs:

@@ -364,4 +364,20 @@ describe('runNewVersionReminder', () => {
     expect(out.exitCode).toBe(1);
     expect(out.result.reminder).toBe('error');
   });
+
+  it('a gh failure reading the tags is an error, not a first-deposit skip ([R108])', () => {
+    const gh = fakeGh({
+      versionTags: () => {
+        throw new Error('gh api failed (exit 1): rate limit exceeded');
+      },
+    });
+    const out = runNewVersionReminder(
+      { repoRoot: '/repo', mystPath: mystWith('10.5281/zenodo.1'), repo: 'o/r', pr: '3' },
+      gh.gh,
+    );
+    expect(out.exitCode).toBe(1);
+    expect(out.result.status).toBe('error');
+    expect(out.result.reminder).toBe('error');
+    expect(gh.stickies).toHaveLength(0);
+  });
 });

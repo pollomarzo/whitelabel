@@ -357,6 +357,19 @@ describe('runValidate: exit codes over the fixture instance', () => {
     const strict = await runValidate(base, { repo: null, strict: true }, allTrue);
     expect(strict.exitCode).toBe(1);
   });
+
+  it('--strict reports ONE verdict: status and Check Run fail too, not just the exit code ([R119])', async () => {
+    // A strict run that exits 1 while printing status ok and a success Check Run is two
+    // verdicts; whichever a reader trusts, the other lies.
+    const base = { paperRoot: '/paper', instanceRoot: null, edge: edgeReturning(goodProject) };
+    const lax = await runValidate(base, { repo: null }, allTrue);
+    expect(lax.status).toBe('ok');
+    expect(lax.checkRun.conclusion).toBe('success');
+    const strict = await runValidate(base, { repo: null, strict: true }, allTrue);
+    expect(strict.exitCode).toBe(1);
+    expect(strict.status).toBe('error');
+    expect(strict.checkRun.conclusion).toBe('failure');
+  });
 });
 
 describe('checkLayerDisjointness: extends layers must own disjoint keys ([R72])', () => {
