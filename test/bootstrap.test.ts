@@ -23,6 +23,7 @@ import {
   cmdBootstrapJournal,
   RULESET_V_TAGS,
   type Provisioner,
+  type EnvironmentReviewer,
   type TemplateAnswers,
   type BootstrapDeps,
 } from '../src/bootstrap.js';
@@ -205,11 +206,15 @@ interface FakeState {
   pages?: Set<string>;
   policies?: Set<string>; // "repo/env/name"
   visibility?: 'public' | 'private';
+  actionsCanApprovePrs?: boolean;
+  environments?: Set<string>; // "repo/env"
+  reviewers?: EnvironmentReviewer[]; // what the zenodo-publish env already has
 }
 
 function fakeProv(state: FakeState = {}) {
   const calls: Record<string, unknown[]> = {
     createRepo: [],
+    allowActionsApprovePrs: [],
     seedBranch: [],
     ingestReviewBranch: [],
     openPr: [],
@@ -241,8 +246,12 @@ function fakeProv(state: FakeState = {}) {
     createRuleset: (r, b) => rec('createRuleset', { r, b }),
     pagesEnabled: (r) => state.pages?.has(r) ?? false,
     enablePages: (r) => rec('enablePages', r),
-    environmentExists: () => false,
-    upsertEnvironment: (r, n) => rec('upsertEnvironment', { r, n }),
+    userId: (login) => (login === 'alice' ? 77 : 99),
+    actionsCanApprovePrs: () => state.actionsCanApprovePrs ?? false,
+    allowActionsApprovePrs: (r) => rec('allowActionsApprovePrs', r),
+    environmentExists: (r, n) => state.environments?.has(`${r}/${n}`) ?? false,
+    environmentReviewers: () => state.reviewers ?? [],
+    upsertEnvironment: (r, n, v) => rec('upsertEnvironment', { r, n, v }),
     branchPolicyExists: (r, e, n) => state.policies?.has(`${r}/${e}/${n}`) ?? false,
     createBranchPolicy: (r, e, n, t) => rec('createBranchPolicy', { r, e, n, t }),
     createLabel: (r, n) => rec('createLabel', { r, n }),
@@ -485,6 +494,58 @@ describe('cmdBootstrapPaper', () => {
     expect(runbook).toContain('ZENODO_TOKEN_SANDBOX');
     expect(runbook).toContain('CLOUDFLARE_API_TOKEN');
     expect(runbook).not.toContain('zt'); // never the value
+  });
+
+  it('allows Actions to open pull requests, or the first DOI write-back fails ([R122])', async () => {
+    const { prov, calls } = fakeProv();
+    const out = await cmdBootstrapPaper(paperInput(), deps(prov));
+    expect(calls.allowActionsApprovePrs).toEqual(['me/paper']);
+    expect((out.result.actions as Record<string, string>).actions_pull_requests).toBe('allowed');
+
+    const already = fakeProv({ actionsCanApprovePrs: true });
+    await cmdBootstrapPaper(paperInput(), deps(already.prov));
+    expect(already.calls.allowActionsApprovePrs).toHaveLength(0); // GET-then-act
+  });
+
+  it('names a zenodo-publish reviewer: the team on an org, the owner on an account ([R123])', async () => {
+    const org = fakeProv({ ownerType: 'Organization' });
+    const orgOut = await cmdBootstrapPaper(
+      paperInput({ repo: 'org/paper', owner: '@org/editors' }),
+      deps(org.prov),
+    );
+    expect(org.calls.upsertEnvironment).toEqual([
+      { r: 'org/paper', n: 'zenodo-publish', v: [{ type: 'Team', id: 4242 }] },
+    ]);
+    expect((orgOut.result.actions as Record<string, string>).zenodo_reviewers).toBe(
+      'Team org/editors',
+    );
+
+    const personal = fakeProv({ ownerType: 'User' });
+    await cmdBootstrapPaper(paperInput(), deps(personal.prov));
+    expect(personal.calls.upsertEnvironment).toEqual([
+      { r: 'me/paper', n: 'zenodo-publish', v: [{ type: 'User', id: 77 }] },
+    ]);
+  });
+
+  it('an org owner naming no team leaves the gate open, and says so ([R123])', async () => {
+    const { prov, calls } = fakeProv({ ownerType: 'Organization' });
+    const out = await cmdBootstrapPaper(
+      paperInput({ repo: 'org/paper', owner: '@org' }),
+      deps(prov),
+    );
+    expect(calls.upsertEnvironment).toEqual([{ r: 'org/paper', n: 'zenodo-publish', v: [] }]);
+    expect((out.result.actions as Record<string, string>).zenodo_reviewers).toBe('none');
+    expect((out.result.runbook as string[]).join('\n')).toContain('settings/environments');
+  });
+
+  it('a re-run keeps a zenodo-publish reviewer added by hand ([R123])', async () => {
+    const { prov, calls } = fakeProv({
+      environments: new Set(['me/paper/zenodo-publish']),
+      reviewers: [{ type: 'User', id: 12 }],
+    });
+    const out = await cmdBootstrapPaper(paperInput(), deps(prov));
+    expect(calls.upsertEnvironment).toHaveLength(0);
+    expect((out.result.actions as Record<string, string>).zenodo_reviewers).toBe('already set');
   });
 
   it('org owner grants the team + uses a Team bypass; personal uses a repo-admin bypass', async () => {

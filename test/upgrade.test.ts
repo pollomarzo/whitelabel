@@ -10,13 +10,19 @@ import { mkdtempSync, readFileSync, writeFileSync, appendFileSync, cpSync } from
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseDocument } from 'yaml';
-import { renderPaperTemplate, type TemplateAnswers } from '../src/bootstrap.js';
+import {
+  renderCodeowners,
+  codeownersColumns,
+  renderPaperTemplate,
+  type TemplateAnswers,
+} from '../src/bootstrap.js';
 import {
   computeDrift,
   readAnswers,
   cmdUpgrade,
   type UpgradePr,
   type UpgradeDeps,
+  ownerFromCodeowners,
 } from '../src/upgrade.js';
 
 const TEMPLATE_ROOT = 'templates/paper';
@@ -53,6 +59,64 @@ describe('computeDrift', () => {
     cpSync(TEMPLATE_ROOT, target, { recursive: true });
     appendFileSync(join(target, '.github/workflows/ci.yml'), '\n# new template line\n');
     expect(computeDrift(repo, target, readAnswers(repo))).toEqual(['.github/workflows/ci.yml']);
+  });
+
+  it('keeps a second CODEOWNER the tenant added ([R126])', () => {
+    const repo = makeRepo();
+    const co = join(repo, 'CODEOWNERS');
+    writeFileSync(co, readFileSync(co, 'utf8').replace(/@alice/g, '@org/editors @alice'));
+    expect(computeDrift(repo, TEMPLATE_ROOT, readAnswers(repo))).toEqual([]);
+  });
+
+  it('keeps DIFFERENT owners on different paths ([R126])', () => {
+    // The two halves of the fix mask each other when every path has the same owner, so this is
+    // the case that pins the column being path-keyed: an owner added to one gated path must not
+    // be spread onto the others, least of all onto CODEOWNERS itself.
+    const repo = makeRepo();
+    const co = join(repo, 'CODEOWNERS');
+    writeFileSync(
+      co,
+      readFileSync(co, 'utf8').replace(
+        '/.github/                @alice',
+        '/.github/                @org/editors @alice',
+      ),
+    );
+    expect(computeDrift(repo, TEMPLATE_ROOT, readAnswers(repo))).toEqual([]);
+    const after = readFileSync(co, 'utf8');
+    expect(after).toContain('/.github/                @org/editors @alice');
+    expect(after).toMatch(/\/CODEOWNERS\s+@alice$/m);
+  });
+
+  it('uses the whole column as the fallback for a path the repo lacks ([R126])', () => {
+    // Live case: every repo seeded before /paper-environment.yml joined the gate has a CODEOWNERS
+    // without that line, so the template's line falls back to the derived owner.
+    const repo = makeRepo();
+    const co = join(repo, 'CODEOWNERS');
+    const older = readFileSync(co, 'utf8')
+      .split('\n')
+      .filter((l) => !l.includes('paper-environment.yml'))
+      .join('\n')
+      .replace(/@alice/g, '@org/editors @alice');
+    writeFileSync(co, older);
+    const rendered = renderCodeowners(
+      readFileSync(join(TEMPLATE_ROOT, 'CODEOWNERS'), 'utf8'),
+      ownerFromCodeowners(older),
+      codeownersColumns(older),
+    );
+    expect(rendered).toMatch(/paper-environment\.yml\s+@org\/editors @alice$/m);
+  });
+
+  it('a resync does not revert a second CODEOWNER on an unrelated drift ([R126])', async () => {
+    const repo = makeRepo();
+    const co = join(repo, 'CODEOWNERS');
+    writeFileSync(co, readFileSync(co, 'utf8').replace(/@alice/g, '@org/editors @alice'));
+    appendFileSync(join(repo, '.github/workflows/ci.yml'), '\n# hand edit\n');
+    const { pr } = fakePr();
+    await cmdUpgrade(
+      { repoRoot: repo, mode: 'files-only' },
+      deps(pr, 'v2.0.0', () => TEMPLATE_ROOT),
+    );
+    expect(readFileSync(co, 'utf8')).toContain('@org/editors @alice');
   });
 
   it('reports a hand-edited repo file (reset-to-template)', () => {

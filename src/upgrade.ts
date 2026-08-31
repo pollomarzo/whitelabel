@@ -20,7 +20,12 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync, copyFileSync } from
 import { join, dirname, posix } from 'node:path';
 import { readdirSync, statSync } from 'node:fs';
 import { readDoc, writeDoc } from './yaml-io.js';
-import { renderPins, renderCodeowners, type TemplateAnswers } from './bootstrap.js';
+import {
+  renderPins,
+  renderCodeowners,
+  codeownersColumns,
+  type TemplateAnswers,
+} from './bootstrap.js';
 import * as msg from './messages.js';
 
 /** Exported so `conformance reset` sweeps the same prefix it opens ([R117]). */
@@ -33,15 +38,18 @@ const CODEOWNERS_REL = 'CODEOWNERS';
  * Answers read back from the repo (pins.yml + CODEOWNERS + myst.yml)
  * ------------------------------------------------------------------------ */
 
-/** The CODEOWNERS owner token (last field of the first gated line), or a safe default. */
+/** The CODEOWNERS owner column of the first gated line, or a safe default. The WHOLE column,
+ *  not its last token: a tenant may gate a path on more than one owner ([R126]). */
 export function ownerFromCodeowners(src: string): string {
-  for (const line of src.split('\n')) {
-    const t = line.trim();
-    if (!t || t.startsWith('#')) continue;
-    const parts = t.split(/\s+/);
-    if (parts.length >= 2) return parts[parts.length - 1]!;
-  }
-  return '@owner';
+  const first = Object.values(codeownersColumns(src))[0];
+  return first ?? '@owner';
+}
+
+/** The tenant's own owner column per gated path, so an owner they added survives a resync
+ *  ([R126]). A repo with no CODEOWNERS yields {}, and every line renders with the answer. */
+function codeownersOnDisk(repoRoot: string): Record<string, string> {
+  const co = join(repoRoot, CODEOWNERS_REL);
+  return existsSync(co) ? codeownersColumns(readFileSync(co, 'utf8')) : {};
 }
 
 export function readAnswers(repoRoot: string): TemplateAnswers {
@@ -85,15 +93,21 @@ function frozenFiles(templateAtTarget: string): string[] {
   return out.sort();
 }
 
-/** Render a single frozen file at the target with the repo's answers. */
+/** Render a single frozen file at the target with the repo's answers. `owners` carries the
+ *  repo's own CODEOWNERS columns ({@link codeownersOnDisk}). */
 export function renderFrozenFile(
   templateAtTarget: string,
   rel: string,
   answers: TemplateAnswers,
+  owners: Record<string, string> = {},
 ): string {
   if (rel === PINS_REL) return renderPins(templateAtTarget, answers);
   if (rel === CODEOWNERS_REL)
-    return renderCodeowners(readFileSync(join(templateAtTarget, rel), 'utf8'), answers.owner);
+    return renderCodeowners(
+      readFileSync(join(templateAtTarget, rel), 'utf8'),
+      answers.owner,
+      owners,
+    );
   return readFileSync(join(templateAtTarget, rel), 'utf8');
 }
 
@@ -107,8 +121,9 @@ export function computeDrift(
   answers: TemplateAnswers,
 ): string[] {
   const changed: string[] = [];
+  const owners = codeownersOnDisk(repoRoot);
   for (const rel of frozenFiles(templateAtTarget)) {
-    const rendered = renderFrozenFile(templateAtTarget, rel, answers);
+    const rendered = renderFrozenFile(templateAtTarget, rel, answers, owners);
     const onDisk = join(repoRoot, rel);
     if (!existsSync(onDisk) || readFileSync(onDisk, 'utf8') !== rendered) changed.push(rel);
   }
@@ -165,10 +180,11 @@ function resyncFiles(
   answers: TemplateAnswers,
   drift: string[],
 ): void {
+  const owners = codeownersOnDisk(repoRoot);
   for (const rel of drift) {
     const dest = join(repoRoot, rel);
     mkdirSync(dirname(dest), { recursive: true });
-    writeFileSync(dest, renderFrozenFile(templateAtTarget, rel, answers));
+    writeFileSync(dest, renderFrozenFile(templateAtTarget, rel, answers, owners));
   }
 }
 
