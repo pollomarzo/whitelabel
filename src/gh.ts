@@ -700,11 +700,9 @@ export const realProvisioner: Provisioner = {
     const args = ['label', 'create', name, '--repo', repo, '--force'];
     if (opts.color) args.push('--color', opts.color);
     if (opts.description) args.push('--description', opts.description);
-    try {
-      gh(args);
-    } catch {
-      /* label already exists at this definition, fine */
-    }
+    // No catch: `--force` already covers the label existing, so what is left is a real failure,
+    // and the step runner records it rather than losing it ([R127]).
+    gh(args);
   },
   setSecret(repo, name, value) {
     // stdin, never `--body`: argv is world-readable in /proc ([R104]).

@@ -283,3 +283,16 @@ describe('the preview deploy pins wrangler ([R109])', () => {
     expect(npx.args, 'a floating wrangler is not pinned').not.toContain('wrangler');
   });
 });
+
+describe('realProvisioner.createLabel ([R127])', () => {
+  it('does not swallow a refusal, since --force already covers the label existing', () => {
+    child.calls.length = 0;
+    child.respond = () => ({ status: 1, stdout: '', stderr: 'gh: Forbidden (HTTP 403)' });
+    expect(() =>
+      realProvisioner.createLabel('o/r', 'editor-action-needed', { color: 'b60205' }),
+    ).toThrow();
+    expect(ghCall('label', 'create')!.args, 'the create is idempotent on its own').toContain(
+      '--force',
+    );
+  });
+});
