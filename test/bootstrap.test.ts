@@ -920,7 +920,15 @@ describe('a failing provisioning step ([R125])', () => {
     );
     expect(setCalls).toEqual(['ZENODO_TOKEN', 'CLOUDFLARE_API_TOKEN']); // the loop carried on
     expect(out.result.secrets_set).toEqual(['CLOUDFLARE_API_TOKEN']);
-    expect((out.result.runbook as string[]).join('\n')).toContain('ZENODO_TOKEN');
+    // The BY-HAND list itself, parsed: the step-failure line names the secret too, and
+    // ZENODO_TOKEN is a substring of ZENODO_TOKEN_SANDBOX, so both looser assertions pass
+    // with the refused secret missing from this list.
+    const byHand = (out.result.runbook as string[]).find((l) =>
+      l.includes('settings/secrets/actions'),
+    );
+    const byHandNames = byHand!.split(' : ')[1]!.split('.')[0]!.split(', ');
+    expect(byHandNames).toContain('ZENODO_TOKEN');
+    expect(byHandNames).not.toContain('CLOUDFLARE_API_TOKEN');
     expect(out.result.status).toBe('incomplete');
   });
 
