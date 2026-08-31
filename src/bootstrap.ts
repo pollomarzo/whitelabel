@@ -12,7 +12,8 @@
  *  - **Ingest restores the ENTIRE `.github/` from `main`**, including
  *    `.github/actions/engine/pins.yml`, not just workflows + CODEOWNERS as the script did.
  *    In the new model `pins.yml` carries the trust-boundary `engine_repo` pin, so author-side
- *    `FETCH_HEAD` content must never supply it (see `buildReviewTree`).
+ *    `FETCH_HEAD` content must never supply it. `buildReviewTree` is the pure MODEL of that
+ *    invariant; `ingestReviewBranch` (gh.ts) is what actually runs ([R121]).
  *  - **Idempotent, GET-then-act**: every step reads state first, so a re-run repairs a partial
  *    bootstrap. Every mutation is a provisioning call or a PR, never a silent content push
  *    past the CODEOWNERS gate.
@@ -326,9 +327,8 @@ function copyFileBytes(src: string, dest: string): void {
  * The review tree = author content with the whole editor-side trust boundary restored from
  * `main`: the entire `.github/` (including `.github/actions/engine/pins.yml`, the engine pin)
  * plus the root `CODEOWNERS`. Author files under those paths are DROPPED and replaced by
- * main's. The script restored only workflows + CODEOWNERS; the new model must restore the
- * whole engine action too, so author `FETCH_HEAD` content can never supply `pins.yml`. Pure,
- * so the "pins.yml is editor-side, not author-side" invariant is unit-testable.
+ * main's. Pure, so the invariant is unit-testable; the shipped path is `ingestReviewBranch`,
+ * which must agree with it ([R121] is what happened when it did not).
  */
 export function buildReviewTree(
   authorFiles: Record<string, string>,

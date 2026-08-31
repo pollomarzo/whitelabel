@@ -774,3 +774,15 @@ describe('cmdBootstrapJournal', () => {
     expect(String(out.result.error)).toContain('--external');
   });
 });
+
+describe('buildReviewTree drops author files under editor-controlled paths ([R121])', () => {
+  it('drops an author .github path that main does not have', () => {
+    // The existing fixture gives main a SUPERSET of the author's editor-controlled paths, so the
+    // second loop's overwrite masks a missing filter. This is the author-only case.
+    const tree = buildReviewTree(
+      { 'index.md': 'a', '.github/workflows/evil.yml': 'on: push' },
+      { '.github/workflows/ci.yml': 'frozen' },
+    );
+    expect(Object.keys(tree).sort()).toEqual(['.github/workflows/ci.yml', 'index.md']);
+  });
+});

@@ -485,8 +485,10 @@ export const realProvisioner: Provisioner = {
     gitRaw(['checkout', '-B', 'review', 'origin/main'], tmp);
     gitRaw(['rm', '-rf', '.'], tmp);
     gitRaw(['checkout', 'FETCH_HEAD', '--', '.'], tmp);
-    // NEW MODEL: restore the ENTIRE editor-side .github (not just workflows + CODEOWNERS) so
-    // author FETCH_HEAD content can never supply the trust-boundary pins.yml.
+    // DELETE then restore. `git checkout <tree> -- .github` overwrites the paths that tree has
+    // and leaves the rest, so an author file at a path main lacks survived onto a branch pushed
+    // to the BASE repo with our credentials ([R121]).
+    gitRaw(['rm', '-rqf', '--ignore-unmatch', '--', '.github'], tmp);
     gitRaw(['checkout', 'origin/main', '--', '.github'], tmp);
     if (ghOk(['api', `repos/${repo}/contents/CODEOWNERS`])) {
       try {
