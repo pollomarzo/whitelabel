@@ -623,6 +623,10 @@ export const validate = {
     `no journal.yml in ${instanceRoot}, so the journal's own rules (the paper id policy and the ` +
     `editorial checks) could not be loaded and nothing was enforced. Point --instance at the ` +
     `journal repository, or pass --no-instance to validate the paper on its own.`,
+  idNoPattern:
+    "journal.yml sets no id_pattern, so paper ids are checked only against the engine's own " +
+    "template placeholder; set one to enforce the journal's own id convention: " +
+    docsUrl(DOCS.idPattern),
   idPlaceholder: (id: string): string =>
     `paper id "${id}" is the template placeholder; every paper needs a fresh unique id: ` +
     `${docsUrl(DOCS.idPattern)}`,
@@ -657,7 +661,17 @@ export const validate = {
     `directory, write "./${tenantTemplate}"; only ./ and ../ values are treated as paths. ` +
     `See ${docsUrl(DOCS.typstTemplate)}`,
 
+  // ── the deposit folder ─────────────────────────────────────────────────────────────────
+  depositCollision: (names: string[], reserved: string[]): string =>
+    `deposit/ holds ${names.map((n) => `"${n}"`).join(', ')}, which the engine writes into ` +
+    `every deposit itself; the release would refuse to publish. Rename them: ` +
+    `${reserved.join(', ')} are the engine's.`,
+
   // ── the extends layers must not race each other ────────────────────────────────────────
+  layerExtendsUnreadable: (refs: string): string =>
+    `extends layers point at ${refs}, which cannot be read from this checkout, so the keys ` +
+    'they declare could not be checked for clashes; extend a local path, or move those keys ' +
+    'into the layer itself.',
   layersOverlap: (clashes: string): string =>
     `extends layers declare overlapping keys: ${clashes}. ` +
     'myst resolves sibling extends by load-completion order, so the winner is ' +

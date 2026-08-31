@@ -188,6 +188,11 @@ export type Pins = z.infer<typeof Pins>;
 export type IdCheckResult =
   { ok: true } | { ok: false; severity: 'error' | 'warn'; message: string };
 
+/** The id the engine's own paper template ships, rejected whatever the journal says: a
+ *  tenant's `id_sentinel` widens this contract and cannot switch it off ([R119]a). Kept in
+ *  step with `templates/paper/myst.yml` by a test. */
+export const ENGINE_ID_SENTINEL = 'CHANGE-ME-template-placeholder';
+
 /**
  * Check A: sentinel + id-pattern. A pure function of the paper's own id and the
  * journal's policy; hard-fails everywhere, needs no registry. This is the check
@@ -197,7 +202,7 @@ export function checkIdShape(
   id: string,
   policy: { id_sentinel?: string; id_pattern?: string },
 ): IdCheckResult {
-  if (policy.id_sentinel && id === policy.id_sentinel) {
+  if (id === ENGINE_ID_SENTINEL || (policy.id_sentinel && id === policy.id_sentinel)) {
     return {
       ok: false,
       severity: 'error',

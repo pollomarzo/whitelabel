@@ -27,7 +27,7 @@ moves with it; `--provenance` requires it to match the publishing repo.
 |---|---|
 | `src/schema.ts` | zod contracts for the `oaktree-sapling` options key, `journal.yml`, the registry, `pins.yml`; id-shape + id-uniqueness checks (design dec. 20). Additive-only (dec. 24). JSON-Schema export. |
 | `src/compose.ts` | **pure** compose(): assembles the engine‹edition‹brand extends chain + computes the engine `ownOverride` (asset URLs). Unit-tested. |
-| `src/ref.ts` | engine-ref classification + the floating-author trust policy (dec. 23 / [R41]); syntactic half only; ancestry check is CI-side. |
+| `src/ref.ts` | engine-ref classification + the floating-author trust policy (dec. 23 / [R41]); syntactic half only, and **nothing calls it**: dec. 23 is unenforced, and the enforcement point is the composite action, not `oak` ([R118]). |
 | `src/assets.ts` | version-matched typst-template + theme-zip URLs (closes [R5]). |
 | `src/yaml-io.ts` | config round-trips (Document API, never sed, [R3]) + `DERIVED_CONFIG_FILE`. The author's `myst.yml` is read-only; writes go to the derived `myst.oak.yml` ([R71]). |
 | `src/materialize.ts` | the `MystEdge` seam + the two-pass `materializeDerived` that writes `myst.oak.yml`. Shared by `build` and `validate` ([R82]); its own module so those two do not import each other. |
@@ -90,7 +90,8 @@ Recorded in the ledger too; kept here because they explain code that otherwise l
 1. **`id` ≠ `slug` ≠ `location`**: three distinct registry coordinates. Real ids are
    `isp-`-prefixed/semantic (suheylgulenc → `isp-micropublication-decisive-times`), never the repo
    slug. `RegistryEntry` carries all three; the `id_sentinel` a paper is rejected for is
-   **instance-defined** (`journal.yml`), not a global constant.
+   **instance-defined** (`journal.yml`), and widens the engine's own `ENGINE_ID_SENTINEL`
+   rather than replacing it ([R119]a).
 2. **Typst export is engine-owned and WHOLE** ([R52]/[R53]): myst merges `exports` by id,
    whole-entry, base-wins, NO field merge; splitting a skeleton in paper-base from
    `articles`/`template` in the edition races and drops fields (caught in the first real build). So

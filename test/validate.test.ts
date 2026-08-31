@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { fileURLToPath } from 'node:url';
-import { mkdtempSync, writeFileSync, mkdirSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -10,9 +10,11 @@ import {
   checkBrandFavicon,
   checkBrandWatermark,
   checkThumbnail,
+  checkDepositNames,
   runValidate,
   type FsProbes,
   checkLayerDisjointness,
+  expandLayers,
   declaredKeys,
   isFloatingTemplate,
   checkTemplates,
@@ -128,6 +130,49 @@ describe('checkThumbnail ([R81])', () => {
       checkThumbnail({ paperRoot: '/paper', thumbnail: 'thumbnails/thumbnail.png' }, probes).ok,
     ).toBe(true);
     expect(seen).toContain('/paper/thumbnails/thumbnail.png');
+  });
+});
+
+describe('checkDepositNames ([R28])', () => {
+  const depositOf = (...entries: string[]): FsProbes => ({
+    existsProbe: () => true,
+    listTree: (dir) => (dir.endsWith('deposit') ? entries : []),
+  });
+
+  it('errors on a deposit/ file the engine writes itself', () => {
+    const out = checkDepositNames({ paperRoot: '/paper' }, depositOf('data.csv', 'source.zip'));
+    expect(out).toHaveLength(1);
+    expect(out[0]!.severity).toBe('error');
+    expect(out[0]!.check).toBe('deposit-names');
+    expect(out[0]!.message).toContain('source.zip');
+    expect(out[0]!.message).not.toContain('"data.csv"');
+  });
+
+  it('covers the conditional template.zip, not just the always-present five', () => {
+    expect(checkDepositNames({ paperRoot: '/paper' }, depositOf('template.zip'))).toHaveLength(1);
+  });
+
+  it('passes a deposit/ of ordinary supplements, and an absent one', () => {
+    expect(checkDepositNames({ paperRoot: '/paper' }, depositOf('data.csv'))).toEqual([]);
+    expect(checkDepositNames({ paperRoot: '/paper' }, depositOf())).toEqual([]);
+  });
+
+  it('reads the top level only, as the bundle does', () => {
+    // A nested path is not uploaded, and a DIRECTORY of a reserved name is not overwritten.
+    const out = checkDepositNames(
+      { paperRoot: '/paper' },
+      depositOf('sub', 'sub/paper.pdf', 'myst.yml', 'myst.yml/notes.txt'),
+    );
+    expect(out).toEqual([]);
+  });
+
+  it('probes the paper deposit/ folder, not the paper root', () => {
+    const seen: string[] = [];
+    checkDepositNames(
+      { paperRoot: '/paper' },
+      { existsProbe: () => true, listTree: (d) => (seen.push(d), []) },
+    );
+    expect(seen).toEqual([join('/paper', 'deposit')]);
   });
 });
 
@@ -270,6 +315,26 @@ describe('runValidate: exit codes over the fixture instance', () => {
     // and the id finding is an `identity`-class error that still gates the Check Run:
     expect(out.errors.find((e) => e.check === 'id-shape')?.klass).toBe('identity');
     expect(out.checkRun.conclusion).toBe('failure');
+  });
+
+  it('gates on a colliding deposit/ name, and Layer B still runs ([R28])', async () => {
+    const out = await runValidate(
+      {
+        paperRoot: '/paper',
+        instanceRoot,
+        edge: edgeReturning(goodProject, [
+          { id: 'abstract-exists', status: 'pass', message: 'ok' },
+        ]),
+      },
+      { repo: 'open-scholar-nexus/fixture-sample-paper' },
+      {
+        existsProbe: () => true,
+        listTree: (dir) => (dir.endsWith('deposit') ? ['paper.pdf'] : []),
+      },
+    );
+    expect(out.exitCode).toBe(1);
+    expect(out.errors.find((e) => e.check === 'deposit-names')?.klass).toBe('config');
+    expect(out.checks.some((c) => c.id === 'abstract-exists')).toBe(true);
   });
 
   it('a blocking Layer-B editorial fail gates the run (exit 1, failure)', async () => {
@@ -451,6 +516,93 @@ describe('checkLayerDisjointness: extends layers must own disjoint keys ([R72])'
   });
 });
 
+describe("a layer's own extends: is followed, not ignored ([R119]b)", () => {
+  const realProbes: FsProbes = { existsProbe: (p) => existsSync(p), listTree: () => [] };
+
+  /** An engine + instance pair on disk, with whatever extra layer files the case needs. */
+  function layout(files: Record<string, string>): { engineRoot: string; instanceRoot: string } {
+    const root = mkdtempSync(join(tmpdir(), 'oak-layers-'));
+    const engineRoot = join(root, 'engine');
+    const instanceRoot = join(root, 'instance');
+    mkdirSync(join(instanceRoot, 'editions'), { recursive: true });
+    mkdirSync(engineRoot, { recursive: true });
+    writeFileSync(join(engineRoot, 'paper-base.yml'), 'project:\n  venue: from-paper-base\n');
+    for (const [rel, body] of Object.entries(files)) {
+      writeFileSync(join(instanceRoot, rel), body);
+    }
+    return { engineRoot, instanceRoot };
+  }
+  const findings = (roots: { engineRoot: string; instanceRoot: string }) =>
+    runLayerA(
+      {
+        paperRoot: '/paper',
+        instanceRoot: roots.instanceRoot,
+        project: { id: 'x' },
+        repo: null,
+        engineRoot: roots.engineRoot,
+        edition: 'e',
+      },
+      realProbes,
+    );
+
+  it('finds a clash one file of indirection down', () => {
+    const f = findings(
+      layout({
+        'editions/e.yml': 'extends: ./shared.yml\nproject:\n  license: CC-BY-4.0\n',
+        'editions/shared.yml': 'project:\n  venue: from-shared\n',
+      }),
+    ).find((x) => x.check === 'extends-disjoint');
+    expect(f?.severity).toBe('error');
+    expect(f!.message).toContain('project.venue');
+    // named by the file that declared it, not by the layer that pulled it in:
+    expect(f!.message).toContain('editions/e.yml -> ./shared.yml');
+  });
+
+  it('reports an extends it cannot read rather than skipping it', () => {
+    const f = findings(
+      layout({ 'editions/e.yml': 'extends: https://example.org/shared.yml\n' }),
+    ).find((x) => x.check === 'extends-unreadable');
+    expect(f?.severity).toBe('error');
+    expect(f!.message).toContain('https://example.org/shared.yml');
+  });
+
+  it('reports an extends pointing at a file that is not there', () => {
+    const out = findings(layout({ 'editions/e.yml': 'extends: ./gone.yml\n' }));
+    expect(out.some((x) => x.check === 'extends-unreadable')).toBe(true);
+  });
+
+  it('stays quiet on a clean chain, and terminates on a cyclic one', () => {
+    const out = findings(
+      layout({
+        'editions/e.yml': 'extends:\n  - ./a.yml\n',
+        'editions/a.yml': 'extends: ./e.yml\nproject:\n  license: CC-BY-4.0\n',
+      }),
+    );
+    expect(out.some((x) => x.check.startsWith('extends-'))).toBe(false);
+  });
+
+  it('expandLayers takes each root and its chain, in order', () => {
+    const { engineRoot, instanceRoot } = layout({
+      'editions/e.yml': 'extends: ./shared.yml\n',
+      'editions/shared.yml': 'project:\n  venue: v\n',
+    });
+    const { layers, unreadable } = expandLayers(
+      [
+        { name: 'paper-base.yml', path: join(engineRoot, 'paper-base.yml') },
+        { name: 'editions/e.yml', path: join(instanceRoot, 'editions', 'e.yml') },
+        { name: 'brand/brand.yml', path: join(instanceRoot, 'brand', 'brand.yml') },
+      ],
+      realProbes,
+    );
+    expect(layers.map((l) => l.name)).toEqual([
+      'paper-base.yml',
+      'editions/e.yml',
+      'editions/e.yml -> ./shared.yml',
+    ]);
+    expect(unreadable).toEqual([]);
+  });
+});
+
 describe('the author template is RAW-LIFTED, never read from the composed project ([R82])', () => {
   // The regression this whole mechanism exists to prevent. Once validate reads the COMPOSED
   // config, the typst export always carries a template, compose stamps `flag ?? author ??
@@ -615,5 +767,47 @@ describe('an unloadable journal policy blocks ([R116])', () => {
   it('stays silent when there is deliberately no instance', () => {
     // --no-instance is a tenant choice, not a broken instance.
     expect(layerA(null, noJournal).some((x) => x.check === 'journal-config')).toBe(false);
+  });
+});
+
+describe('the id policy is not silently tenant-editable ([R119]a)', () => {
+  const journalOf = (yaml: string, dir: string) => {
+    writeFileSync(join(dir, 'journal.yml'), yaml);
+    return {
+      existsProbe: (p: string) => p.endsWith('journal.yml'),
+      listTree: () => [],
+    } satisfies FsProbes;
+  };
+  const layerA = (id: string, root: string | null, probes: FsProbes) =>
+    runLayerA({ paperRoot: '/paper', instanceRoot: root, project: { id }, repo: null }, probes);
+
+  it('warns when the journal declares no id_pattern', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'oak-idpolicy-'));
+    const found = layerA('anything-at-all', dir, journalOf('name: J\n', dir)).find(
+      (f) => f.check === 'id-policy',
+    );
+    expect(found?.severity).toBe('warn');
+  });
+
+  it('says nothing when the journal declares one', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'oak-idpolicy-'));
+    const probes = journalOf('name: J\nid_pattern: "^p-"\n', dir);
+    expect(layerA('p-x', dir, probes).some((f) => f.check === 'id-policy')).toBe(false);
+  });
+
+  it('says nothing without an instance: there is no policy to have ([R116] precedent)', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'oak-idpolicy-'));
+    const probes = journalOf('name: J\n', dir);
+    expect(layerA('anything-at-all', null, probes).some((f) => f.check === 'id-policy')).toBe(
+      false,
+    );
+  });
+
+  it('still rejects the placeholder id with both keys deleted', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'oak-idpolicy-'));
+    const found = layerA('CHANGE-ME-template-placeholder', dir, journalOf('name: J\n', dir)).find(
+      (f) => f.check === 'id-shape',
+    );
+    expect(found?.severity).toBe('error');
   });
 });
