@@ -387,7 +387,7 @@ async function cmdDeposit(argv: string[]): Promise<number> {
     process.stderr.write(msg.workflow.depositNoToken + '\n');
     return 2;
   }
-  const api = new z.ZenodoApi(z.createFetchTransport(), z.apiBase(sandbox), token);
+  const api = new z.ZenodoApi(z.createFetchTransport(), sandbox, token);
 
   if (sub === 'prepare') {
     const repo = flag(rest, 'repo') ?? process.env.GITHUB_REPOSITORY;
@@ -395,7 +395,7 @@ async function cmdDeposit(argv: string[]): Promise<number> {
       process.stderr.write(msg.workflow.depositNoRepo + '\n');
       return 2;
     }
-    const out = await z.cmdPrepare({ mystPath, repo, siteUrl, sandbox, api, instanceRoot });
+    const out = await z.cmdPrepare({ mystPath, repo, siteUrl, api, instanceRoot });
     emit(rest, out.result);
     // Open the DOI PR over the working-tree myst.yml write ([R3]/§1d). Best-effort: a local
     // sandbox rehearsal with no gh/token just leaves the write for the human to PR.
@@ -426,7 +426,6 @@ async function cmdDeposit(argv: string[]): Promise<number> {
       pdf: resolve(pdf),
       tag,
       siteUrl,
-      sandbox,
       bundleOut: resolve(flag(rest, 'bundle-out') ?? '_bundle'),
       api,
       git: gh.realGitContext,
@@ -438,7 +437,7 @@ async function cmdDeposit(argv: string[]): Promise<number> {
   }
 
   if (sub === 'status') {
-    const out = await z.cmdStatus({ mystPath, siteUrl, sandbox, api, instanceRoot });
+    const out = await z.cmdStatus({ mystPath, siteUrl, api, instanceRoot });
     emit(rest, out.result);
     return out.exitCode;
   }
@@ -495,14 +494,13 @@ async function cmdRelease(argv: string[]): Promise<number> {
     return 2;
   }
 
-  const api = new z.ZenodoApi(z.createFetchTransport(), z.apiBase(sandbox), token);
+  const api = new z.ZenodoApi(z.createFetchTransport(), sandbox, token);
   const bundleOut = resolve(flag(argv, 'bundle-out') ?? '_bundle');
   const out = await z.cmdPublish({
     mystPath,
     pdf,
     tag,
     siteUrl: flag(argv, 'site-url') ?? process.env.SITE_URL,
-    sandbox,
     bundleOut,
     api,
     git: gh.realGitContext,

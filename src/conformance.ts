@@ -75,6 +75,8 @@ export interface ConformanceGh {
   /** The committed `project.doi` from the fixture's `myst.yml` on the default branch, or null
    *  if unset: the C3 precondition (the fixture must carry a sandbox DOI). */
   committedDoi(repo: string): string | null;
+  /** The committed engine version pin from the fixture's `myst.yml`, or null when unset. */
+  committedEngineVersion(repo: string): string | null;
   /** The default branch (`main`) HEAD sha, the ref the throwaway cert tag points at. */
   defaultBranchSha(repo: string): string;
   /** Create a lightweight tag `tag` → `sha` (the `v*` push that triggers publish.yml). */
@@ -236,21 +238,36 @@ export class ThirdPartyError extends Error {
 /**
  * Call `attempt` until it returns a value (ready), rethrowing whatever it throws (a definitive
  * failure: e.g. a concluded-but-failed run); `null` means "keep waiting". A timeout is treated
- * as third-party (a stuck/slow runner is not an engine defect).
+ * as third-party (a stuck/slow runner is not an engine defect), UNLESS `settled` says the work
+ * that would produce the part has finished: then the part is absent, not late, which is the
+ * green-but-empty class the harness exists to catch ([R113]).
  */
 async function pollUntil<T>(
   label: string,
   attempt: () => T | null,
   deps: { sleep(ms: number): Promise<void>; log(msg: string): void },
-  opts: { tries: number; intervalMs: number } = POLL,
+  opts: { tries: number; intervalMs: number; settled?: () => boolean } = POLL,
 ): Promise<T> {
   for (let i = 0; i < opts.tries; i++) {
     const ready = attempt();
     if (ready !== null) return ready;
     if (i < opts.tries - 1) await deps.sleep(opts.intervalMs);
   }
+  if (opts.settled?.()) {
+    throw new Error(`${label} never appeared, though every run on its commit has finished`);
+  }
   throw new ThirdPartyError(
     `timed out waiting for ${label} (${opts.tries}×${opts.intervalMs}ms); slow/stuck third party`,
+  );
+}
+
+/** A `gh` child that failed on a transport or permission fault, in the shape gh.ts's `run`
+ *  formats: the GitHub API is a third party, so a 403 or a 502 must not redden a cert ([R113]). */
+function isGitHubApiFault(err: unknown): boolean {
+  const m = err instanceof Error ? err.message : String(err);
+  if (!/^gh \S* ?failed \(exit /.test(m)) return false;
+  return /HTTP (401|403|429|5\d\d)|rate limit|ECONNRESET|EAI_AGAIN|ETIMEDOUT|timed out|connection reset|bad gateway|service unavailable/i.test(
+    m,
   );
 }
 
@@ -321,9 +338,15 @@ export async function cmdConformanceCertify(
   const { gh, log, sleep, probe, installEngine, fork } = deps;
   const { repo, tag } = input;
   const runId = input.runId ?? String(Date.now());
+  /** Every run this commit triggered has finished, so a missing part is absent, not late. */
+  const settled = (sha: string) => () => {
+    const runs = gh.workflowRunsForCommit(repo, sha);
+    return runs.length > 0 && runs.every((r) => r.status === 'completed');
+  };
   let phase = 'push-main';
   // The certified paths, built up as each phase passes (the fork phase pushes its own).
   const paths: string[] = ['push-main', 'preview-same-repo', 'deposit'];
+  const skipped: string[] = [];
   let forkResult: Record<string, unknown> = {};
   try {
     // 1. Clean baseline (idempotent teardown of any prior run's ephemeral state).
@@ -353,11 +376,20 @@ export async function cmdConformanceCertify(
       `PR #${prNumber} Journal checks`,
       () => checkOutcome(gh.checkRunsForCommit(repo, prSha), 'Journal checks'),
       { sleep, log },
+      { ...POLL, settled: settled(prSha) },
     );
 
     // 4. Merge → the push→main event under test.
     const mergeSha = gh.mergePr(repo, prNumber);
     log(`merged PR #${prNumber} → ${mergeSha}`);
+
+    // The pin write is itself under test (installEngine dogfoods `oak upgrade`), so a
+    // regression in it would otherwise certify V while the fixture ran something else ([R113]).
+    const pinned = gh.committedEngineVersion(repo);
+    if (pinned !== tag) {
+      throw new Error(`fixture pins ${pinned ?? 'no engine version'} after the merge, not ${tag}`);
+    }
+    log(`fixture pinned to ${pinned}`);
 
     // 5. Paper CI (build + deploy-pages) concluded success on the merge commit.
     await pollUntil(
@@ -384,6 +416,7 @@ export async function cmdConformanceCertify(
       'Journal checks Check Run (push→main)',
       () => checkOutcome(gh.checkRunsForCommit(repo, mergeSha), 'Journal checks'),
       { sleep, log },
+      { ...POLL, settled: settled(mergeSha) },
     );
 
     log(`push→main CERTIFIED for ${tag}`);
@@ -418,6 +451,7 @@ export async function cmdConformanceCertify(
         gh.listIssueComments(repo, previewPr.number).find((b) => b.includes(PREVIEW_STICKY_MARK)) ??
         null,
       { sleep, log },
+      { ...POLL, settled: settled(previewPr.headSha) },
     );
 
     // The preview actually SERVES 200 (not just that a comment was posted).
@@ -439,7 +473,7 @@ export async function cmdConformanceCertify(
     // the 5-file deposit bundle landing on the tag's GitHub Release ([R24]). It does NOT test
     // prepare-from-scratch: the fixture already carries a committed sandbox DOI and cmdPrepare
     // refuses when one is set (per-run DOI mutation is explicitly deferred). The harness holds
-    // no Zenodo token, so it asserts the deposit token-free via the Release assets (same bytes).
+    // no Zenodo token, so it asserts the deposit token-free, by NAME, over the Release assets.
     phase = 'deposit';
 
     // 1. Precondition: a committed *sandbox* DOI (10.5072/…) on the fixture's myst.yml.
@@ -499,8 +533,8 @@ export async function cmdConformanceCertify(
       { sleep, log },
     );
 
-    // 4. The deposit bundle (the exact deposited bytes) landed on the tag's GH Release, assert
-    //    all five reserved files are present. This is the token-free deposit assertion ([R24]).
+    // 4. All five reserved deposit files are ON the tag's GH Release, by name: the harness holds
+    //    no Zenodo token, so it cannot compare bytes, only that nothing is missing ([R24]).
     const releaseAssets = gh.releaseAssets(repo, depositTag);
     const missing = RESERVED_BUNDLE_NAMES.filter((n) => !releaseAssets.includes(n));
     if (missing.length) {
@@ -563,6 +597,7 @@ export async function cmdConformanceCertify(
           gh.listIssueComments(repo, forkPr.number).find((b) => b.includes(PREVIEW_STICKY_MARK)) ??
           null,
         { sleep, log },
+        { ...POLL, settled: settled(forkPr.headSha) },
       );
       const forkPreviewUrl = extractPreviewUrl(forkBody);
       if (!forkPreviewUrl)
@@ -576,6 +611,9 @@ export async function cmdConformanceCertify(
       paths.push('preview-fork');
       forkResult = { forkPr: forkPr.number, forkPreviewUrl };
     } else {
+      // In the verdict, not only the log: a cert that certified three of four paths must not
+      // read the same as one that certified all four ([R113]).
+      skipped.push('preview-fork');
       log(
         'fork preview phase SKIPPED (no fork configured; set CONFORMANCE_FORK_REPO/PAT to enable)',
       );
@@ -589,6 +627,7 @@ export async function cmdConformanceCertify(
         tag,
         repo,
         paths,
+        skipped,
         prNumber,
         mergeSha,
         pagesUrl,
@@ -603,7 +642,7 @@ export async function cmdConformanceCertify(
     // Attribute the failure: a ThirdPartyError (outage/timeout) is INCONCLUSIVE (exit 3), never
     // a red "the engine is broken"; anything else is a definitive cert FAILURE (exit 1).
     const message = err instanceof Error ? err.message : String(err);
-    if (err instanceof ThirdPartyError) {
+    if (err instanceof ThirdPartyError || isGitHubApiFault(err)) {
       log(`engine ${tag}: paper-CI INCONCLUSIVE at ${phase}: ${message}`);
       return {
         exitCode: 3, // 3, not 2: 2 is the CLI's usage code ([R111])

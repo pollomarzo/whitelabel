@@ -176,6 +176,7 @@ function fakeCertGh(
     checkRuns?: (sha: string) => CheckRunRef[];
     comments?: (pr: number) => string[];
     committedDoi?: () => string | null;
+    committedEngineVersion?: () => string | null;
     releaseAssets?: (tag: string) => string[];
   } = {},
 ): ConformanceGh & {
@@ -252,6 +253,7 @@ function fakeCertGh(
     openCertPr: (_r, _b, _m) => ({ number: 21, headSha: 'preview-head-sha' }),
     listIssueComments: (_r, pr) => (over.comments ?? (() => [PREVIEW_COMMENT]))(pr),
     committedDoi: () => (over.committedDoi ?? (() => '10.5072/zenodo.562233'))(),
+    committedEngineVersion: () => (over.committedEngineVersion ?? (() => TAG))(),
     defaultBranchSha: () => 'main-sha',
     pushTag: (_r, tag, sha) => pushedTags.push([tag, sha]),
     approveDeployment: (_r, runId, env) => approvals.push([runId, env]),
@@ -533,6 +535,61 @@ describe('cmdConformanceCertify', () => {
     expect(gh.approvals).toEqual([[3, 'zenodo-publish']]); // gate approved before the asset check
   });
 
+  it('reddens a part that never appeared, rather than reporting a slow third party', async () => {
+    // An absent Check Run and a slow one are the same `null`; the runs having finished is what
+    // tells them apart ([R113]).
+    const gh = fakeCertGh({ checkRuns: () => [] });
+    const out = await cmdConformanceCertify({ repo: REPO, tag: TAG }, certDeps(gh));
+    expect(out.exitCode).toBe(1);
+    expect(out.result).toMatchObject({ status: 'failed', path: 'push-main' });
+    expect(String(out.result.failure)).toContain('never appeared');
+  });
+
+  it('still reports inconclusive while a run is unfinished', async () => {
+    const gh = fakeCertGh({
+      checkRuns: () => [],
+      workflowRuns: () => SUCCESS_CI.map((r) => ({ ...r, status: 'in_progress' })),
+    });
+    const out = await cmdConformanceCertify({ repo: REPO, tag: TAG }, certDeps(gh));
+    expect(out.exitCode).toBe(3);
+    expect(out.result).toMatchObject({ status: 'inconclusive' });
+  });
+
+  it('attributes a GitHub API fault to GitHub, not to the engine', async () => {
+    const gh = fakeCertGh();
+    const out = await cmdConformanceCertify(
+      { repo: REPO, tag: TAG },
+      certDeps(gh, {
+        installEngine: async () => {
+          throw new Error('gh api failed (exit 1): gh: Bad gateway (HTTP 502)');
+        },
+      }),
+    );
+    expect(out.exitCode).toBe(3);
+    expect(out.result).toMatchObject({ status: 'inconclusive' });
+  });
+
+  it('fails when the merged fixture is not pinned to the version under test', async () => {
+    const gh = fakeCertGh({ committedEngineVersion: () => 'v0.0.0-dev.8' });
+    const out = await cmdConformanceCertify({ repo: REPO, tag: TAG }, certDeps(gh));
+    expect(out.exitCode).toBe(1);
+    expect(out.result).toMatchObject({ status: 'failed', path: 'push-main' });
+    expect(String(out.result.failure)).toContain('v0.0.0-dev.8');
+  });
+
+  it('names the phase it skipped in the verdict, not only in the log', async () => {
+    const withoutFork = await cmdConformanceCertify(
+      { repo: REPO, tag: TAG },
+      certDeps(fakeCertGh()),
+    );
+    expect(withoutFork.result.skipped).toEqual(['preview-fork']);
+    const withFork = await cmdConformanceCertify(
+      { repo: REPO, tag: TAG },
+      certDeps(fakeCertGh(), { fork: FORK }),
+    );
+    expect(withFork.result.skipped).toEqual([]);
+  });
+
   it('fails at the deposit phase when the publish run concludes failure', async () => {
     const gh = fakeCertGh({
       workflowRuns: (sha) =>
@@ -634,5 +691,36 @@ describe('the release gate cannot pass without a verdict', () => {
     // The gate aimed at the green-but-empty class ([R67]) could not fail for it.
     const f = read('scripts/build-fixture.mjs');
     expect(f).toMatch(/if \(!pdf\)[\s\S]*process\.exit\(1\)/);
+  });
+});
+
+describe('RELEASING.md describes the machinery it documents ([R115])', () => {
+  const read = (p: string) => readFileSync(join(import.meta.dirname, '..', p), 'utf8');
+
+  it('prunes by tag, not by the listing’s first column', () => {
+    // `gh release list`'s first column is the TITLE; a positional read only works while the cut
+    // happens to title a release after its tag.
+    const doc = read('RELEASING.md');
+    expect(doc).toContain('--json tagName,isPrerelease');
+    expect(doc).not.toContain('{print $1}');
+  });
+
+  it('names every path the published package actually ships', () => {
+    const files = (JSON.parse(read('package.json')) as { files: string[] }).files;
+    const npmSection = read('RELEASING.md').split('## The npm package')[1] ?? '';
+    // The code spans as a SET: `ci/` is a substring of `ci/run.sh`, so a `toContain` over the
+    // prose would pass while naming something narrower than the allowlist ([R115]).
+    const spans = new Set([...npmSection.matchAll(/`([^`]+)`/g)].map((m) => m[1]!));
+    for (const entry of files) expect([...spans], `files entry ${entry}`).toContain(entry);
+  });
+
+  it('fetches the pinned typst before the canary it claims renders with it', () => {
+    // Comments stripped: they quote both commands, so an index over the raw text proves nothing.
+    const lines = read('scripts/cut-engine-release.sh')
+      .split('\n')
+      .filter((l) => !l.trim().startsWith('#'));
+    const at = (needle: string) => lines.findIndex((l) => l.includes(needle));
+    expect(at('releases/download')).toBeGreaterThan(-1);
+    expect(at('releases/download')).toBeLessThan(at('npm test'));
   });
 });

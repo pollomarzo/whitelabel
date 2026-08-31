@@ -130,14 +130,16 @@ function gh(args: string[], opts: { input?: string; cwd?: string; quiet?: boolea
   return run('gh', args, opts);
 }
 
-/** true when `gh api <path>` returns 2xx (idempotency GET probe). */
-function ghOk(args: string[]): boolean {
-  try {
-    execFileSync('gh', args, { stdio: 'ignore' });
-    return true;
-  } catch {
-    return false;
-  }
+/** true when `gh <args>` returns 2xx, false when the target is definitively ABSENT (404).
+ *  Anything else (403, 5xx, no `gh`) throws: read as absence, a forbidden DELETE becomes a
+ *  teardown that never happened ([R108]/[R113]). */
+function ghOk(args: string[], env?: NodeJS.ProcessEnv): boolean {
+  const r = spawnSync('gh', args, { encoding: 'utf8', ...(env ? { env } : {}) });
+  if (r.error) throw r.error;
+  if (r.status === 0) return true;
+  const stderr = String(r.stderr ?? '');
+  if (/HTTP 404|not found/i.test(stderr)) return false;
+  throw new Error(`gh ${args[0] ?? ''} failed (exit ${r.status}): ${stderr.trim().split('\n')[0]}`);
 }
 
 /** `gh` run under a DIFFERENT token (the fork account's PAT), same shape as `gh()`, but the
@@ -151,14 +153,9 @@ function ghAs(
   return run('gh', args, { ...opts, env: { ...process.env, GH_TOKEN: token } });
 }
 
-/** Tolerant `ghAs`: the fork-token twin of `ghOk` (an already-absent ref DELETE is a no-op). */
+/** The fork-token twin of {@link ghOk}, with the same 404-only tolerance. */
 function ghOkAs(token: string, args: string[]): boolean {
-  try {
-    execFileSync('gh', args, { stdio: 'ignore', env: { ...process.env, GH_TOKEN: token } });
-    return true;
-  } catch {
-    return false;
-  }
+  return ghOk(args, { ...process.env, GH_TOKEN: token });
 }
 
 /**
@@ -231,30 +228,75 @@ export function openDoiPr(repoRoot: string, opts: { conceptDoi: string }): strin
   // Version-agnostic branch: prepare only reserves the concept DOI (the version is the tag,
   // applied later at publish). Re-prepares force-push over the same branch.
   const branch = 'zenodo-doi';
+  const repo = originRepo(repoRoot);
+  const base = repo ? defaultBranch(repo) : 'main';
+  // The branch is cut from HEAD, so a HEAD carrying commits the base lacks would put them all
+  // in a PR whose body says it stamps one field ([R108]).
+  git(repoRoot, ['fetch', 'origin', base, '--quiet']);
+  try {
+    git(repoRoot, ['merge-base', '--is-ancestor', 'HEAD', `origin/${base}`], { quiet: true });
+  } catch {
+    throw new UserError(msg.workflow.doiPrDiverged('HEAD', `origin/${base}`));
+  }
   git(repoRoot, ['checkout', '-B', branch]);
   git(repoRoot, ['add', 'myst.yml']);
   // A CI runner has no git identity, so an inline one is required or `commit` fails with
   // "Author identity unknown" (the actions/checkout runner sets no user.name/email).
-  git(repoRoot, [
-    '-c',
-    'user.name=github-actions[bot]',
-    '-c',
-    'user.email=41898282+github-actions[bot]@users.noreply.github.com',
-    'commit',
-    '-m',
-    `chore: reserve Zenodo DOI ${opts.conceptDoi}`,
-  ]);
+  git(repoRoot, [...BOT_ID, 'commit', '-m', `chore: reserve Zenodo DOI ${opts.conceptDoi}`]);
   git(repoRoot, ['push', '-u', 'origin', branch, '--force']);
-  return gh([
+  // `--repo`, because the git calls are `-C repoRoot` while `gh` would otherwise read the
+  // CURRENT directory's repo ([R108]); `realUpgradePr` solves the same thing with `cwd`.
+  const scope = repo ? ['--repo', repo] : [];
+  const create = [
     'pr',
     'create',
+    ...scope,
+    '--base',
+    base,
     '--title',
     'Reserve Zenodo DOI',
     '--body',
     `Stamps the reserved concept DOI \`${opts.conceptDoi}\` into \`myst.yml\`. Merge before tagging.`,
     '--head',
     branch,
-  ]);
+  ];
+  try {
+    return gh(create);
+  } catch (e) {
+    // Re-running prepare is idempotent (§13), and `gh pr create` refuses a second PR for a
+    // branch that already has one ([R108]).
+    const existing = openPrUrl(repo, branch);
+    if (existing) return existing;
+    throw e;
+  }
+}
+
+/** The repo's default branch, the base every one-file engine PR targets. */
+function defaultBranch(repo: string): string {
+  return gh(['api', `repos/${repo}`, '--jq', '.default_branch']) || 'main';
+}
+
+/** The open PR for `branch`, or null when there is none. */
+function openPrUrl(repo: string | null, branch: string): string | null {
+  try {
+    return (
+      gh([
+        'pr',
+        'list',
+        ...(repo ? ['--repo', repo] : []),
+        '--head',
+        branch,
+        '--state',
+        'open',
+        '--json',
+        'url',
+        '--jq',
+        '.[0].url // empty',
+      ]) || null
+    );
+  } catch {
+    return null;
+  }
 }
 
 /** Attach the deposit bundle files to the tag's GitHub Release ([R24], durable past the
@@ -292,8 +334,10 @@ export function openFailureIssue(repoRoot: string, title: string, body: string):
  *  Sticky comments are keyed on a hidden HTML marker so re-runs edit in place, not pile up. */
 export const realGhPr: GhPr = {
   sticky(repoRoot, prNumber, header, body) {
+    // Throws rather than returns: a silent no-op reaches check-post as `commentPosted: true`,
+    // the green-check-no-comment failure [R69] refuses ([R108]).
     const repo = originRepo(repoRoot);
-    if (!repo) return;
+    if (!repo) throw new Error(msg.workflow.noOriginRepo(repoRoot));
     const marker = `<!-- oak-sticky: ${header} -->`;
     // Find an existing sticky (its body opens with the marker) and edit it; else create.
     let existingId = '';
@@ -359,6 +403,11 @@ export const realGhPr: GhPr = {
  *  direct-upload protocol via wrangler (the same tool today's `wrangler-action` wraps) and
  *  parses the deployment URL from its output. Any failure throws; the caller degrades to an
  *  artifact-link comment rather than failing the run ([R16]). */
+/** Pinned like every other third-party executable here (actions by commit SHA, typst by
+ *  `typst.version`): `wrangler@latest` resolved whatever npm served into the job holding
+ *  `CLOUDFLARE_API_TOKEN` and `GH_TOKEN` ([R109]). */
+const WRANGLER_VERSION = '4.127.1';
+
 export const realPagesDeployer: PagesDeployer = {
   async deploy(opts) {
     // stderr inherited, not captured: a captured child's stderr joins the error message, which
@@ -369,7 +418,7 @@ export const realPagesDeployer: PagesDeployer = {
         'npx',
         [
           '--yes',
-          'wrangler',
+          `wrangler@${WRANGLER_VERSION}`,
           'pages',
           'deploy',
           opts.dir,
@@ -412,7 +461,7 @@ export interface CheckRunPoster {
 export function changedFiles(repo: string, base: string, head: string): string[] {
   try {
     const out = gh(
-      ['api', `repos/${repo}/compare/${base}...${head}`, '--jq', '.files[].filename'],
+      ['api', `repos/${repo}/compare/${base}...${head}`, '--paginate', '--jq', '.files[].filename'],
       { quiet: true },
     );
     return out ? out.split('\n').filter(Boolean) : [];
@@ -538,7 +587,13 @@ export const realProvisioner: Provisioner = {
   rulesetExists(repo, name) {
     try {
       return (
-        gh(['api', `repos/${repo}/rulesets`, '--jq', `.[] | select(.name=="${name}") | .id`]) !== ''
+        gh([
+          'api',
+          `repos/${repo}/rulesets`,
+          '--paginate',
+          '--jq',
+          `.[] | select(.name=="${name}") | .id`,
+        ]) !== ''
       );
     } catch {
       return false;
@@ -744,6 +799,21 @@ export const realUpgradePr: UpgradePr = {
   },
 };
 
+/** A value from the fixture's committed `myst.yml`, read off the default branch through the
+ *  Contents API (base64) so the harness needs no clone. Null when absent or unreadable. */
+function committedMystValue(repo: string, path: string[]): string | null {
+  let content: string;
+  try {
+    content = gh(['api', `repos/${repo}/contents/myst.yml`, '--jq', '.content'], { quiet: true });
+  } catch {
+    return null; // no myst.yml / no read access
+  }
+  if (!content) return null;
+  // GitHub wraps the base64 in newlines; Buffer ignores them.
+  const value = parseDocument(Buffer.from(content, 'base64').toString('utf8')).getIn(path);
+  return value != null ? String(value) : null;
+}
+
 /** The real GitHub seam for `oak conformance` (slice C0: reset). Drives the fixture repos via
  *  the fixture-scoped PAT (gh reads GH_TOKEN). Deletes are DELETE-ref calls wrapped so an
  *  already-absent target is a no-op, not a throw. */
@@ -781,7 +851,13 @@ export const realConformanceGh: ConformanceGh = {
   },
   listBranches(repo, prefix) {
     // matching-refs returns refs whose name starts with the given path (empty [] when none).
-    const out = gh(['api', `repos/${repo}/git/matching-refs/heads/${prefix}`, '--jq', '.[].ref']);
+    const out = gh([
+      'api',
+      `repos/${repo}/git/matching-refs/heads/${prefix}`,
+      '--paginate',
+      '--jq',
+      '.[].ref',
+    ]);
     return out ? out.split('\n').map((r) => r.replace(/^refs\/heads\//, '')) : [];
   },
   deleteBranch(repo, branch) {
@@ -911,17 +987,10 @@ export const realConformanceGh: ConformanceGh = {
     return out ? (JSON.parse(out) as string[]) : [];
   },
   committedDoi(repo) {
-    // Read myst.yml off the default branch via the Contents API (base64), then YAML-parse it.
-    let content: string;
-    try {
-      content = gh(['api', `repos/${repo}/contents/myst.yml`, '--jq', '.content'], { quiet: true });
-    } catch {
-      return null; // no myst.yml / no read access
-    }
-    if (!content) return null;
-    const text = Buffer.from(content, 'base64').toString('utf8'); // GitHub wraps base64 in \n; Buffer ignores them
-    const doi = parseDocument(text).getIn(['project', 'doi']);
-    return doi != null ? String(doi) : null;
+    return committedMystValue(repo, ['project', 'doi']);
+  },
+  committedEngineVersion(repo) {
+    return committedMystValue(repo, ['project', 'options', 'oaktree-sapling', 'version']);
   },
   defaultBranchSha(repo) {
     return gh(['api', `repos/${repo}/git/ref/heads/main`, '--jq', '.object.sha']);
