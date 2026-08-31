@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# The only bash on the CI hot path (design §12; scripts/cut-engine-release.sh is the other one,
-# and a maintainer runs it by hand). The composite action has already checked out
+# The only bash on the CI hot path (design §12; cut-engine-release.sh is run by hand).
+# The composite action has already checked out
 # the engine at the pinned ref into ./.engine and set INSTANCE_REPO from pins.yml. This
 # does the CI-specific *materialization* §1b assigns it: typst on PATH, instance-config
 # cloned, BASE_URL by event, then dispatches to dist/cli.cjs, where all LOGIC lives.
@@ -48,7 +48,7 @@ fi
 # (repo=journal, deferred); leave to the CLI's root resolution. build/release need it for
 # the extends chain; deploy-preview needs it for the preview: knobs ([R27]/[R69]); validate
 # needs it for journal.yml `checks:` + the registry (id-uniqueness); deposit needs it for the
-# zenodo community + blurb ([R19]), which it otherwise fills in from empty defaults, silently.
+# zenodo community + blurb, silently empty without it ([R19], [R96]).
 if [ "$verb" = "build" ] || [ "$verb" = "release" ] || [ "$verb" = "deploy-preview" ] || [ "$verb" = "validate" ] || [ "$verb" = "deposit" ]; then
   if [ -n "${INSTANCE_REPO:-}" ] && [ "${INSTANCE_REPO}" != "." ]; then
     inst_dir="$(mktemp -d)"

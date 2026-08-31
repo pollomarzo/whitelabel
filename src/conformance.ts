@@ -599,11 +599,7 @@ export async function cmdConformanceCertify(
     if (err instanceof ThirdPartyError) {
       log(`engine ${tag}: paper-CI INCONCLUSIVE at ${phase}: ${message}`);
       return {
-        // NOT 2. Exit 2 is the CLI's generic usage/UserError code, and the conformance
-        // workflow treats every non-1 code as green, so sharing it meant "I never started" and
-        // "a third party was slow" were the same signal: an unset fixture var certified nothing,
-        // forever, with a green check. INCONCLUSIVE gets a code of its own.
-        exitCode: 3,
+        exitCode: 3, // 3, not 2: 2 is the CLI's usage code ([R111])
         result: { status: 'inconclusive', tag, path: phase, repo, reason: message },
       };
     }

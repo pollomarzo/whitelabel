@@ -377,9 +377,7 @@ async function cmdDeposit(argv: string[]): Promise<number> {
   const instanceRoot = instanceRootOf(rest);
   const sandbox = has(rest, 'sandbox');
   const siteUrl = flag(rest, 'site-url') ?? process.env.SITE_URL;
-  // Same rule as `oak release` below: the environment picks the secret. In CI prepare.yml has
-  // already chosen and passes it as ZENODO_TOKEN, so this changes nothing there; locally, with
-  // both exported, `--sandbox` used to reach for the PRODUCTION token.
+  // The environment picks the secret, same as `oak release` ([R102]).
   const token =
     flag(rest, 'token') ??
     (sandbox

@@ -588,19 +588,12 @@ describe('cmdPublish', () => {
   });
 });
 
-/**
- * Pass A, P2. Each was run against the unfixed code first: the mutation named in each comment
- * leaves the rest of this file green, which is how these survived.
- */
-describe('P2 regressions', () => {
+describe('lookup and precondition regressions ([R100], [R101])', () => {
   const id = 'foo-bar';
   const gh = 'https://github.com/o/r';
 
   it('scans when a targeted query returns rows that do not MATCH', async () => {
-    // `q=related.identifier:"..."` is a phrase match, so a LONGER urn comes back for a query
-    // about a shorter one. Gating the unfiltered scan on "rows returned" rather than "identifier
-    // found" made findDeposit return null here, and cmdPrepare then minted a second concept DOI,
-    // which is the [R20] duplicate the scan exists to prevent.
+    // A phrase match returns a LONGER urn for a query about a shorter one ([R100]).
     const nearMiss = dep({
       id: 1,
       metadata: { related_identifiers: [{ identifier: paperUrn('foo-bar-baz') }] },
@@ -613,8 +606,7 @@ describe('P2 regressions', () => {
         unfiltered++;
         return { json: [nearMiss, real] };
       }
-      // The urn query phrase-matches the near miss; the github query genuinely finds nothing
-      // (the repo was renamed, which is the case [R7] added the urn for).
+      // urn query phrase-matches the near miss; the github query misses (renamed repo, [R7]).
       return { json: String(q).includes(id) ? [nearMiss] : [] };
     });
     const api = new ZenodoApi(transport, 'x', 't');
@@ -631,8 +623,6 @@ describe('P2 regressions', () => {
   });
 
   it('reports a collision through the envelope, having sent nothing to Zenodo', async () => {
-    // The check used to run inside buildBundle, which cmdPublish called AFTER updateMetadata: the
-    // draft was already overwritten, and cli.ts turned the throw into engineCrash(stack), exit 1.
     const root = mkdtempSync(join(tmpdir(), 'oak-envelope-'));
     mkdirSync(join(root, 'deposit'), { recursive: true });
     writeFileSync(join(root, 'deposit', 'source.zip'), 'x');

@@ -241,15 +241,8 @@ export class ZenodoApi {
 
   /**
    * id-first, github-URL fallback ([R7]). Targeted `q` queries first (each paginated), then a
-   * full unfiltered scan when neither FOUND the identifier.
-   *
-   * The scan is gated on "not found", not on "no rows came back". `q=related.identifier:"…"` is
-   * an ElasticSearch phrase match, so a deposit carrying `urn:oaktree-sapling:foo-bar-baz`
-   * matches a query for `foo-bar` and then fails `matchRelated`'s exact compare. Gating on rows
-   * meant such a near-miss suppressed the scan, `findDeposit` returned null, and `cmdPrepare`
-   * minted a SECOND concept DOI for a paper that already had one, which is the [R20] failure the
-   * scan exists to prevent. The python binds `items` to one query's result, so this is also what
-   * "mirrors the python's `if not items:` fallback" was always supposed to mean.
+   * full scan when neither FOUND the identifier. Gated on "not found", not "no rows": `q` is a
+   * phrase match, so a near-miss returns rows and would otherwise suppress the scan ([R100]).
    */
   async findDeposit(opts: { paperId?: string; githubUrl: string }): Promise<Deposition | null> {
     const urn = opts.paperId ? paperUrn(opts.paperId) : null;
@@ -615,16 +608,9 @@ export function templateArchiveDir(paperRoot: string, engineRoot: string): strin
  * template precedence it becomes an explicit rule. See {@link templateArchiveDir}.
  */
 /**
- * Everything about the working tree that can make a deposit impossible, resolved in one place so
- * a caller can ask BEFORE it writes to Zenodo. Both failures are the tenant's to fix, and both
- * used to surface only from inside `buildBundle`, which `cmdPublish` called AFTER it had already
- * PUT the new metadata onto the draft: the run then died with a stack trace, leaving a public
- * draft carrying v-tag metadata and no files.
- *
- * [R28] puts the collision check at VALIDATE time, which is where it belongs, since it is a
- * property of the working tree an author could be told about on their PR. That is still not
- * implemented anywhere (`validate.ts` does not know about `deposit/`); this only makes the late
- * discovery harmless rather than destructive.
+ * What can make a deposit impossible, in one place so a caller can ask before writing to Zenodo
+ * ([R101]). [R28] wants the collision check at validate time; validate does not know about
+ * `deposit/` yet, so this only makes the late discovery harmless.
  */
 export function assertBundlePreconditions(repoRoot: string, engineRoot: string): void {
   const depositDir = join(repoRoot, 'deposit');
@@ -859,10 +845,7 @@ export async function cmdPublish(input: PublishInput): Promise<Outcome> {
 
   const repoRoot = resolve(mystPath, '..');
 
-  // Before ANY write to Zenodo. These two failures are the tenant's to fix, and discovering them
-  // after `updateMetadata` left a public draft holding v-tag metadata and no files, reported as
-  // an engine crash. They reach the workflow through the result envelope like every other
-  // user-fixable condition.
+  // Before any write to Zenodo, and through the envelope, not as a crash ([R101]).
   try {
     assertBundlePreconditions(repoRoot, engineRoot);
   } catch (e) {

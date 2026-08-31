@@ -65,11 +65,7 @@ bin/typst --version
 
 # --- release-safety canary (§12 step 0): a bad tag breaks every tenant -----------------
 npm ci
-npm run typecheck          # vitest transpiles through esbuild, which STRIPS types without
-                           # checking them, so a type error passes `npm test` and reaches a tag.
-                           # test.yml says so in its own comment and is deliberately not a
-                           # required check, so a documented hole in a workflow that cannot block
-                           # anything was the whole of the guard.
+npm run typecheck          # esbuild strips types without checking them, so `npm test` won't
 npm run bundle             # esbuild → dist/cli.cjs
 npm test                   # unit + the integration canary (renders the fixture PDF via bin/typst)
 npm run build:fixture      # second, standalone render through the freshly-built bundle
@@ -85,10 +81,8 @@ export GIT_AUTHOR_NAME="${GIT_AUTHOR_NAME:-oak-release-bot}"
 export GIT_AUTHOR_EMAIL="${GIT_AUTHOR_EMAIL:-oak-release-bot@users.noreply.github.com}"
 export GIT_COMMITTER_NAME="$GIT_AUTHOR_NAME"
 export GIT_COMMITTER_EMAIL="$GIT_AUTHOR_EMAIL"
-# The index is the DEVELOPER's index on a local cut. If the script dies between the add and the
-# reset, the two ignored artifacts are left staged and the next ordinary `git commit` puts them on
-# a branch, which makes that branch a runnable engine ref: the shim's guard is a file-existence
-# test, so `main` would then pass it. Unstage on any exit, not just the happy one.
+# Unstage on any exit: staged dist/ + bin/ would otherwise ride the next local commit onto a
+# branch, and a branch carrying dist/cli.cjs is a runnable engine ref ([R57], [R112]).
 trap 'git reset -q -- dist/cli.cjs bin/typst 2>/dev/null || true' EXIT
 git add -f dist/cli.cjs bin/typst
 tree="$(git write-tree)"
@@ -96,11 +90,8 @@ leaf="$(git commit-tree "$tree" -p "$src_sha" -m "release: $version (engine bund
 git reset -q               # unstage; dist/cli.cjs + bin/typst return to ignored untracked files
 
 # --- tag the leaf, push ONLY the tag (never HEAD/a branch) -----------------------------
-# A runnable engine ⟺ a release ([R57]), so a pushed tag with no Release breaks the invariant in
-# the direction that matters: the tag carries dist/cli.cjs and CI will run it. `gh release create`
-# can fail for reasons that have nothing to do with this cut (expired auth, a 5xx), and the version
-# is then spent, since the clobber guard above refuses to re-cut and a real release is never
-# re-cut. So the tag is removed again if the Release does not follow it.
+# A runnable engine is a release ([R57]): drop the tag again if the Release doesn't follow, or the
+# version is spent (the clobber guard above refuses a re-cut).
 git tag -a "$version" -m "$version" "$leaf"
 git push origin "refs/tags/$version"
 

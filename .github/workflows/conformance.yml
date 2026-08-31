@@ -113,11 +113,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: gh release upload "${{ steps.r.outputs.tag }}" cert.json --clobber
 
-      # A cert FAILURE (1) reddens the run; an INCONCLUSIVE (3, third-party outage) does not,
-      # because "red must mean us". Everything ELSE reddens, which is the part this used to get
-      # wrong: it passed every non-1 code, and 2 is the CLI's generic usage/UserError code, so a
-      # certify that never started (an unset fixture var, a renamed flag) reported green and wrote
-      # no record. A run that produced no verdict is not a passing run.
+      # FAILED (1) reddens; INCONCLUSIVE (3, third-party outage) does not, because red must mean
+      # us. Everything else reddens, including no record at all: a run that reached no verdict is
+      # not a passing run ([R111]).
       - name: Reflect cert outcome
         if: ${{ steps.r.outputs.tag != '' && steps.r.outputs.only_reset != 'true' }}
         env:

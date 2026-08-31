@@ -52,12 +52,9 @@ const pdf = existsSync(exportsDir)
       .map(String)
       .find((f) => f.endsWith('.pdf'))
   : undefined;
-// This is a GATE step in cut-engine-release.sh, not a report: it exists to catch the
-// green-but-empty class ([R67]), a build that exits 0 having produced nothing. Printing
-// "(not produced)" and exiting 0 meant the one release check aimed at that class could not
-// fail for it.
+// A release gate, not a report: exiting 0 with no PDF is the green-but-empty class ([R67]).
 if (!pdf) {
-  console.error(`\nPDF: (not produced) — the build exited 0 without rendering one`);
+  console.error('\nPDF: not produced; the build exited 0 without rendering one');
   process.exit(1);
 }
 console.error(`\nPDF: ${join(exportsDir, pdf)}`);
