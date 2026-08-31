@@ -52,7 +52,12 @@ const pdf = existsSync(exportsDir)
       .map(String)
       .find((f) => f.endsWith('.pdf'))
   : undefined;
-console.error(`\nPDF: ${pdf ? join(exportsDir, pdf) : '(not produced)'}`);
+// A release gate, not a report: exiting 0 with no PDF is the green-but-empty class ([R67]).
+if (!pdf) {
+  console.error('\nPDF: not produced; the build exited 0 without rendering one');
+  process.exit(1);
+}
+console.error(`\nPDF: ${join(exportsDir, pdf)}`);
 if (!process.argv.includes('--keep')) {
   console.error('(pass --keep to retain the temp dir)');
 }

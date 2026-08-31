@@ -65,6 +65,7 @@ bin/typst --version
 
 # --- release-safety canary (§12 step 0): a bad tag breaks every tenant -----------------
 npm ci
+npm run typecheck          # esbuild strips types without checking them, so `npm test` won't
 npm run bundle             # esbuild → dist/cli.cjs
 npm test                   # unit + the integration canary (renders the fixture PDF via bin/typst)
 npm run build:fixture      # second, standalone render through the freshly-built bundle
@@ -80,20 +81,30 @@ export GIT_AUTHOR_NAME="${GIT_AUTHOR_NAME:-oak-release-bot}"
 export GIT_AUTHOR_EMAIL="${GIT_AUTHOR_EMAIL:-oak-release-bot@users.noreply.github.com}"
 export GIT_COMMITTER_NAME="$GIT_AUTHOR_NAME"
 export GIT_COMMITTER_EMAIL="$GIT_AUTHOR_EMAIL"
+# Unstage on any exit: staged dist/ + bin/ would otherwise ride the next local commit onto a
+# branch, and a branch carrying dist/cli.cjs is a runnable engine ref ([R57], [R112]).
+trap 'git reset -q -- dist/cli.cjs bin/typst 2>/dev/null || true' EXIT
 git add -f dist/cli.cjs bin/typst
 tree="$(git write-tree)"
 leaf="$(git commit-tree "$tree" -p "$src_sha" -m "release: $version (engine bundle + typst)")"
 git reset -q               # unstage; dist/cli.cjs + bin/typst return to ignored untracked files
 
 # --- tag the leaf, push ONLY the tag (never HEAD/a branch) -----------------------------
+# A runnable engine is a release ([R57]): drop the tag again if the Release doesn't follow, or the
+# version is spent (the clobber guard above refuses a re-cut).
 git tag -a "$version" -m "$version" "$leaf"
 git push origin "refs/tags/$version"
 
 # --- GH (pre-)release: a '-' in the version ⇒ prerelease -------------------------------
 prerelease=()
 [[ "$version" == *-* ]] && prerelease=(--prerelease)
-gh release create "$version" "${prerelease[@]}" \
+if ! gh release create "$version" "${prerelease[@]}" \
   --title "$version" \
-  --notes "Engine bundle release ([R57]): \`dist/cli.cjs\` is committed at this tag (not an asset)."
+  --notes "Engine bundle release ([R57]): \`dist/cli.cjs\` is committed at this tag (not an asset)."; then
+  echo "release creation failed; removing the tag so $version is not burned" >&2
+  git push origin --delete "refs/tags/$version" || true
+  git tag -d "$version" || true
+  exit 1
+fi
 
 echo "cut $version at ${leaf} (source ${src_sha})"

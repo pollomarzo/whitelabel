@@ -593,13 +593,13 @@ export async function cmdConformanceCertify(
       },
     };
   } catch (err) {
-    // Attribute the failure: a ThirdPartyError (outage/timeout) is INCONCLUSIVE (exit 2), never
+    // Attribute the failure: a ThirdPartyError (outage/timeout) is INCONCLUSIVE (exit 3), never
     // a red "the engine is broken"; anything else is a definitive cert FAILURE (exit 1).
     const message = err instanceof Error ? err.message : String(err);
     if (err instanceof ThirdPartyError) {
       log(`engine ${tag}: paper-CI INCONCLUSIVE at ${phase}: ${message}`);
       return {
-        exitCode: 2,
+        exitCode: 3, // 3, not 2: 2 is the CLI's usage code ([R111])
         result: { status: 'inconclusive', tag, path: phase, repo, reason: message },
       };
     }

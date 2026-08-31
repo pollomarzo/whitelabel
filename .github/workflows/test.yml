@@ -31,9 +31,7 @@ jobs:
 
       - run: npm ci
 
-      # First because it is the cheapest failure to fix and the only one a contributor can
-      # resolve with a single command (`npm run format`). STYLE.md's enforced/convention table
-      # claims prettier is enforced; this step is what makes that true.
+      # First: the cheapest failure to fix, and `npm run format` fixes it.
       - run: npm run format:check
 
       # Not covered by the release canary: vitest transpiles TS through esbuild, which strips

@@ -1,10 +1,7 @@
 /**
- * gh.ts had no test file at all before Pass A. These cover the findings P3 raised, on the
- * principle taken from [R90]: a guard added in response to a finding ships with a demonstration
- * that it rejects that finding's own input.
- *
- * The seam functions here are pure or shell out, so what is asserted is the argument VECTOR and
- * the validation, which is where three of the four defects actually lived.
+ * gh.ts shells out, so what these assert is the argument VECTOR: the secret that must not be in
+ * argv, the stderr that must not be captured, the validation that must precede `git fetch`.
+ * [R103], [R104], [R105].
  */
 import { describe, expect, it } from 'vitest';
 import { assertIngestSource, labelChildOutput } from '../src/gh.js';
@@ -37,8 +34,6 @@ describe('assertIngestSource', () => {
     }
   });
 
-  // The demonstrated exploit: `git fetch <url> --upload-pack=<cmd>` RUNS <cmd>, because git
-  // parses options positionally. Verified against real git before this guard was written.
   it('refuses a ref that git would read as an option', () => {
     expect(() =>
       assertIngestSource('https://github.com/o/r', '--upload-pack=touch /tmp/pwned'),
@@ -58,8 +53,6 @@ describe('assertIngestSource', () => {
     }
   });
 
-  // --from is copied verbatim into a public commit message and PR body, so a credentialed URL
-  // would be published. Refused rather than silently rewritten.
   it('refuses a URL carrying credentials', () => {
     expect(() => assertIngestSource('https://user:tok@github.com/o/r', 'main')).toThrow(UserError);
   });
@@ -71,7 +64,6 @@ describe('assertIngestSource', () => {
   });
 
   it('is a UserError, so it reaches the editor as a sentence and not a stack', () => {
-    // cli.ts prints UserError.message and exits 2; anything else is engineCrash with a stack.
     try {
       assertIngestSource('ext::sh -c id', 'main');
       expect.unreachable('should have thrown');
@@ -82,25 +74,17 @@ describe('assertIngestSource', () => {
   });
 });
 
-/**
- * Source lints, the idiom release-resolution.test.ts established for a ledger rule whose naive
- * form must not come back. These paths shell out or need a live token, so the argument vector is
- * the honest thing to assert.
- */
+/** Source lints (the release-resolution.test.ts idiom): these paths need a live token to run. */
 describe('gh.ts argument vectors', () => {
   it('never passes a secret value in argv', () => {
     const src = SRC('gh.ts');
     const setSecret = /setSecret\([^)]*\)\s*\{([\s\S]*?)\n  \},/.exec(src);
     expect(setSecret, 'setSecret not found; this lint needs updating').toBeTruthy();
-    // `--body <value>` puts the token in /proc/<pid>/cmdline. It must go through stdin.
     expect(codeOnly(setSecret![1])).not.toContain('--body');
     expect(codeOnly(setSecret![1])).toContain('input:');
   });
 
   it('does not put a captured child stderr into the preview comment', () => {
-    // Node concatenates a captured child's stderr into the thrown error's message, and
-    // preview.ts posts that message publicly. wrangler names the API path it called, which
-    // carries the Cloudflare account id, so its stderr must be inherited, not captured.
     const deploy = /deploy\(opts\)\s*\{([\s\S]*?)\n  \},/.exec(SRC('gh.ts'));
     expect(deploy, 'realPagesDeployer.deploy not found').toBeTruthy();
     expect(codeOnly(deploy![1])).toContain("stdio: ['ignore', 'pipe', 'inherit']");

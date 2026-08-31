@@ -162,16 +162,10 @@ function ghOkAs(token: string, args: string[]): boolean {
 }
 
 /**
- * `--from` and `--source-ref` reach `git fetch` as POSITIONAL arguments, and git parses options
- * positionally: a ref of `--upload-pack=<command>` runs that command. Demonstrated 2026-08-30,
- * not theoretical. The values come from an author's submission and the editor pastes them, so
- * this runs on a workstation holding the primary GH_TOKEN and, during bootstrap, the Zenodo and
- * Cloudflare secrets. `ext::` is a second spelling of the same thing, which is why the URL is
- * restricted to the two transports we actually support rather than merely screened for `-`.
- *
- * Userinfo is rejected rather than stripped: `--from` is copied verbatim into a public commit
- * message and PR body, so a credentialed URL would be published, and an editor who pasted one
- * should be told rather than quietly rewritten.
+ * Both reach `git fetch` positionally, and git parses options positionally, so a ref of
+ * `--upload-pack=<command>` RUNS it ([R103]). Hence an allowlist of the two transports we
+ * support, not a screen for `-`: `ext::` spells the same attack. Userinfo is refused rather than
+ * stripped because `--from` is copied into a public commit message.
  */
 const INGEST_URL =
   /^(https:\/\/github\.com\/|git@github\.com:)[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+(\.git)?\/?$/;
@@ -370,10 +364,8 @@ export const realGhPr: GhPr = {
  *  artifact-link comment rather than failing the run ([R16]). */
 export const realPagesDeployer: PagesDeployer = {
   async deploy(opts) {
-    // stderr is INHERITED, not captured. Node concatenates a captured child's stderr into the
-    // thrown error's `message`, and preview.ts puts that message in a public PR comment; wrangler
-    // names the API path it called, which carries the account id. Inherited, it goes to the run
-    // log instead, where Actions redacts registered secrets. The comment gets a fixed sentence.
+    // stderr inherited, not captured: a captured child's stderr joins the error message, which
+    // preview.ts posts publicly, and wrangler's names the account id ([R104]).
     let out: string;
     try {
       out = execFileSync(
@@ -616,8 +608,7 @@ export const realProvisioner: Provisioner = {
     }
   },
   setSecret(repo, name, value) {
-    // Through stdin, never `--body`: an argv is world-readable in /proc and lands in process
-    // accounting. This is the Zenodo and Cloudflare tokens.
+    // stdin, never `--body`: argv is world-readable in /proc ([R104]).
     gh(['secret', 'set', name, '--repo', repo], { input: value });
   },
   repoVisibility(repo) {
