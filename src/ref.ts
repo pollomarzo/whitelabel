@@ -11,13 +11,8 @@
  * This module is the *pure, syntactic* half of the policy: classify a ref and decide
  * whether its class is allowed in a given trigger context.
  *
- * **Nothing calls it, and dec. 23 is not enforced anywhere** ([R118]). The semantic half
- * (is this tag/SHA an ancestor of a released engine tag) was recorded as living in
- * `oak validate`; it does not, and it could not: the composite action checks the engine out
- * AT the author's ref and runs `oak` from there, so a ref check inside the engine judges the
- * code it is already running. The enforcement point is the composite action, before the
- * checkout. What holds today is narrower: `ci/run.sh` refuses a ref carrying no
- * `dist/cli.cjs` ([R57]), which stops a branch tip but not a PR-merge ref that commits one.
+ * **Nothing calls it, and dec. 23 is unenforced** ([R118]). The enforcement point is the
+ * composite action, before the checkout, not the engine judging its own ref.
  */
 
 export type RefClass = 'tag' | 'sha' | 'pr-merge' | 'branch';

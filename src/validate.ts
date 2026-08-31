@@ -183,12 +183,8 @@ export function checkThumbnail(
 /**
  * A `deposit/` file whose name the engine also writes into the bundle ([R28]).
  *
- * Enforced only by `oak release` before now, which is the wrong end: the folder is a property
- * of the working tree, so the author can be told on their PR instead of at the tag ([R101]
- * made the late discovery harmless, not early). Shares the refusal's {@link depositCollisions}
- * rather than keeping a second copy of the list.
- *
- * Top level only, as in the bundle; an entry with children is a directory, which it skips.
+ * Reported at PR time, not just refused at the tag. Shares {@link depositCollisions} with
+ * `oak release`. Top level only, as in the bundle.
  */
 export function checkDepositNames(input: { paperRoot: string }, probes: FsProbes): NamedFinding[] {
   const entries = probes
@@ -398,12 +394,9 @@ function extendsRefs(config: unknown): string[] {
 /**
  * Each named layer plus everything its own `extends:` pulls in ([R119]b).
  *
- * A nested layer folds into the same accumulator as its parent, so a key one file down races
- * exactly as a key declared in the layer itself; enumerating the three fixed paths alone let
- * one line of indirection hide a real clash. Nested layers are named `<parent> -> <ref>`.
- *
- * `unreadable` is the refs this cannot follow (a URL, a missing file): a finding rather than a
- * silent skip, since an unread layer makes the disjointness verdict unsound.
+ * A nested layer folds into its parent's accumulator, so a key one file down races as if
+ * declared in the layer itself; named `<parent> -> <ref>`. A ref this cannot follow comes back
+ * in `unreadable`, since an unread layer makes the disjointness verdict unsound.
  */
 export function expandLayers(
   roots: Array<{ name: string; path: string }>,
@@ -480,9 +473,8 @@ export function runLayerA(
   }
   const journal = loaded ?? JournalConfig.parse({ name: 'unknown' });
 
-  // Both id keys are optional, so a tenant edit can leave the gate with no rule at all. The
-  // sentinel half is engine-owned now (schema.ts's ENGINE_ID_SENTINEL); the pattern is
-  // genuinely the tenant's, so its absence is said out loud rather than overridden ([R119]a).
+  // Both id keys are optional. The sentinel is engine-owned (ENGINE_ID_SENTINEL); the pattern
+  // is the tenant's, so its absence is stated rather than overridden ([R119]a).
   if (instanceRoot && loaded && !loaded.id_pattern) {
     findings.push({
       check: 'id-policy',
