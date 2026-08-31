@@ -675,6 +675,20 @@ export function authedUser(): string {
   return gh(['api', 'user', '--jq', '.login']);
 }
 
+/** `oak bootstrap` preflight: gh missing or logged out is a sentence, not a stack ([R110]). */
+export function assertGhReady(): void {
+  try {
+    gh(['--version'], { quiet: true });
+  } catch {
+    throw new UserError(msg.bootstrap.ghMissing);
+  }
+  try {
+    gh(['auth', 'status'], { quiet: true });
+  } catch {
+    throw new UserError(msg.bootstrap.ghNotAuthed);
+  }
+}
+
 /** Full clone of `repo` into a temp dir (origin set) for an in-repo upgrade. */
 export function tempClone(repo: string): string {
   const tmp = mkdtempSync(join(tmpdir(), 'oak-upgrade-'));

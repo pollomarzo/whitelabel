@@ -260,6 +260,13 @@ export const bootstrap = {
     '--no-site is only meaningful with --external: a co-located journal never gets a ' +
     'website (an index over many papers in one repo is separate, unbuilt work).',
 
+  ghMissing:
+    'oak bootstrap: the GitHub CLI (gh) is not on PATH. Install it, run `gh auth login`, ' +
+    'then re-run this command; everything it does on GitHub goes through gh.',
+  ghNotAuthed:
+    'oak bootstrap: gh is installed but no account is logged in. Run `gh auth login` and ' +
+    're-run this command; it creates and configures GitHub repositories through that login.',
+
   // ── the plan ───────────────────────────────────────────────────────────────────────────
   paperPlanHeader: (mode: 'ingest' | 'bare', repo: string): string =>
     `bootstrap paper (${mode === 'ingest' ? "importing an author's repo" : 'new, empty paper'}): ${repo}`,
@@ -271,6 +278,11 @@ export const bootstrap = {
     `  ○ create repo (${isPrivate ? 'private' : 'public'})`,
   planCreateJournalRepo: (external: boolean): string =>
     `  ○ create repo (public${external ? '; it must stay public: every paper build reads the journal settings from it, without a token' : ''})`,
+  planPrivate:
+    "  ! on GitHub's free plan a private repo cannot have repo rulesets or Pages, so those " +
+    'steps will fail late in this run (403), after the repo and its content are already in ' +
+    'place. Create the repo public, or confirm your GitHub plan covers private repos, before ' +
+    'proceeding.',
 
   planMainSeeded: '  ✓ main seeded',
   planSeedPaper:
@@ -360,6 +372,10 @@ export const bootstrap = {
     "  ✓ created the 'zenodo-publish' environment: only v* tags may use its secrets",
   logSecretSet: (name: string): string => `  ✓ secret ${name} set`,
   logSiteAdded: (siteUrl: string): string => `  ✓ journal website added: ${siteUrl}`,
+  logStepFailed: (step: string, why: string): string => `  ✗ ${step} failed: ${why}`,
+  logPartial: (steps: string): string =>
+    `  ! this run is incomplete; failed steps: ${steps}. What to do about each is in the ` +
+    'runbook above.',
 
   // ── the PR that an ingested submission opens ───────────────────────────────────────────
   ingestCommitMessage: (from: string): string =>
@@ -381,6 +397,10 @@ export const bootstrap = {
     `organisation rather than one of its teams, and an organisation cannot be a reviewer. ` +
     `Publishing runs a job holding your Zenodo token, so add your editors team as a required ` +
     `reviewer of the '${env}' environment: https://github.com/${repo}/settings/environments`,
+
+  runbookStepFailed: (repo: string, step: string, why: string): string =>
+    `The '${step}' step failed (${why}); ${repo} keeps everything else this run set. Fix the ` +
+    `cause and re-run the same command: steps that already succeeded are skipped.`,
 
   runbookForkApproval:
     `The first time someone opens a pull request from their own fork, GitHub asks an editor to ` +
@@ -783,6 +803,12 @@ export const workflow = {
     'named explicitly, because it can be deleted and would take your papers with it.',
   bootstrapUsage: 'oak bootstrap: usage: oak bootstrap <paper|journal> --repo <owner/name> [...]',
   bootstrapJournalTier: 'oak bootstrap journal: pass exactly one of --external | --co-located',
+  bootstrapSecretsNeedPaper:
+    'oak bootstrap journal --external: the secret flags (--zenodo-token, ' +
+    '--zenodo-token-sandbox, --cf-token, --cf-account) set nothing here; this repo holds ' +
+    "the journal's settings and runs no publishing, so it takes no secrets. The tokens are " +
+    'set per paper repo: `oak bootstrap paper` accepts the same flags, or set them in the ' +
+    "paper repo's Actions secrets settings.",
   conformanceResetArgs: 'oak conformance reset: --repo <owner/name> is required',
   conformanceCertifyArgs:
     'oak conformance certify: --repo <owner/name> and --tag <vX.Y.Z> are required',

@@ -667,103 +667,189 @@ function zenodoReviewer(
   return login ? { type: 'User', id: prov.userId(login) } : null;
 }
 
-/** Provision the repo settings. Returns runbook lines for what it could not finish. */
+/**
+ * What a partial run leaves behind ([R125]).
+ */
+export interface StepFailure {
+  step: string;
+  why: string;
+}
+
+/** The first line of a thrown error; `gh`'s own first stderr line is already in it. */
+function firstLine(e: unknown): string {
+  return String((e as Error)?.message ?? e)
+    .split('\n')[0]!
+    .trim();
+}
+
+/**
+ * Run one step, recording a throw instead of propagating it ([R125]). False when it failed.
+ */
+function stepRunner(
+  repo: string,
+  actions: Record<string, string>,
+  runbook: string[],
+  failed: StepFailure[],
+  log: (m: string) => void,
+): (step: string, body: () => void) => boolean {
+  return (step, body) => {
+    try {
+      body();
+      return true;
+    } catch (e) {
+      const why = firstLine(e);
+      actions[step] = `failed: ${why}`;
+      failed.push({ step, why });
+      log(msg.bootstrap.logStepFailed(step, why));
+      runbook.push(msg.bootstrap.runbookStepFailed(repo, step, why));
+      return false;
+    }
+  };
+}
+
+/**
+ * Early return for a fatal step: a partial envelope, not a stack ([R125]).
+ */
+function partial(
+  repo: string,
+  extra: Record<string, unknown>,
+  actions: Record<string, string>,
+  runbook: string[],
+  failed: StepFailure[],
+  log: (m: string) => void,
+): Outcome {
+  for (const line of runbook) log(`  → ${line}`);
+  log(msg.bootstrap.logPartial(failed.map((f) => f.step).join(', ')));
+  return {
+    exitCode: 1,
+    result: {
+      status: 'incomplete',
+      repo,
+      ...extra,
+      actions,
+      runbook,
+      failed: failed.map((f) => `${f.step}: ${f.why}`),
+    },
+  };
+}
+
+/** Provision the repo settings. Returns runbook lines + the steps that failed ([R125]). */
 function applyProvisioning(
   repo: string,
   owner: { ownerToken: string; team: string | null; ownerType: 'Organization' | 'User' },
   deps: BootstrapDeps,
   actions: Record<string, string>,
   requireChecks: boolean,
-): string[] {
+): { runbook: string[]; failed: StepFailure[] } {
   const { prov, log } = deps;
   const runbook: string[] = [];
+  const failed: StepFailure[] = [];
+  const step = stepRunner(repo, actions, runbook, failed, log);
 
   if (owner.team) {
-    prov.grantTeamWrite(repo, owner.team);
-    actions.team_grant = `granted ${owner.team} write`;
-    log(msg.bootstrap.logTeamGranted(owner.team));
+    const team = owner.team;
+    step('team_grant', () => {
+      prov.grantTeamWrite(repo, team);
+      actions.team_grant = `granted ${team} write`;
+      log(msg.bootstrap.logTeamGranted(team));
+    });
   }
 
   // protect-main
-  if (prov.rulesetExists(repo, RULESET_PROTECT_MAIN)) {
-    actions.protect_main = 'already exists';
-    log(msg.bootstrap.logRulesetExists(RULESET_PROTECT_MAIN));
-  } else {
-    prov.createRuleset(repo, protectMainBody(requireChecks));
-    actions.protect_main = 'created';
-    log(msg.bootstrap.logRulesetCreated(RULESET_PROTECT_MAIN));
-  }
+  step('protect_main', () => {
+    if (prov.rulesetExists(repo, RULESET_PROTECT_MAIN)) {
+      actions.protect_main = 'already exists';
+      log(msg.bootstrap.logRulesetExists(RULESET_PROTECT_MAIN));
+    } else {
+      prov.createRuleset(repo, protectMainBody(requireChecks));
+      actions.protect_main = 'created';
+      log(msg.bootstrap.logRulesetCreated(RULESET_PROTECT_MAIN));
+    }
+  });
 
   // editors-only-v-tags
-  const bypass = owner.team
-    ? [{ actor_id: prov.teamId(owner.team), actor_type: 'Team', bypass_mode: 'always' }]
-    : [{ actor_id: 5, actor_type: 'RepositoryRole', bypass_mode: 'always' }]; // repo admin
-  if (prov.rulesetExists(repo, RULESET_V_TAGS)) {
-    actions.v_tags = 'already exists';
-    log(msg.bootstrap.logTagRuleExists(RULESET_V_TAGS));
-  } else {
-    prov.createRuleset(repo, vTagsBody(bypass));
-    actions.v_tags = 'created';
-    log(msg.bootstrap.logTagRuleCreated(RULESET_V_TAGS));
-  }
+  step('v_tags', () => {
+    const bypass = owner.team
+      ? [{ actor_id: prov.teamId(owner.team), actor_type: 'Team', bypass_mode: 'always' }]
+      : [{ actor_id: 5, actor_type: 'RepositoryRole', bypass_mode: 'always' }]; // repo admin
+    if (prov.rulesetExists(repo, RULESET_V_TAGS)) {
+      actions.v_tags = 'already exists';
+      log(msg.bootstrap.logTagRuleExists(RULESET_V_TAGS));
+    } else {
+      prov.createRuleset(repo, vTagsBody(bypass));
+      actions.v_tags = 'created';
+      log(msg.bootstrap.logTagRuleCreated(RULESET_V_TAGS));
+    }
+  });
 
   // Pages
-  if (prov.pagesEnabled(repo)) {
-    actions.pages = 'already enabled';
-    log(msg.bootstrap.logPagesExists);
-  } else {
-    prov.enablePages(repo);
-    actions.pages = 'enabled';
-    log(msg.bootstrap.logPagesEnabled);
-  }
+  step('pages', () => {
+    if (prov.pagesEnabled(repo)) {
+      actions.pages = 'already enabled';
+      log(msg.bootstrap.logPagesExists);
+    } else {
+      prov.enablePages(repo);
+      actions.pages = 'enabled';
+      log(msg.bootstrap.logPagesEnabled);
+    }
+  });
 
   // Actions may not open a pull request unless the repo says so, and the DOI write-back is a
   // pull request an Action opens, so without this every first deposit fails ([R122]).
-  if (prov.actionsCanApprovePrs(repo)) {
-    actions.actions_pull_requests = 'already allowed';
-    log(msg.bootstrap.logActionsPrsExists);
-  } else {
-    prov.allowActionsApprovePrs(repo);
-    actions.actions_pull_requests = 'allowed';
-    log(msg.bootstrap.logActionsPrsAllowed);
-  }
+  step('actions_pull_requests', () => {
+    if (prov.actionsCanApprovePrs(repo)) {
+      actions.actions_pull_requests = 'already allowed';
+      log(msg.bootstrap.logActionsPrsExists);
+    } else {
+      prov.allowActionsApprovePrs(repo);
+      actions.actions_pull_requests = 'allowed';
+      log(msg.bootstrap.logActionsPrsAllowed);
+    }
+  });
 
-  // zenodo-publish environment: the reviewer gate in front of the token-bearing run ([R123])
-  // plus the v* policy that keeps its secrets off every other ref. GET-then-act on the
-  // reviewers, so a re-run never clears one a tenant added by hand ([R127]).
-  const existingReviewers = prov.environmentExists(repo, ZENODO_ENV)
-    ? prov.environmentReviewers(repo, ZENODO_ENV)
-    : [];
-  if (existingReviewers.length) {
-    actions.zenodo_reviewers = 'already set';
-    log(msg.bootstrap.logZenodoReviewersExist);
-  } else {
+  // Reviewer gate + v* policy ([R123]); GET-then-act so a re-run never clears a hand-added
+  // reviewer ([R127]).
+  step('zenodo_reviewers', () => {
+    const envThere = prov.environmentExists(repo, ZENODO_ENV);
+    const existingReviewers = envThere ? prov.environmentReviewers(repo, ZENODO_ENV) : [];
+    if (existingReviewers.length) {
+      actions.zenodo_reviewers = 'already set';
+      log(msg.bootstrap.logZenodoReviewersExist);
+      return;
+    }
     const reviewer = zenodoReviewer(owner, prov);
-    prov.upsertEnvironment(repo, ZENODO_ENV, reviewer ? [reviewer] : []);
     if (reviewer) {
+      prov.upsertEnvironment(repo, ZENODO_ENV, [reviewer]);
       actions.zenodo_reviewers = `${reviewer.type} ${owner.team ?? owner.ownerToken}`;
       log(msg.bootstrap.logZenodoReviewerSet(owner.team ?? owner.ownerToken));
-    } else {
-      actions.zenodo_reviewers = 'none';
-      log(msg.bootstrap.logZenodoNoReviewer);
-      runbook.push(msg.bootstrap.runbookZenodoReviewer(repo, ZENODO_ENV));
+      return;
     }
-  }
-  if (prov.branchPolicyExists(repo, ZENODO_ENV, 'v*')) {
-    actions.zenodo_env = 'v* policy already exists';
-    log(msg.bootstrap.logZenodoEnvExists);
-  } else {
-    prov.createBranchPolicy(repo, ZENODO_ENV, 'v*', 'tag');
-    actions.zenodo_env = 'created with v* policy';
-    log(msg.bootstrap.logZenodoEnvCreated);
-  }
+    // Create on a first run (the v* policy needs it), but never re-PUT: the PUT carries the
+    // whole environment ([R127]).
+    if (!envThere) prov.upsertEnvironment(repo, ZENODO_ENV, []);
+    actions.zenodo_reviewers = 'none';
+    log(msg.bootstrap.logZenodoNoReviewer);
+    runbook.push(msg.bootstrap.runbookZenodoReviewer(repo, ZENODO_ENV));
+  });
+  step('zenodo_env', () => {
+    if (prov.branchPolicyExists(repo, ZENODO_ENV, 'v*')) {
+      actions.zenodo_env = 'v* policy already exists';
+      log(msg.bootstrap.logZenodoEnvExists);
+    } else {
+      prov.createBranchPolicy(repo, ZENODO_ENV, 'v*', 'tag');
+      actions.zenodo_env = 'created with v* policy';
+      log(msg.bootstrap.logZenodoEnvCreated);
+    }
+  });
 
   // labels
-  for (const l of LABELS)
-    prov.createLabel(repo, l.name, { color: l.color, description: l.description });
-  actions.labels = LABELS.map((l) => l.name).join(', ');
+  step('labels', () => {
+    for (const l of LABELS)
+      prov.createLabel(repo, l.name, { color: l.color, description: l.description });
+    actions.labels = LABELS.map((l) => l.name).join(', ');
+  });
 
-  return runbook;
+  return { runbook, failed };
 }
 
 /** Set the provided secrets; collect a runbook for the ones left unset ([R25] floor). */
@@ -771,25 +857,32 @@ function applySecrets(
   repo: string,
   secrets: SecretInputs,
   deps: BootstrapDeps,
-): { set: string[]; runbook: string[] } {
+  actions: Record<string, string>,
+): { set: string[]; runbook: string[]; failed: StepFailure[] } {
   const set: string[] = [];
   const missing: string[] = [];
+  const runbook: string[] = [];
+  const failed: StepFailure[] = [];
+  const step = stepRunner(repo, actions, runbook, failed, deps.log);
   for (const { key, name } of SECRET_MAP) {
     const value = secrets[key];
-    if (value) {
-      deps.prov.setSecret(repo, name, value);
-      set.push(name);
-      deps.log(msg.bootstrap.logSecretSet(name));
-    } else {
+    if (!value) {
       missing.push(name);
+      continue;
     }
+    // Per secret, not per loop: one refusal must not swallow the rest ([R125]).
+    const ok = step(`secret_${name}`, () => {
+      deps.prov.setSecret(repo, name, value);
+      deps.log(msg.bootstrap.logSecretSet(name));
+    });
+    if (ok) set.push(name);
+    else missing.push(name);
   }
-  const runbook: string[] = [];
   if (missing.length) {
     runbook.push(msg.bootstrap.runbookSecrets(repo, missing.join(', ')));
   }
   runbook.push(msg.bootstrap.runbookForkApproval);
-  return { set, runbook };
+  return { set, runbook, failed };
 }
 
 export async function cmdBootstrapPaper(
@@ -865,6 +958,8 @@ export async function cmdBootstrapPaper(
       resolved: input.resolved,
     }),
     repoThere ? msg.bootstrap.planRepoExists : msg.bootstrap.planCreateRepo(input.private),
+    // Last chance to say so before content exists ([R127]).
+    ...(input.private ? [msg.bootstrap.planPrivate] : []),
     mainThere ? msg.bootstrap.planMainSeeded : msg.bootstrap.planSeedPaper,
     // Idempotency has a sharp edge worth naming: a re-run to CHANGE an answer (a different
     // --instance, a different --engine-version) does not re-seed, so the earlier pins.yml
@@ -897,61 +992,89 @@ export async function cmdBootstrapPaper(
     };
 
   const actions: Record<string, string> = {};
+  const contentRunbook: string[] = [];
+  const contentFailed: StepFailure[] = [];
+  const step = stepRunner(repo, actions, contentRunbook, contentFailed, log);
 
+  // Content is a dependency chain, settings are independent ([R125]).
   if (!repoThere) {
-    prov.createRepo(repo, { private: input.private, description: msg.bootstrap.descriptionPaper });
-    actions.repo = 'created';
-    log(msg.bootstrap.logCreated(repo));
+    const created = step('repo', () => {
+      prov.createRepo(repo, {
+        private: input.private,
+        description: msg.bootstrap.descriptionPaper,
+      });
+      actions.repo = 'created';
+      log(msg.bootstrap.logCreated(repo));
+    });
+    // Nothing else can act on a repo that does not exist, so this one is fatal ([R125]).
+    if (!created) return partial(repo, { mode }, actions, contentRunbook, contentFailed, log);
   } else actions.repo = 'exists';
 
   // Render the paper seed (frozen shim + starter content) once; reused for main seeding.
   const seedDir = deps.workdir();
   renderPaperTemplate(deps.paperTemplateRoot, seedDir, answers);
 
+  let mainSeeded = mainThere;
   if (!mainThere) {
-    prov.seedBranch(repo, 'main', seedDir, 'startpoint');
-    actions.main = 'seeded';
-    log(msg.bootstrap.logSeeded);
+    mainSeeded = step('main', () => {
+      prov.seedBranch(repo, 'main', seedDir, 'startpoint');
+      actions.main = 'seeded';
+      log(msg.bootstrap.logSeeded);
+    });
   } else actions.main = 'exists';
 
   let prUrl: string | undefined;
-  if (mode === 'ingest') {
+  // No main means no base to restore the frozen `.github/` from, and no base to open a PR
+  // against; the settings still get provisioned below.
+  if (mode === 'ingest' && mainSeeded) {
+    let reviewReady = reviewThere;
     if (!reviewThere) {
-      prov.ingestReviewBranch(repo, {
-        sourceUrl: input.from!,
-        sourceRef: input.sourceRef ?? 'main',
-        message: msg.bootstrap.ingestCommitMessage(input.from!),
+      reviewReady = step('review', () => {
+        prov.ingestReviewBranch(repo, {
+          sourceUrl: input.from!,
+          sourceRef: input.sourceRef ?? 'main',
+          message: msg.bootstrap.ingestCommitMessage(input.from!),
+        });
+        actions.review = 'ingested';
+        log(msg.bootstrap.logReviewBranch);
       });
-      actions.review = 'ingested';
-      log(msg.bootstrap.logReviewBranch);
     } else actions.review = 'exists';
 
-    if (!prThere) {
-      prUrl = prov.openPr(repo, {
-        head: 'review',
-        base: 'main',
-        title: msg.bootstrap.ingestPrTitle(repoOwner(repo)),
-        body: msg.bootstrap.ingestPrBody(input.from!),
+    if (!prThere && reviewReady) {
+      step('pr', () => {
+        prUrl = prov.openPr(repo, {
+          head: 'review',
+          base: 'main',
+          title: msg.bootstrap.ingestPrTitle(repoOwner(repo)),
+          body: msg.bootstrap.ingestPrBody(input.from!),
+        });
+        actions.pr = 'opened';
+        log(msg.bootstrap.logPrOpened(prUrl));
       });
-      actions.pr = 'opened';
-      log(msg.bootstrap.logPrOpened(prUrl));
-    } else actions.pr = 'exists';
+    } else if (prThere) actions.pr = 'exists';
   }
 
-  const provRunbook = applyProvisioning(repo, owner, deps, actions, input.requireChecks);
-  const { set, runbook: secretRunbook } = applySecrets(repo, input.secrets, deps);
-  const runbook = [...provRunbook, ...secretRunbook];
+  const prov_ = applyProvisioning(repo, owner, deps, actions, input.requireChecks);
+  const {
+    set,
+    runbook: secretRunbook,
+    failed: secretFailed,
+  } = applySecrets(repo, input.secrets, deps, actions);
+  const runbook = [...contentRunbook, ...prov_.runbook, ...secretRunbook];
+  const failed = [...contentFailed, ...prov_.failed, ...secretFailed];
   for (const line of runbook) log(`  → ${line}`);
+  if (failed.length) log(msg.bootstrap.logPartial(failed.map((f) => f.step).join(', ')));
 
   return {
-    exitCode: 0,
+    exitCode: failed.length ? 1 : 0,
     result: {
-      status: 'ok',
+      status: failed.length ? 'incomplete' : 'ok',
       repo,
       mode,
       actions,
       secrets_set: set,
       runbook,
+      ...(failed.length ? { failed: failed.map((f) => `${f.step}: ${f.why}`) } : {}),
       ...(prUrl ? { pr: prUrl } : {}),
     },
   };
@@ -1060,22 +1183,34 @@ export async function cmdBootstrapJournal(
     };
 
   const actions: Record<string, string> = {};
+  const contentRunbook: string[] = [];
+  const contentFailed: StepFailure[] = [];
+  const step = stepRunner(repo, actions, contentRunbook, contentFailed, log);
 
   if (!repoThere) {
-    prov.createRepo(repo, {
-      private: false,
-      description: external ? msg.bootstrap.descriptionJournal : msg.bootstrap.descriptionCoLocated,
+    const created = step('repo', () => {
+      prov.createRepo(repo, {
+        private: false,
+        description: external
+          ? msg.bootstrap.descriptionJournal
+          : msg.bootstrap.descriptionCoLocated,
+      });
+      actions.repo = 'created (public)';
+      log(msg.bootstrap.logCreatedPublic(repo));
     });
-    actions.repo = 'created (public)';
-    log(msg.bootstrap.logCreatedPublic(repo));
+    // Nothing else can act on a repo that does not exist, so this one is fatal ([R125]).
+    if (!created)
+      return partial(repo, { tier: input.tier }, actions, contentRunbook, contentFailed, log);
   } else {
     actions.repo = 'exists';
     // Instance-config repos must be public ([R32], dec. 16); enforce on a re-run too.
-    if (prov.repoVisibility(repo) === 'private') {
-      prov.setRepoPublic(repo);
-      actions.visibility = 'forced public';
-      log(msg.bootstrap.logMadePublic);
-    }
+    step('visibility', () => {
+      if (prov.repoVisibility(repo) === 'private') {
+        prov.setRepoPublic(repo);
+        actions.visibility = 'forced public';
+        log(msg.bootstrap.logMadePublic);
+      }
+    });
   }
 
   const seedDir = deps.workdir();
@@ -1090,19 +1225,31 @@ export async function cmdBootstrapJournal(
   }
 
   if (!mainThere) {
-    prov.seedBranch(repo, 'main', seedDir, 'startpoint');
-    actions.main = 'seeded';
-    log(msg.bootstrap.logSeeded);
+    step('main', () => {
+      prov.seedBranch(repo, 'main', seedDir, 'startpoint');
+      actions.main = 'seeded';
+      log(msg.bootstrap.logSeeded);
+    });
   } else actions.main = 'exists';
 
   if (!external) {
-    const provRunbook = applyProvisioning(repo, owner, deps, actions, input.requireChecks);
-    const { set, runbook: secretRunbook } = applySecrets(repo, input.secrets, deps);
-    const runbook = [...provRunbook, ...secretRunbook];
+    const settings = applyProvisioning(repo, owner, deps, actions, input.requireChecks);
+    const secrets = applySecrets(repo, input.secrets, deps, actions);
+    const runbook = [...contentRunbook, ...settings.runbook, ...secrets.runbook];
+    const failed = [...contentFailed, ...settings.failed, ...secrets.failed];
     for (const line of runbook) log(`  → ${line}`);
+    if (failed.length) log(msg.bootstrap.logPartial(failed.map((f) => f.step).join(', ')));
     return {
-      exitCode: 0,
-      result: { status: 'ok', repo, tier: input.tier, actions, secrets_set: set, runbook },
+      exitCode: failed.length ? 1 : 0,
+      result: {
+        status: failed.length ? 'incomplete' : 'ok',
+        repo,
+        tier: input.tier,
+        actions,
+        secrets_set: secrets.set,
+        runbook,
+        ...(failed.length ? { failed: failed.map((f) => `${f.step}: ${f.why}`) } : {}),
+      },
     };
   }
 
@@ -1116,27 +1263,54 @@ export async function cmdBootstrapJournal(
     msg.bootstrap.runbookNoProtection,
   ];
   if (!withSite) {
-    return { exitCode: 0, result: { status: 'ok', repo, tier: input.tier, actions, runbook } };
+    const allRunbook = [...contentRunbook, ...runbook];
+    for (const line of contentRunbook) log(`  → ${line}`);
+    return {
+      exitCode: contentFailed.length ? 1 : 0,
+      result: {
+        status: contentFailed.length ? 'incomplete' : 'ok',
+        repo,
+        tier: input.tier,
+        actions,
+        runbook: allRunbook,
+        ...(contentFailed.length
+          ? { failed: contentFailed.map((f) => `${f.step}: ${f.why}`) }
+          : {}),
+      },
+    };
   }
 
   // Pages, through the same GET-then-act seams the paper path uses (idempotent re-run).
-  if (prov.pagesEnabled(repo)) {
-    actions.pages = 'already enabled';
-    log(msg.bootstrap.logPagesExists);
-  } else {
-    prov.enablePages(repo);
-    actions.pages = 'enabled';
-    log(msg.bootstrap.logPagesEnabled);
-  }
+  step('pages', () => {
+    if (prov.pagesEnabled(repo)) {
+      actions.pages = 'already enabled';
+      log(msg.bootstrap.logPagesExists);
+    } else {
+      prov.enablePages(repo);
+      actions.pages = 'enabled';
+      log(msg.bootstrap.logPagesEnabled);
+    }
+  });
 
   const siteUrl = siteUrlFor(repo);
   actions.site = 'stamped';
   log(msg.bootstrap.logSiteAdded(siteUrl));
   runbook.push(msg.bootstrap.runbookSite(siteUrl), msg.bootstrap.runbookSiteFailure);
-  for (const line of runbook) log(`  → ${line}`);
+  const allRunbook = [...contentRunbook, ...runbook];
+  for (const line of allRunbook) log(`  → ${line}`);
+  if (contentFailed.length)
+    log(msg.bootstrap.logPartial(contentFailed.map((f) => f.step).join(', ')));
 
   return {
-    exitCode: 0,
-    result: { status: 'ok', repo, tier: input.tier, actions, site_url: siteUrl, runbook },
+    exitCode: contentFailed.length ? 1 : 0,
+    result: {
+      status: contentFailed.length ? 'incomplete' : 'ok',
+      repo,
+      tier: input.tier,
+      actions,
+      site_url: siteUrl,
+      runbook: allRunbook,
+      ...(contentFailed.length ? { failed: contentFailed.map((f) => `${f.step}: ${f.why}`) } : {}),
+    },
   };
 }
