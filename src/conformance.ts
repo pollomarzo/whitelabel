@@ -17,6 +17,7 @@
  */
 import { STICKY_PREVIEW } from './preview.js';
 import { RESERVED_BUNDLE_NAMES } from './zenodo.js';
+import { UPGRADE_BRANCH_PREFIX } from './upgrade.js';
 
 /** Label stamped on every PR the harness opens, the robust teardown signal (works for fork
  *  PRs whose head branch the harness does not name). Provisioned on the fixture in C0. */
@@ -172,11 +173,18 @@ export async function cmdConformanceReset(input: ResetInput, deps: ResetDeps): P
     log(`closed PR #${pr.number} (${pr.headRef})`);
   }
 
+  // Both prefixes: `cert-*` is what the preview phases open, `oak/upgrade-*` is what the install
+  // phase's dogfooded `oak upgrade` opens. Sweeping only the first made certify a once-per-tag
+  // operation, because `gh pr create` refuses a second PR from the same branch and the run then
+  // reported FAILED for leftover state ([R117]). Deleting the branch closes its PR, so this also
+  // catches an upgrade PR nothing labelled, which is what the live run tripped over.
   const deletedBranches: string[] = [];
-  for (const branch of gh.listBranches(repo, CERT_BRANCH_PREFIX)) {
-    gh.deleteBranch(repo, branch);
-    deletedBranches.push(branch);
-    log(`deleted branch ${branch}`);
+  for (const prefix of [CERT_BRANCH_PREFIX, UPGRADE_BRANCH_PREFIX]) {
+    for (const branch of gh.listBranches(repo, prefix)) {
+      gh.deleteBranch(repo, branch);
+      deletedBranches.push(branch);
+      log(`deleted branch ${branch}`);
+    }
   }
 
   // Cert tags: the `*-cert-*` branch-side markers plus the reserved deposit tag (which carries
