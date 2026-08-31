@@ -732,8 +732,7 @@ export async function runValidate(
     (c) => (c.status === CheckStatus.fail || c.status === CheckStatus.error) && !c.optional,
   );
   const hasError = errors.length > 0 || blockingCheckFail;
-  // --strict makes warnings blocking for the exit code; they must block the verdict and the
-  // Check Run too, or the run exits 1 while reporting success ([R119]).
+  // --strict warnings block the verdict and the Check Run, not just the exit code ([R119]).
   const failed = hasError || (opts.strict && warnings.length > 0);
   const exitCode = failed ? 1 : 0;
 

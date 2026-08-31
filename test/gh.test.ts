@@ -100,8 +100,7 @@ describe('gh.ts argument vectors', () => {
   });
 
   it('a versionTags API failure propagates instead of reading as "no tags"', () => {
-    // Swallowing it into [] read as "never published", silently skipping the new-version
-    // reminder on a paper that has one ([R108]).
+    // [] would read as "never published" ([R108]).
     const vt = /versionTags\([^)]*\)\s*\{([\s\S]*?)\n  \},/.exec(SRC('gh.ts'));
     expect(vt, 'versionTags not found; this lint needs updating').toBeTruthy();
     expect(codeOnly(vt![1])).not.toMatch(/\bcatch\b/);

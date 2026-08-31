@@ -312,8 +312,7 @@ export function runNewVersionReminder(input: NotifyInput, gh: GhPr): Outcome {
   try {
     tags = gh.versionTags(repoRoot, repo);
   } catch (e) {
-    // An unreadable tag list must not read as "never published": a rate-limited gh would
-    // silently skip the reminder on a published paper ([R108]).
+    // An unreadable tag list must not read as "never published" ([R108]).
     const why = String((e as Error).message ?? e);
     process.stderr.write(annotate('error', msg.workflow.notifyTagsFailed(why)) + '\n');
     return err(1, why, { reminder: 'error' });

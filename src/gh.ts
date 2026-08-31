@@ -344,8 +344,8 @@ export const realGhPr: GhPr = {
 
   versionTags(_repoRoot, repo) {
     // The Stage-2 checkout is shallow, so `git tag --merged origin/main` sees no history,
-    // read tags from the API instead ([R23]). `v*` filtered client-side. An API failure
-    // propagates: [] here reads as "never published" and silently skips the reminder ([R108]).
+    // read tags from the API instead ([R23]). `v*` filtered client-side. A failure
+    // propagates: [] here would read as "never published" ([R108]).
     if (!repo) return [];
     const out = gh(['api', `repos/${repo}/tags`, '--paginate', '--jq', '.[].name']);
     return out
