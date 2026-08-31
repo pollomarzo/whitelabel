@@ -19,7 +19,7 @@ import { parseDocument } from 'yaml';
 import type { GitContext } from './zenodo.js';
 import type { GhPr, PagesDeployer } from './preview.js';
 import type { CheckRun } from './checks.js';
-import type { Provisioner } from './bootstrap.js';
+import type { EnvironmentReviewer, Provisioner } from './bootstrap.js';
 import type { UpgradePr } from './upgrade.js';
 import type { ConformanceGh } from './conformance.js';
 
@@ -556,20 +556,65 @@ export const realProvisioner: Provisioner = {
   enablePages(repo) {
     gh(['api', '-X', 'POST', `repos/${repo}/pages`, '-f', 'build_type=workflow']);
   },
-  environmentExists(repo, name) {
-    return ghOk(['api', `repos/${repo}/environments/${name}`]);
+  userId(login) {
+    return Number(gh(['api', `users/${login}`, '--jq', '.id']));
   },
-  upsertEnvironment(repo, name) {
+  actionsCanApprovePrs(repo) {
+    return (
+      gh([
+        'api',
+        `repos/${repo}/actions/permissions/workflow`,
+        '--jq',
+        '.can_approve_pull_request_reviews',
+      ]) === 'true'
+    );
+  },
+  allowActionsApprovePrs(repo) {
+    // The PUT replaces the whole settings object, so the current default token permission is
+    // read back and sent with it; omitting it silently resets a tenant's choice to 'read'.
+    const current = gh([
+      'api',
+      `repos/${repo}/actions/permissions/workflow`,
+      '--jq',
+      '.default_workflow_permissions',
+    ]);
     gh([
       'api',
       '-X',
       'PUT',
-      `repos/${repo}/environments/${name}`,
-      '--field',
-      'deployment_branch_policy[protected_branches]=false',
-      '--field',
-      'deployment_branch_policy[custom_branch_policies]=true',
+      `repos/${repo}/actions/permissions/workflow`,
+      '-F',
+      'can_approve_pull_request_reviews=true',
+      '-f',
+      `default_workflow_permissions=${current || 'read'}`,
     ]);
+  },
+  environmentExists(repo, name) {
+    return ghOk(['api', `repos/${repo}/environments/${name}`]);
+  },
+  environmentReviewers(repo, name) {
+    try {
+      const out = gh([
+        'api',
+        `repos/${repo}/environments/${name}`,
+        '--jq',
+        '[.protection_rules[]? | select(.type == "required_reviewers") | ' +
+          '.reviewers[]? | {type: .type, id: .reviewer.id}]',
+      ]);
+      const parsed: unknown = JSON.parse(out || '[]');
+      return Array.isArray(parsed) ? (parsed as EnvironmentReviewer[]) : [];
+    } catch {
+      return [];
+    }
+  },
+  upsertEnvironment(repo, name, reviewers) {
+    // `--input`, not repeated `--field`: an array of reviewer objects has no flat spelling.
+    gh(['api', '-X', 'PUT', `repos/${repo}/environments/${name}`, '--input', '-'], {
+      input: JSON.stringify({
+        deployment_branch_policy: { protected_branches: false, custom_branch_policies: true },
+        reviewers,
+      }),
+    });
   },
   branchPolicyExists(repo, env, name) {
     try {

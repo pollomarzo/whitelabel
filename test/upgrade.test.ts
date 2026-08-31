@@ -55,6 +55,26 @@ describe('computeDrift', () => {
     expect(computeDrift(repo, target, readAnswers(repo))).toEqual(['.github/workflows/ci.yml']);
   });
 
+  it('keeps a second CODEOWNER the tenant added ([R126])', () => {
+    const repo = makeRepo();
+    const co = join(repo, 'CODEOWNERS');
+    writeFileSync(co, readFileSync(co, 'utf8').replace(/@alice/g, '@org/editors @alice'));
+    expect(computeDrift(repo, TEMPLATE_ROOT, readAnswers(repo))).toEqual([]);
+  });
+
+  it('a resync does not revert a second CODEOWNER on an unrelated drift ([R126])', async () => {
+    const repo = makeRepo();
+    const co = join(repo, 'CODEOWNERS');
+    writeFileSync(co, readFileSync(co, 'utf8').replace(/@alice/g, '@org/editors @alice'));
+    appendFileSync(join(repo, '.github/workflows/ci.yml'), '\n# hand edit\n');
+    const { pr } = fakePr();
+    await cmdUpgrade(
+      { repoRoot: repo, mode: 'files-only' },
+      deps(pr, 'v2.0.0', () => TEMPLATE_ROOT),
+    );
+    expect(readFileSync(co, 'utf8')).toContain('@org/editors @alice');
+  });
+
   it('reports a hand-edited repo file (reset-to-template)', () => {
     const repo = makeRepo();
     appendFileSync(join(repo, '.github/workflows/publish.yml'), '\n# hand edit\n');

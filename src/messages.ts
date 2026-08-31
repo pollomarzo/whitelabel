@@ -306,9 +306,11 @@ export const bootstrap = {
   planReviewPr: '  ○ open the review → main pull request',
 
   planProvisioning:
-    '  ○ repo settings: branch + tag rules, GitHub Pages, the zenodo-publish environment, issue labels (safe to re-run)',
+    '  ○ repo settings: branch + tag rules, GitHub Pages, the reviewer-gated zenodo-publish ' +
+    'environment, permission for Actions to open pull requests, issue labels (safe to re-run)',
   planProvisioningCoLocated:
-    '  ○ repo settings: branch + tag rules, GitHub Pages, the zenodo-publish environment, issue labels',
+    '  ○ repo settings: branch + tag rules, GitHub Pages, the reviewer-gated zenodo-publish ' +
+    'environment, permission for Actions to open pull requests, issue labels',
   planSecrets: (names: string): string =>
     `  ○ secrets: ${names || 'none given; you get a list of what to set by hand'}`,
   planPages: (siteUrl: string): string =>
@@ -344,6 +346,14 @@ export const bootstrap = {
     `  ✓ created tag rule '${name}': only editors can create the v* tags that publish a version`,
   logPagesExists: '  ✓ GitHub Pages already enabled',
   logPagesEnabled: '  ✓ GitHub Pages enabled (published by a workflow)',
+  logActionsPrsExists: '  ✓ Actions may already open pull requests',
+  logActionsPrsAllowed:
+    '  ✓ Actions allowed to open pull requests (the DOI write-back is one of them)',
+  logZenodoReviewerSet: (reviewer: string): string =>
+    `  ✓ ${reviewer} must approve a Zenodo publish run before it starts`,
+  logZenodoReviewersExist: '  ✓ the Zenodo publish gate already has its reviewers',
+  logZenodoNoReviewer:
+    '  ! nobody was named as the reviewer of a Zenodo publish run: see the notes below',
   logZenodoEnvExists:
     "  ✓ the 'zenodo-publish' environment already restricts its secrets to v* tags",
   logZenodoEnvCreated:
@@ -365,6 +375,12 @@ export const bootstrap = {
     '. Until they are set, publishing to Zenodo (ZENODO_TOKEN*) and live pull-request ' +
     'previews (CLOUDFLARE_*) are skipped; everything else works, and a preview falls back ' +
     'to a downloadable copy of the built site.',
+
+  runbookZenodoReviewer: (repo: string, env: string): string =>
+    `Nobody has to approve a Zenodo publish run on this repo, because --owner named an ` +
+    `organisation rather than one of its teams, and an organisation cannot be a reviewer. ` +
+    `Publishing runs a job holding your Zenodo token, so add your editors team as a required ` +
+    `reviewer of the '${env}' environment: https://github.com/${repo}/settings/environments`,
 
   runbookForkApproval:
     `The first time someone opens a pull request from their own fork, GitHub asks an editor to ` +

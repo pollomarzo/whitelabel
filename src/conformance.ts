@@ -481,6 +481,8 @@ export async function cmdConformanceCertify(
       },
       { sleep, log },
     );
+    // Conditional, not an assertion of the gate: a fixture provisioned before [R123], or an
+    // org tenant whose --owner named no team, legitimately has no reviewer to wait for.
     if (publishRun.status === 'waiting') {
       gh.approveDeployment(repo, publishRun.id, 'zenodo-publish');
       log(`approved zenodo-publish deployment for run ${publishRun.id}`);

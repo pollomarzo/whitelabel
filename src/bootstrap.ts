@@ -160,16 +160,42 @@ export function renderPins(templateRoot: string, answers: TemplateAnswers): stri
   return doc.toString();
 }
 
-/** CODEOWNERS with the owner column on each gated line swapped to `owner`. Not a structured
- *  config (no YAML), so a line-wise rewrite that keeps the path + spacing is the safe edit. */
-export function renderCodeowners(src: string, owner: string): string {
+/** A gated CODEOWNERS line: indent + path + spacing (1), the path (2), the owner column (3). */
+const CODEOWNERS_LINE = /^(\s*(\S+)\s+)(\S.*)$/;
+
+function gatedLine(line: string): RegExpExecArray | null {
+  const trimmed = line.trim();
+  if (!trimmed || trimmed.startsWith('#')) return null;
+  return CODEOWNERS_LINE.exec(line);
+}
+
+/**
+ * The owner column of each gated line, keyed by path. A column is one or more owners, and
+ * `oak upgrade` feeds this back through {@link renderCodeowners} so a tenant's second owner
+ * survives a resync ([R126]).
+ */
+export function codeownersColumns(src: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const line of src.split('\n')) {
+    const m = gatedLine(line);
+    if (m) out[m[2]!] = m[3]!.trimEnd();
+  }
+  return out;
+}
+
+/** CODEOWNERS with each gated line's owner column set to `existing`'s entry for that path, or
+ *  to `owner`. Not a structured config (no YAML), so a line-wise rewrite that keeps the path +
+ *  spacing is the safe edit. A column may name several owners ([R126]). */
+export function renderCodeowners(
+  src: string,
+  owner: string,
+  existing: Record<string, string> = {},
+): string {
   return src
     .split('\n')
     .map((line) => {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith('#')) return line;
-      const m = /^(\s*\S+\s+)\S.*$/.exec(line);
-      return m ? m[1] + owner : line;
+      const m = gatedLine(line);
+      return m ? m[1]! + (existing[m[2]!] ?? owner) : line;
     })
     .join('\n');
 }
@@ -355,6 +381,12 @@ function isEditorControlled(path: string): boolean {
  * Provisioner seam (real impl in gh.ts; faked in tests)
  * ------------------------------------------------------------------------ */
 
+/** A required reviewer on a deployment environment: a GitHub team or user, by numeric id. */
+export interface EnvironmentReviewer {
+  type: 'Team' | 'User';
+  id: number;
+}
+
 export interface Provisioner {
   /** 'Organization' | 'User' for an owner login, decides team-grant vs repo-admin bypass. */
   ownerType(owner: string): 'Organization' | 'User';
@@ -381,8 +413,16 @@ export interface Provisioner {
   createRuleset(repo: string, body: unknown): void;
   pagesEnabled(repo: string): boolean;
   enablePages(repo: string): void;
+  /** Numeric user id for a login, the `zenodo-publish` reviewer on a personal account ([R123]). */
+  userId(login: string): number;
+  /** Whether Actions may create and approve pull requests on `repo` ([R122]). */
+  actionsCanApprovePrs(repo: string): boolean;
+  /** Let Actions create + approve pull requests, keeping the default token permission ([R122]). */
+  allowActionsApprovePrs(repo: string): void;
   environmentExists(repo: string, name: string): boolean;
-  upsertEnvironment(repo: string, name: string): void;
+  /** `name`'s required reviewers, so a re-run never clears one added by hand ([R123]/[R127]). */
+  environmentReviewers(repo: string, name: string): EnvironmentReviewer[];
+  upsertEnvironment(repo: string, name: string, reviewers: EnvironmentReviewer[]): void;
   branchPolicyExists(repo: string, env: string, name: string): boolean;
   createBranchPolicy(repo: string, env: string, name: string, type: string): void;
   createLabel(repo: string, name: string, opts: { color?: string; description?: string }): void;
@@ -607,14 +647,36 @@ function resolveOwner(
   return { ownerToken, team, ownerType };
 }
 
+/** The name of the environment whose secrets carry the Zenodo tokens. */
+export const ZENODO_ENV = 'zenodo-publish';
+
+/**
+ * Who must approve a `zenodo-publish` deployment ([R123]). An org tenant names its editors
+ * team; a personal-account tenant has no team to name, so the CODEOWNERS owner stands in as a
+ * user reviewer (GitHub permits self-approval, so a solo editor still gets a deliberate click
+ * in front of a token-bearing run). An `@org` owner token with no team names nobody: an org is
+ * not a reviewer GitHub accepts, and the caller turns that into a runbook line.
+ */
+function zenodoReviewer(
+  owner: { ownerToken: string; team: string | null; ownerType: 'Organization' | 'User' },
+  prov: Provisioner,
+): EnvironmentReviewer | null {
+  if (owner.team) return { type: 'Team', id: prov.teamId(owner.team) };
+  if (owner.ownerType === 'Organization') return null;
+  const login = /^@([^/]+)$/.exec(owner.ownerToken)?.[1];
+  return login ? { type: 'User', id: prov.userId(login) } : null;
+}
+
+/** Provision the repo settings. Returns runbook lines for what it could not finish. */
 function applyProvisioning(
   repo: string,
-  owner: { team: string | null; ownerType: 'Organization' | 'User' },
+  owner: { ownerToken: string; team: string | null; ownerType: 'Organization' | 'User' },
   deps: BootstrapDeps,
   actions: Record<string, string>,
   requireChecks: boolean,
-): void {
+): string[] {
   const { prov, log } = deps;
+  const runbook: string[] = [];
 
   if (owner.team) {
     prov.grantTeamWrite(repo, owner.team);
@@ -655,13 +717,43 @@ function applyProvisioning(
     log(msg.bootstrap.logPagesEnabled);
   }
 
-  // zenodo-publish environment + v* policy
-  prov.upsertEnvironment(repo, 'zenodo-publish');
-  if (prov.branchPolicyExists(repo, 'zenodo-publish', 'v*')) {
+  // Actions may not open a pull request unless the repo says so, and the DOI write-back is a
+  // pull request an Action opens, so without this every first deposit fails ([R122]).
+  if (prov.actionsCanApprovePrs(repo)) {
+    actions.actions_pull_requests = 'already allowed';
+    log(msg.bootstrap.logActionsPrsExists);
+  } else {
+    prov.allowActionsApprovePrs(repo);
+    actions.actions_pull_requests = 'allowed';
+    log(msg.bootstrap.logActionsPrsAllowed);
+  }
+
+  // zenodo-publish environment: the reviewer gate in front of the token-bearing run ([R123])
+  // plus the v* policy that keeps its secrets off every other ref. GET-then-act on the
+  // reviewers, so a re-run never clears one a tenant added by hand ([R127]).
+  const existingReviewers = prov.environmentExists(repo, ZENODO_ENV)
+    ? prov.environmentReviewers(repo, ZENODO_ENV)
+    : [];
+  if (existingReviewers.length) {
+    actions.zenodo_reviewers = 'already set';
+    log(msg.bootstrap.logZenodoReviewersExist);
+  } else {
+    const reviewer = zenodoReviewer(owner, prov);
+    prov.upsertEnvironment(repo, ZENODO_ENV, reviewer ? [reviewer] : []);
+    if (reviewer) {
+      actions.zenodo_reviewers = `${reviewer.type} ${owner.team ?? owner.ownerToken}`;
+      log(msg.bootstrap.logZenodoReviewerSet(owner.team ?? owner.ownerToken));
+    } else {
+      actions.zenodo_reviewers = 'none';
+      log(msg.bootstrap.logZenodoNoReviewer);
+      runbook.push(msg.bootstrap.runbookZenodoReviewer(repo, ZENODO_ENV));
+    }
+  }
+  if (prov.branchPolicyExists(repo, ZENODO_ENV, 'v*')) {
     actions.zenodo_env = 'v* policy already exists';
     log(msg.bootstrap.logZenodoEnvExists);
   } else {
-    prov.createBranchPolicy(repo, 'zenodo-publish', 'v*', 'tag');
+    prov.createBranchPolicy(repo, ZENODO_ENV, 'v*', 'tag');
     actions.zenodo_env = 'created with v* policy';
     log(msg.bootstrap.logZenodoEnvCreated);
   }
@@ -670,6 +762,8 @@ function applyProvisioning(
   for (const l of LABELS)
     prov.createLabel(repo, l.name, { color: l.color, description: l.description });
   actions.labels = LABELS.map((l) => l.name).join(', ');
+
+  return runbook;
 }
 
 /** Set the provided secrets; collect a runbook for the ones left unset ([R25] floor). */
@@ -844,8 +938,9 @@ export async function cmdBootstrapPaper(
     } else actions.pr = 'exists';
   }
 
-  applyProvisioning(repo, owner, deps, actions, input.requireChecks);
-  const { set, runbook } = applySecrets(repo, input.secrets, deps);
+  const provRunbook = applyProvisioning(repo, owner, deps, actions, input.requireChecks);
+  const { set, runbook: secretRunbook } = applySecrets(repo, input.secrets, deps);
+  const runbook = [...provRunbook, ...secretRunbook];
   for (const line of runbook) log(`  → ${line}`);
 
   return {
@@ -1001,8 +1096,9 @@ export async function cmdBootstrapJournal(
   } else actions.main = 'exists';
 
   if (!external) {
-    applyProvisioning(repo, owner, deps, actions, input.requireChecks);
-    const { set, runbook } = applySecrets(repo, input.secrets, deps);
+    const provRunbook = applyProvisioning(repo, owner, deps, actions, input.requireChecks);
+    const { set, runbook: secretRunbook } = applySecrets(repo, input.secrets, deps);
+    const runbook = [...provRunbook, ...secretRunbook];
     for (const line of runbook) log(`  → ${line}`);
     return {
       exitCode: 0,
