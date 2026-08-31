@@ -330,6 +330,8 @@ export const bootstrap = {
   planNoSite: '  ○ (--no-site: settings only; no website, no branch rules, no environments)',
 
   // ── the issue labels the engine creates (a tenant reads these in the labels list) ──────
+  /** A repo that already existed may not default to `main`; say what moved ([R127]). */
+  logDefaultBranch: (from: string): string => `  ✓ default branch switched from ${from} to main`,
   labelEditorAction: 'An editor must take action before this can proceed',
   labelZenodoFailed: 'A Zenodo publish run failed and needs editor attention',
 

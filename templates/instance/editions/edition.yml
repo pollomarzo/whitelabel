@@ -8,6 +8,9 @@ version: 1
 project:
   subject: Article
   venue: CHANGE-ME Journal
+  # Asserted to readers and to Zenodo, and the paper template seeds a matching LICENSE file.
+  # Changing it here means replacing that LICENSE in each paper repo (it is not a frozen file,
+  # so `oak upgrade` will not do it for you).
   license: CC-BY-4.0
   open_access: true
   # funding: |

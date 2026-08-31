@@ -36,6 +36,7 @@ import {
 import { join, dirname, posix } from 'node:path';
 import { readDoc, writeDoc } from './yaml-io.js';
 import { themeZipUrl } from './assets.js';
+import { LABEL_EDITOR_ACTION, LABEL_ZENODO_FAILED } from './preview.js';
 
 /* --------------------------------------------------------------------------
  * Answers + template rendering (pure)
@@ -393,6 +394,9 @@ export interface Provisioner {
   repoExists(repo: string): boolean;
   createRepo(repo: string, opts: { private: boolean; description: string }): void;
   branchExists(repo: string, branch: string): boolean;
+  /** The repo's default branch: a pre-existing repo may not default to `main` ([R127]). */
+  defaultBranch(repo: string): string;
+  setDefaultBranch(repo: string, branch: string): void;
   /** Seed `branch` of `repo` as an orphan commit from a prepared local directory, then push. */
   seedBranch(repo: string, branch: string, sourceDir: string, message: string): void;
   /**
@@ -439,7 +443,10 @@ export interface Provisioner {
 export const RULESET_PROTECT_MAIN = 'protect-main';
 export const RULESET_V_TAGS = 'editors-only-v-tags';
 
-function protectMainBody(requireChecks: boolean): unknown {
+/** GitHub's id for the repository admin role, as a ruleset `RepositoryRole` bypass actor. */
+const REPO_ROLE_ADMIN = 5;
+
+function protectMainBody(requireChecks: boolean, bypass: unknown[]): unknown {
   const rules: unknown[] = [
     {
       type: 'pull_request',
@@ -454,8 +461,8 @@ function protectMainBody(requireChecks: boolean): unknown {
   ];
   // Require the Journal-checks Check Run to pass before merge. This is the gate the id relies
   // on now that id-shape no longer blocks the build (id-gate-relocation); without it, an
-  // invalid id could merge to main. Default-on; `--no-require-checks` opts out. NB a solo repo
-  // admin can still bypass required checks on a personal account (PROVISIONING §3.3).
+  // invalid id could merge to main. Default-on; `--no-require-checks` opts out. The bypass
+  // below applies to this rule too, since a ruleset bypass is per-ruleset ([R127]).
   if (requireChecks) {
     rules.push({
       type: 'required_status_checks',
@@ -471,7 +478,17 @@ function protectMainBody(requireChecks: boolean): unknown {
     enforcement: 'active',
     conditions: { ref_name: { include: ['refs/heads/main'], exclude: [] } },
     rules,
+    bypass_actors: bypass,
   };
+}
+
+/** Who may merge a pull request the rules would otherwise block: nobody on an org path, the
+ *  repo admin on a personal one, where the code-owner approval is one the sole editor cannot
+ *  give themselves. `pull_request` mode, so a direct push to main stays refused ([R127]). */
+function protectMainBypass(team: string | null): unknown[] {
+  return team
+    ? []
+    : [{ actor_id: REPO_ROLE_ADMIN, actor_type: 'RepositoryRole', bypass_mode: 'pull_request' }];
 }
 
 function vTagsBody(bypass: unknown[]): unknown {
@@ -490,8 +507,8 @@ function vTagsBody(bypass: unknown[]): unknown {
  * ------------------------------------------------------------------------ */
 
 const LABELS: Array<{ name: string; color: string; description: string }> = [
-  { name: 'editor-action-needed', color: 'b60205', description: msg.bootstrap.labelEditorAction },
-  { name: 'zenodo-publish-failed', color: 'b60205', description: msg.bootstrap.labelZenodoFailed },
+  { name: LABEL_EDITOR_ACTION, color: 'b60205', description: msg.bootstrap.labelEditorAction },
+  { name: LABEL_ZENODO_FAILED, color: 'b60205', description: msg.bootstrap.labelZenodoFailed },
 ];
 
 export interface SecretInputs {
@@ -755,13 +772,27 @@ function applyProvisioning(
     });
   }
 
+  // A pre-existing repo may default to another branch: `seedBranch` puts the content on `main`
+  // and leaves `default_branch` alone, so protect-main would guard a branch nothing merges
+  // to ([R127]). Runs before the ruleset that depends on it.
+  step('default_branch', () => {
+    const current = prov.defaultBranch(repo);
+    if (current === 'main') {
+      actions.default_branch = 'already main';
+      return;
+    }
+    prov.setDefaultBranch(repo, 'main');
+    actions.default_branch = `switched from ${current}`;
+    log(msg.bootstrap.logDefaultBranch(current));
+  });
+
   // protect-main
   step('protect_main', () => {
     if (prov.rulesetExists(repo, RULESET_PROTECT_MAIN)) {
       actions.protect_main = 'already exists';
       log(msg.bootstrap.logRulesetExists(RULESET_PROTECT_MAIN));
     } else {
-      prov.createRuleset(repo, protectMainBody(requireChecks));
+      prov.createRuleset(repo, protectMainBody(requireChecks, protectMainBypass(owner.team)));
       actions.protect_main = 'created';
       log(msg.bootstrap.logRulesetCreated(RULESET_PROTECT_MAIN));
     }
@@ -771,7 +802,7 @@ function applyProvisioning(
   step('v_tags', () => {
     const bypass = owner.team
       ? [{ actor_id: prov.teamId(owner.team), actor_type: 'Team', bypass_mode: 'always' }]
-      : [{ actor_id: 5, actor_type: 'RepositoryRole', bypass_mode: 'always' }]; // repo admin
+      : [{ actor_id: REPO_ROLE_ADMIN, actor_type: 'RepositoryRole', bypass_mode: 'always' }];
     if (prov.rulesetExists(repo, RULESET_V_TAGS)) {
       actions.v_tags = 'already exists';
       log(msg.bootstrap.logTagRuleExists(RULESET_V_TAGS));

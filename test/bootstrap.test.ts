@@ -22,11 +22,13 @@ import {
   cmdBootstrapPaper,
   cmdBootstrapJournal,
   RULESET_V_TAGS,
+  RULESET_PROTECT_MAIN,
   type Provisioner,
   type EnvironmentReviewer,
   type TemplateAnswers,
   type BootstrapDeps,
 } from '../src/bootstrap.js';
+import { LABEL_EDITOR_ACTION, LABEL_ZENODO_FAILED } from '../src/preview.js';
 
 const PAPER_ROOT = 'templates/paper';
 const INSTANCE_ROOT = 'templates/instance';
@@ -74,6 +76,21 @@ describe('renderPaperTemplate', () => {
     expect(existsSync(join(dest, 'README.md'))).toBe(false);
     expect(existsSync(join(dest, 'journal.yml'))).toBe(false);
     expect(written).toContain('.github/workflows/version-bump.yml');
+  });
+
+  it('seeds a LICENSE for the licence the edition asserts ([R127])', () => {
+    const dest = tmp();
+    const written = renderPaperTemplate(PAPER_ROOT, dest, answers());
+    expect(written).toContain('LICENSE');
+    // The seeded edition asserts a licence to readers and to Zenodo; the paper repo must carry
+    // the matching text, and changing one without the other is what this pins.
+    const edition = parseDocument(
+      readFileSync(join(INSTANCE_ROOT, 'editions/edition.yml'), 'utf8'),
+    );
+    expect(edition.getIn(['project', 'license'])).toBe('CC-BY-4.0');
+    expect(readFileSync(join(dest, 'LICENSE'), 'utf8')).toContain(
+      'Creative Commons Attribution 4.0 International Public License',
+    );
   });
 
   it('co-located writes instance_repo: .', () => {
@@ -202,6 +219,7 @@ interface FakeState {
   ownerType?: 'Organization' | 'User';
   repos?: Set<string>;
   branches?: Set<string>; // "repo/branch"
+  defaultBranch?: string;
   rulesets?: Set<string>; // "repo/name"
   pages?: Set<string>;
   policies?: Set<string>; // "repo/env/name"
@@ -216,6 +234,7 @@ function fakeProv(state: FakeState = {}) {
     createRepo: [],
     allowActionsApprovePrs: [],
     seedBranch: [],
+    setDefaultBranch: [],
     ingestReviewBranch: [],
     openPr: [],
     grantTeamWrite: [],
@@ -233,6 +252,8 @@ function fakeProv(state: FakeState = {}) {
     repoExists: (r) => state.repos?.has(r) ?? false,
     createRepo: (r, o) => rec('createRepo', { r, o }),
     branchExists: (r, b) => state.branches?.has(`${r}/${b}`) ?? false,
+    defaultBranch: () => state.defaultBranch ?? 'main',
+    setDefaultBranch: (r, b) => rec('setDefaultBranch', { r, b }),
     seedBranch: (r, b, _d, m) => rec('seedBranch', { r, b, m }),
     ingestReviewBranch: (r, o) => rec('ingestReviewBranch', { r, o }),
     prExists: (r, h) => state.branches?.has(`${r}/pr:${h}`) ?? false,
@@ -548,6 +569,78 @@ describe('cmdBootstrapPaper', () => {
     expect((out.result.actions as Record<string, string>).zenodo_reviewers).toBe('already set');
   });
 
+  it('provisions exactly the labels its consumers ask for ([R127], [R128])', async () => {
+    const { prov, calls } = fakeProv();
+    await cmdBootstrapPaper(paperInput(), deps(prov));
+    expect((calls.createLabel as Array<{ n: string }>).map((c) => c.n)).toEqual([
+      LABEL_EDITOR_ACTION,
+      LABEL_ZENODO_FAILED,
+    ]);
+  });
+
+  it('makes main the default branch of a repo that defaulted elsewhere ([R127])', async () => {
+    const moved = fakeProv({ defaultBranch: 'master', repos: new Set(['me/paper']) });
+    await cmdBootstrapPaper(paperInput(), deps(moved.prov));
+    expect(moved.calls.setDefaultBranch).toEqual([{ r: 'me/paper', b: 'main' }]);
+
+    const already = fakeProv();
+    await cmdBootstrapPaper(paperInput(), deps(already.prov));
+    expect(already.calls.setDefaultBranch).toHaveLength(0);
+  });
+
+  it('the merge gate is what protect-main says it is ([R128])', async () => {
+    const { prov, calls } = fakeProv();
+    await cmdBootstrapPaper(paperInput(), deps(prov));
+    const pm = (calls.createRuleset as Array<{ b: any }>).find(
+      (c) => c.b.name === RULESET_PROTECT_MAIN,
+    )!.b;
+    const pr = pm.rules.find((r: any) => r.type === 'pull_request');
+    expect(pr.parameters.require_code_owner_review).toBe(true);
+    const checks = pm.rules.find((r: any) => r.type === 'required_status_checks');
+    expect(checks.parameters.required_status_checks).toEqual([{ context: 'Journal checks' }]);
+  });
+
+  it('the v* tag rule stops a tag being moved or deleted, not only created ([R128])', async () => {
+    const { prov, calls } = fakeProv();
+    await cmdBootstrapPaper(paperInput(), deps(prov));
+    const vt = (calls.createRuleset as Array<{ b: any }>).find(
+      (c) => c.b.name === RULESET_V_TAGS,
+    )!.b;
+    expect(vt.rules.map((r: any) => r.type).sort()).toEqual(['creation', 'deletion', 'update']);
+  });
+
+  it('a paper repo is public unless the editor asked otherwise ([R128])', async () => {
+    const open = fakeProv();
+    await cmdBootstrapPaper(paperInput(), deps(open.prov));
+    expect((open.calls.createRepo[0] as { o: { private: boolean } }).o.private).toBe(false);
+
+    const closed = fakeProv();
+    await cmdBootstrapPaper(paperInput({ private: true }), deps(closed.prov));
+    expect((closed.calls.createRepo[0] as { o: { private: boolean } }).o.private).toBe(true);
+  });
+
+  it('a solo editor may merge their own gated PR, and still cannot push to main ([R127])', async () => {
+    const personal = fakeProv({ ownerType: 'User' });
+    await cmdBootstrapPaper(paperInput(), deps(personal.prov));
+    const pm = (personal.calls.createRuleset as Array<{ b: any }>).find(
+      (c) => c.b.name === RULESET_PROTECT_MAIN,
+    )!.b;
+    expect(pm.bypass_actors).toEqual([
+      { actor_id: 5, actor_type: 'RepositoryRole', bypass_mode: 'pull_request' },
+    ]);
+
+    // An org team reviews each other, so it gets no bypass on the merge gate.
+    const org = fakeProv({ ownerType: 'Organization' });
+    await cmdBootstrapPaper(
+      paperInput({ repo: 'org/paper', owner: '@org/editors' }),
+      deps(org.prov),
+    );
+    const orgPm = (org.calls.createRuleset as Array<{ b: any }>).find(
+      (c) => c.b.name === RULESET_PROTECT_MAIN,
+    )!.b;
+    expect(orgPm.bypass_actors).toEqual([]);
+  });
+
   it('org owner grants the team + uses a Team bypass; personal uses a repo-admin bypass', async () => {
     const org = fakeProv({ ownerType: 'Organization' });
     await cmdBootstrapPaper(
@@ -567,6 +660,7 @@ describe('cmdBootstrapPaper', () => {
       (c) => c.b.name === RULESET_V_TAGS,
     )!.b;
     expect(vt2.bypass_actors[0].actor_type).toBe('RepositoryRole');
+    expect(vt2.bypass_actors[0].actor_id, 'GitHub id of the repository admin role').toBe(5);
   });
 });
 
