@@ -41,8 +41,11 @@ being a rarely-run 2am surprise.
 ## Before a cut
 
 - **`npm test`** (includes the integration canary that renders the fixture PDF through the bundled
-  CLI) and **`npm run build:fixture`** (a second offline PDF). These are exactly what
-  `cut-engine-release.sh` gates on, so passing them locally de-risks the cut.
+  CLI) and **`npm run build:fixture`** (a second offline PDF). The cut runs the same two commands,
+  but not against the same typst: it fetches `bin/typst` at `typst.version` first and renders with
+  that, while locally the canary uses whatever `typst` is on `PATH` and SKIPS itself when there is
+  none. So a local pass de-risks the cut without being the same gate; a typst-version regression is
+  only caught by the cut.
 - **The "pin a release" guard.** With the bundle absent the shim must fail loud, not with a raw
   `Cannot find module`:
   ```bash
@@ -66,9 +69,9 @@ Dev releases are cheap and disposable. **Accumulate them, then prune**; do **not
 - **Prune** stale dev releases + their tags periodically:
 
   ```bash
-  # dev pre-releases oldest-first, delete all but the newest few (tag + release)
-  gh release list --limit 100 \
-    | awk '$0 ~ /-dev\./ {print $1}' \
+  # newest-first, so this keeps the newest 5 dev pre-releases and deletes the rest (tag + release)
+  gh release list --limit 100 --json tagName,isPrerelease \
+    --jq '.[] | select(.isPrerelease and (.tagName | test("-dev\\."))) | .tagName' \
     | tail -n +6 \
     | xargs -r -I{} gh release delete {} --cleanup-tag --yes
   ```
@@ -131,10 +134,11 @@ requires it to match the repo whose Actions run publishes, so it must never be m
 publisher.
 
 **`files` is an allowlist**, so anything unlisted is excluded by construction. It carries what the
-CLI reads at runtime (`dist/cli.cjs`, `templates/`, `paper-base.yml`, `typst.version`) plus
-`ci/run.sh` and `plugins/gallery.mjs`, which are consumed from the checkout and a pinned raw URL
-rather than the package, but are small enough that shipping them keeps the tarball a faithful
-subset. `prepack` (not `prepublishOnly`) runs typecheck + bundle: `dist/` is gitignored and a
+CLI reads at runtime (`dist/cli.cjs`, `templates/` less `!templates/*/README.md`,
+`paper-base.yml`, `typst.version`) plus the whole of `ci/` and `plugins/`, which are consumed from
+the checkout and a pinned raw URL rather than the package, but are small enough that shipping them
+keeps the tarball a faithful subset. Read the list in `package.json`, not this sentence: it is the
+enforcement, and a new file under a listed directory ships without anyone editing prose. `prepack` (not `prepublishOnly`) runs typecheck + bundle: `dist/` is gitignored and a
 missing file is *silently omitted* from a tarball rather than erroring, and `prepack` is the only
 hook that fires on both `npm pack` and `npm publish`.
 

@@ -184,11 +184,16 @@ export class ZenodoError extends Error {
 }
 
 export class ZenodoApi {
+  /** The API host, DERIVED from `sandbox` so the two cannot disagree ([R107]). */
+  readonly api: string;
+
   constructor(
     private readonly t: ZenodoTransport,
-    readonly api: string,
+    readonly sandbox: boolean,
     private readonly token: string,
-  ) {}
+  ) {
+    this.api = apiBase(sandbox);
+  }
 
   private async call(
     method: string,
@@ -239,8 +244,10 @@ export class ZenodoApi {
   }
 
   async uploadFile(bucketUrl: string, name: string, data: Uint8Array): Promise<void> {
-    // Bucket PUT is a bare URL (not under `/api`), so it bypasses `call`'s path join.
-    const res = await this.t.request('PUT', `${bucketUrl}/${name}`, {
+    // Bucket PUT is a bare URL (not under `/api`), so it bypasses `call`'s path join. The name
+    // is author-controlled, so it is encoded: a raw `?` truncates the path and appends to the
+    // query string carrying the access token ([R107]).
+    const res = await this.t.request('PUT', `${bucketUrl}/${encodeURIComponent(name)}`, {
       params: { access_token: this.token },
       body: data,
       timeoutMs: 600_000,
@@ -356,6 +363,13 @@ export function partParagraphs(repoRoot: string, partName: string): string[] | n
     if (paras.length > 0) return paras;
   }
   return null;
+}
+
+/** Whether the myst HTML build left content JSON here. Absent means the parts
+ *  {@link partParagraphs} reads were never produced, which is not the same as a paper
+ *  that declares none ([R107]). */
+export function hasBuildContent(repoRoot: string): boolean {
+  return existsSync(join(repoRoot, '_build', 'site', 'content'));
 }
 
 export const abstractParagraphs = (repoRoot: string): string[] | null =>
@@ -498,6 +512,9 @@ export interface BundleProvenance {
 
 export class TemplateArchiveError extends Error {}
 
+/** What makes a directory a myst template rather than a directory of the same name ([R107]). */
+const TEMPLATE_YML = 'template.yml';
+
 /**
  * The typst template the build actually used, read from the DERIVED config compose stamped
  * (`myst.oak.yml`, which the build leaves beside `myst.yml`, [R71]). Reading the stamped
@@ -536,7 +553,10 @@ export function readStampedTemplate(paperRoot: string): string | null {
 export function resolveTemplateDir(template: string, paperRoot: string): string {
   const buildTemplates = join(paperRoot, '_build', 'templates');
 
-  // Local: a directory, or a path to the template.yml / .typ inside one.
+  // Local: a directory carrying a `template.yml`, or a path to one inside such a directory.
+  // The `template.yml` gate is myst's ([R107]): without it a directory that happens to share a
+  // registry template's name shadows the registry, and the deposit archives bytes the PDF was
+  // not rendered from.
   //
   // Probed against the PAPER ROOT, not this process's cwd. myst's `resolveInputs` probes
   // `existsSync(template)` relative to cwd, and myst.ts chdirs into the paper root for the
@@ -546,8 +566,8 @@ export function resolveTemplateDir(template: string, paperRoot: string): string 
   // to the name branch, and refuse a deposit that was actually fine.
   const local = isAbsolute(template) ? template : join(paperRoot, template);
   if (existsSync(local)) {
-    if (statSync(local).isDirectory()) return local;
-    return resolve(local, '..');
+    const dir = statSync(local).isDirectory() ? local : resolve(local, '..');
+    if (existsSync(join(dir, TEMPLATE_YML))) return dir;
   }
 
   if (/^[a-zA-Z][\w+.-]*:\/\//.test(template)) {
@@ -657,6 +677,7 @@ export async function buildBundle(
   copyFileSync(pdf, join(out, 'paper.pdf'));
   await git.gitArchive(repoRoot, resolve(join(out, 'source.zip')));
   await git.gitArchive(engineRoot, resolve(join(out, 'engine.zip')));
+  assertEngineArchive(join(out, 'engine.zip'));
   const mystSrc = join(repoRoot, 'myst.yml');
   if (existsSync(mystSrc)) copyFileSync(mystSrc, join(out, 'myst.yml'));
   if (templateDir) {
@@ -677,6 +698,30 @@ export async function buildBundle(
 }
 
 export class BundleCollisionError extends Error {}
+
+/** The engine checkout could not produce a self-contained `engine.zip` ([R107]). */
+export class EngineArchiveError extends Error {}
+
+/** What `engine.zip` must carry for the deposit's re-render claim to hold ([R34]/[R66]). Both
+ *  are gitignored off a release tag, so a non-tag engine ref archives a hollow zip ([R107]). */
+const ENGINE_ARCHIVE_REQUIRED = ['dist/cli.cjs', 'bin/typst'];
+
+/** Refuse an `engine.zip` that cannot re-render the PDF it is deposited beside ([R107]). */
+function assertEngineArchive(zipPath: string): void {
+  let names: string[] = [];
+  try {
+    names = new AdmZip(zipPath).getEntries().map((e) => e.entryName);
+  } catch {
+    // Unreadable reads as carrying nothing, which is the same refusal.
+  }
+  const missing = ENGINE_ARCHIVE_REQUIRED.filter((n) => !names.includes(n));
+  if (missing.length) {
+    throw new EngineArchiveError(
+      `engine.zip carries no ${missing.join(', ')}, so the deposit could not re-render its own ` +
+        `PDF. The engine checkout is not a release ref: deposit from a released engine tag.`,
+    );
+  }
+}
 
 /* --------------------------------------------------------------------------
  * journal.yml → tenant Zenodo config ([R19])
@@ -725,7 +770,6 @@ export interface PrepareInput {
   mystPath: string;
   repo: string; // owner/repo
   siteUrl?: string;
-  sandbox: boolean;
   api: ZenodoApi;
   instanceRoot: string | null;
 }
@@ -739,7 +783,8 @@ export interface PrepareInput {
  * committed *sandbox* DOI (the scripted sandbox→prod handoff), but prod→sandbox is forbidden.
  */
 export async function cmdPrepare(input: PrepareInput): Promise<Outcome> {
-  const { mystPath, repo, siteUrl, sandbox, api, instanceRoot } = input;
+  const { mystPath, repo, siteUrl, api, instanceRoot } = input;
+  const sandbox = api.sandbox;
   const doc = readDoc(mystPath);
   const project = projectOf(doc);
 
@@ -806,7 +851,6 @@ export interface PublishInput {
   pdf: string;
   tag: string;
   siteUrl?: string;
-  sandbox: boolean;
   bundleOut: string;
   api: ZenodoApi;
   git: GitContext;
@@ -830,8 +874,8 @@ function readTypstVersion(engineRoot: string): string | null {
  * committed DOI prefix (a tag can't hit the wrong env, [R4]); `--sandbox` must agree with it.
  */
 export async function cmdPublish(input: PublishInput): Promise<Outcome> {
-  const { mystPath, pdf, tag, siteUrl, sandbox, bundleOut, api, git, instanceRoot, engineRoot } =
-    input;
+  const { mystPath, pdf, tag, siteUrl, bundleOut, api, git, instanceRoot, engineRoot } = input;
+  const sandbox = api.sandbox;
   const doc = readDoc(mystPath);
   const project = projectOf(doc);
 
@@ -860,6 +904,16 @@ export async function cmdPublish(input: PublishInput): Promise<Outcome> {
       return err(2, e.message);
     }
     throw e;
+  }
+
+  // publish OVERWRITES the deposit's metadata ([R22]), so publishing from a tree the HTML build
+  // never ran in replaces a description that had an abstract with one that has none ([R107]).
+  if (!hasBuildContent(repoRoot)) {
+    return err(
+      2,
+      `no myst build output under _build/site/content, so the deposit description would carry ` +
+        `no abstract and overwrite one that does. Build this working tree before depositing.`,
+    );
   }
 
   const latestId = await api.latestVersionDepId(conceptDoi);
@@ -925,7 +979,13 @@ export async function cmdPublish(input: PublishInput): Promise<Outcome> {
     platform: 'linux-x86_64',
     typst_version: readTypstVersion(engineRoot),
   };
-  const files = await buildBundle(bundleOut, pdf, repoRoot, engineRoot, provenance, git);
+  let files: string[];
+  try {
+    files = await buildBundle(bundleOut, pdf, repoRoot, engineRoot, provenance, git);
+  } catch (e) {
+    if (e instanceof EngineArchiveError) return err(2, e.message);
+    throw e;
+  }
 
   for (const p of files) {
     process.stderr.write(`[publish] upload ${basename(p)}\n`);
@@ -945,13 +1005,13 @@ export async function cmdPublish(input: PublishInput): Promise<Outcome> {
 export interface StatusInput {
   mystPath: string;
   siteUrl?: string;
-  sandbox: boolean;
   api: ZenodoApi;
   instanceRoot: string | null;
 }
 
 export async function cmdStatus(input: StatusInput): Promise<Outcome> {
-  const { mystPath, siteUrl, sandbox, api, instanceRoot } = input;
+  const { mystPath, siteUrl, api, instanceRoot } = input;
+  const sandbox = api.sandbox;
   const doc = readDoc(mystPath);
   const project = projectOf(doc);
   const conceptDoi: string | undefined = project.doi;

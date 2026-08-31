@@ -1,7 +1,9 @@
 # conformance: release certification of the paper CI (plan-paper-ci-conformance.md).
 #
 # Drives the standing fixtures against an engine version V and asserts every shim path green
-# (build/Pages, journal checks, fork-safe preview, deposit chain). Deliberately advisory, NOT a
+# (build/Pages, journal checks, fork-safe preview, deposit chain). The fork-preview path runs
+# only when a fork is configured below; the verdict's `skipped` names what it did not certify,
+# so a three-path cert cannot read as a four-path one. Deliberately advisory, NOT a
 # required status check, NOT per-commit: a release gate (real runs + workflow_run latency +
 # external round-trips). Two triggers:
 #   • workflow_dispatch: manual, pick a tag (or only-reset).

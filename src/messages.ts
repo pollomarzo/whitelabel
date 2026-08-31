@@ -843,6 +843,13 @@ export const workflow = {
   noStableRelease: (engineRepo: string): string =>
     `no stable release on ${engineRepo} to move to. Pass --to <tag> to name one; ` +
     `pre-releases are excluded from "latest" on purpose, since a dev tag can be deleted.`,
+  /** Raised where a repository coordinate is required to post; see gh.ts `sticky` ([R108]). */
+  noOriginRepo: (repoRoot: string): string =>
+    `no github.com origin remote in ${repoRoot}, so there is no repository to post to`,
+  /** The DOI PR must be one file against the default branch, not a branch's divergence. */
+  doiPrDiverged: (head: string, base: string): string =>
+    `${head} carries commits that are not on ${base}, so the DOI pull request would not be ` +
+    `the one-file change it claims to be. Run prepare on ${base}.`,
   wranglerNoUrl: 'wrangler did not report a *.pages.dev deployment URL',
   /** Deliberately carries no detail from wrangler: this reaches a PUBLIC pull request comment,
    *  and wrangler names the Cloudflare API path it called, which contains the account id. The
