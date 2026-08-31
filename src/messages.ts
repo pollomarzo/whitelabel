@@ -260,7 +260,6 @@ export const bootstrap = {
     '--no-site is only meaningful with --external: a co-located journal never gets a ' +
     'website (an index over many papers in one repo is separate, unbuilt work).',
 
-  /** [R110]: a missing or logged-out gh is a sentence here, not a stack; thrown by gh.ts. */
   ghMissing:
     'oak bootstrap: the GitHub CLI (gh) is not on PATH. Install it, run `gh auth login`, ' +
     'then re-run this command; everything it does on GitHub goes through gh.',
@@ -279,8 +278,6 @@ export const bootstrap = {
     `  ○ create repo (${isPrivate ? 'private' : 'public'})`,
   planCreateJournalRepo: (external: boolean): string =>
     `  ○ create repo (public${external ? '; it must stay public: every paper build reads the journal settings from it, without a token' : ''})`,
-  /** [R127]: the private repo itself is creatable on any plan; the rulesets and Pages steps
-   *  are what 403, and only after the repo and its content exist. */
   planPrivate:
     "  ! on GitHub's free plan a private repo cannot have repo rulesets or Pages, so those " +
     'steps will fail late in this run (403), after the repo and its content are already in ' +
@@ -401,8 +398,6 @@ export const bootstrap = {
     `Publishing runs a job holding your Zenodo token, so add your editors team as a required ` +
     `reviewer of the '${env}' environment: https://github.com/${repo}/settings/environments`,
 
-  /** [R125]: every step that throws lands here, once, so the tenant holds a list of what to
-   *  finish rather than the first exception. A re-run is safe: every step is GET-then-act. */
   runbookStepFailed: (repo: string, step: string, why: string): string =>
     `The '${step}' step failed (${why}); ${repo} keeps everything else this run set. Fix the ` +
     `cause and re-run the same command: steps that already succeeded are skipped.`,
@@ -808,8 +803,6 @@ export const workflow = {
     'named explicitly, because it can be deleted and would take your papers with it.',
   bootstrapUsage: 'oak bootstrap: usage: oak bootstrap <paper|journal> --repo <owner/name> [...]',
   bootstrapJournalTier: 'oak bootstrap journal: pass exactly one of --external | --co-located',
-  /** [R127]: the external tier sets no secrets on its repo, so a typed secret flag there is
-   *  a promise the command cannot keep; refuse it rather than let it pass silently. */
   bootstrapSecretsNeedPaper:
     'oak bootstrap journal --external: the secret flags (--zenodo-token, ' +
     '--zenodo-token-sandbox, --cf-token, --cf-account) set nothing here; this repo holds ' +

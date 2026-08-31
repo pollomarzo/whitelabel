@@ -668,10 +668,7 @@ function zenodoReviewer(
 }
 
 /**
- * The record a partial run leaves behind ([R125]). GitHub can refuse any single step (a plan
- * that has no rulesets, a token missing a scope, a rate limit), and the tenant is then holding
- * a repo that half exists; what they need is the list of what happened, not the first
- * exception. Settings steps are independent of each other, so all of them are attempted.
+ * What a partial run leaves behind ([R125]).
  */
 export interface StepFailure {
   step: string;
@@ -686,9 +683,7 @@ function firstLine(e: unknown): string {
 }
 
 /**
- * Run one provisioning step, recording a throw instead of propagating it ([R125]). Returns
- * false when the step failed, which the content chain (create, seed, ingest, PR) reads to skip
- * the steps that need it; the settings steps ignore it and carry on.
+ * Run one step, recording a throw instead of propagating it ([R125]). False when it failed.
  */
 function stepRunner(
   repo: string,
@@ -713,8 +708,7 @@ function stepRunner(
 }
 
 /**
- * The early return for a step nothing downstream can survive: the run stops, but what it did
- * and did not do comes back in the envelope a complete run uses, not as a stack ([R125]).
+ * Early return for a fatal step: a partial envelope, not a stack ([R125]).
  */
 function partial(
   repo: string,
@@ -813,9 +807,8 @@ function applyProvisioning(
     }
   });
 
-  // zenodo-publish environment: the reviewer gate in front of the token-bearing run ([R123])
-  // plus the v* policy that keeps its secrets off every other ref. GET-then-act on the
-  // reviewers, so a re-run never clears one a tenant added by hand ([R127]).
+  // Reviewer gate + v* policy ([R123]); GET-then-act so a re-run never clears a hand-added
+  // reviewer ([R127]).
   step('zenodo_reviewers', () => {
     const envThere = prov.environmentExists(repo, ZENODO_ENV);
     const existingReviewers = envThere ? prov.environmentReviewers(repo, ZENODO_ENV) : [];
@@ -831,9 +824,8 @@ function applyProvisioning(
       log(msg.bootstrap.logZenodoReviewerSet(owner.team ?? owner.ownerToken));
       return;
     }
-    // Nobody to name: the env is still CREATED on a first run (the v* policy below needs it),
-    // but an existing one is left alone; this PUT carries the whole environment, so a re-PUT
-    // would clear fields a tenant set by hand ([R127]).
+    // Create on a first run (the v* policy needs it), but never re-PUT: the PUT carries the
+    // whole environment ([R127]).
     if (!envThere) prov.upsertEnvironment(repo, ZENODO_ENV, []);
     actions.zenodo_reviewers = 'none';
     log(msg.bootstrap.logZenodoNoReviewer);
@@ -878,8 +870,7 @@ function applySecrets(
       missing.push(name);
       continue;
     }
-    // Per secret, not per loop: a token GitHub refuses must not swallow the three after it,
-    // and the one that failed belongs in the by-hand list ([R125]).
+    // Per secret, not per loop: one refusal must not swallow the rest ([R125]).
     const ok = step(`secret_${name}`, () => {
       deps.prov.setSecret(repo, name, value);
       deps.log(msg.bootstrap.logSecretSet(name));
@@ -967,8 +958,7 @@ export async function cmdBootstrapPaper(
       resolved: input.resolved,
     }),
     repoThere ? msg.bootstrap.planRepoExists : msg.bootstrap.planCreateRepo(input.private),
-    // --private is creatable on any plan, but the rulesets and Pages steps 403 on a free
-    // one, late; the plan is the last chance to say so before content exists ([R127]).
+    // Last chance to say so before content exists ([R127]).
     ...(input.private ? [msg.bootstrap.planPrivate] : []),
     mainThere ? msg.bootstrap.planMainSeeded : msg.bootstrap.planSeedPaper,
     // Idempotency has a sharp edge worth naming: a re-run to CHANGE an answer (a different
@@ -1006,8 +996,7 @@ export async function cmdBootstrapPaper(
   const contentFailed: StepFailure[] = [];
   const step = stepRunner(repo, actions, contentRunbook, contentFailed, log);
 
-  // The content chain (create, seed, ingest, PR) is ordered: a failure skips its dependants;
-  // the settings below are independent and all get attempted ([R125]).
+  // Content is a dependency chain, settings are independent ([R125]).
   if (!repoThere) {
     const created = step('repo', () => {
       prov.createRepo(repo, {

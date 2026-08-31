@@ -675,8 +675,7 @@ export function authedUser(): string {
   return gh(['api', 'user', '--jq', '.login']);
 }
 
-/** `oak bootstrap` preflight ([R110], [R125]): gh missing or logged out must be a sentence
- *  here, not the ENOENT stack or the misleading "no stable release" the release probe prints. */
+/** `oak bootstrap` preflight: gh missing or logged out is a sentence, not a stack ([R110]). */
 export function assertGhReady(): void {
   try {
     gh(['--version'], { quiet: true });

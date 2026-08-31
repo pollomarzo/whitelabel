@@ -899,16 +899,14 @@ async function cmdBootstrap(argv: string[]): Promise<number> {
     process.stderr.write(msg.workflow.bootstrapNoRepo + '\n');
     return 2;
   }
-  // Argument-shape refusals come before any gh call: they are decidable without the
-  // network, and a wrong flag must not die as a gh failure ([R127]).
+  // Argument-shape refusals come before any gh call ([R127]).
   const external = sub === 'journal' && has(rest, 'external');
   if (sub === 'journal') {
     if (external === has(rest, 'co-located')) {
       process.stderr.write(msg.workflow.bootstrapJournalTier + '\n');
       return 2;
     }
-    // The external tier sets no secrets on its repo; a TYPED secret flag there is silently
-    // discarded, so refuse it. Env-derived values are tolerated ([R127]).
+    // A typed secret flag sets nothing on the external tier; env values stay tolerated ([R127]).
     if (external && SECRET_FLAGS.some((f) => flag(rest, f))) {
       process.stderr.write(msg.workflow.bootstrapSecretsNeedPaper + '\n');
       return 2;
