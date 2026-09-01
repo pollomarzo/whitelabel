@@ -252,8 +252,7 @@ function startOptsFrom(argv: string[]): StartOpts {
  */
 async function cmdStart(argv: string[]): Promise<number> {
   const paperRoot = resolve(flag(argv, 'paper') ?? '.');
-  // Parsed before any resolution or compose: an argument this process cannot use is decidable
-  // now, and refusing it later means the author waits through a build for a typo ([R131]).
+  // Parsed before any resolution or compose: a typo must not cost a build ([R131]).
   const startOpts = startOptsFrom(argv);
   const { createMystEdge } = await import('./myst.js');
   const edge = createMystEdge();

@@ -27,9 +27,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      # The two environments are separate on purpose, and a credential quietly crossing between
-      # them is worse than a failed run. Both secrets go to the CLI under their own names below,
-      # so this refuses early with a better message rather than being the only thing that does.
+      # The two environments are separate on purpose. Both secrets reach the CLI under their own
+      # names below, so this is the better message, not the only guard.
       - name: Refuse a sandbox run with no sandbox token
         if: ${{ inputs.sandbox && secrets.ZENODO_TOKEN_SANDBOX == '' }}
         run: |

@@ -38,8 +38,7 @@ function oak(
   extraEnv: Record<string, string | undefined> = {},
 ): { code: number; stdout: string; stderr: string } {
   const env = { ...process.env, ...extraEnv };
-  // undefined UNSETS: `??` does not fall back on an empty string, so a test that blanked a
-  // variable would not exercise a fallback at all.
+  // undefined UNSETS: `??` ignores an empty string, so blanking would not exercise a fallback.
   for (const [k, v] of Object.entries(extraEnv)) if (v === undefined) delete env[k];
   delete env.CI;
   delete env.GITHUB_ACTIONS;
@@ -355,8 +354,7 @@ describe('a flag passed without a value is refused', () => {
   });
 
   it('refuses an empty value rather than falling through to the default', () => {
-    // `--instance "$VAR"` with VAR unset. The flag WAS passed, so the old advice to pass it
-    // was the least useful sentence available.
+    // `--instance "$VAR"` with VAR unset: the flag WAS passed, so "pass --instance" was useless.
     const r = oak(['validate', '--paper', fixturePaper, '--instance', '']);
     expect(r.code).toBe(2);
     expect(r.stderr).toContain('--instance needs a value');
