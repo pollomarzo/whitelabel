@@ -10,7 +10,7 @@
  * common case (someone adding `log('  ✓ done')`) which is exactly how the catalog would rot.
  */
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -70,6 +70,33 @@ describe('every tenant-facing string lives in messages.ts', () => {
       );
     });
   }
+
+  it('no design-doc jargon reaches a tenant (rule 2)', () => {
+    // The file states four output rules and nothing enforced them, so a rule could drift out of
+    // true silently, which is how the header's own workflow list went stale ([R151]).
+    // Comments FIRST: a string regex run over commented source matches across comment
+    // boundaries and reports the `[R#]` in a doc comment as a tenant-facing string.
+    const src = readFileSync(join(srcDir, 'messages.ts'), 'utf8');
+    const code = src
+      .split('\n')
+      .filter((l) => {
+        const t = l.trim();
+        return !t.startsWith('//') && !t.startsWith('*') && !t.startsWith('/*');
+      })
+      .join('\n');
+    const strings = code.match(/'[^'\n]*'|`[^`\n]*`|"[^"\n]*"/g) ?? [];
+    const banned = /\[[RS]\d+\]|frozen shim|build_type/;
+    expect(strings.filter((x) => banned.test(x))).toEqual([]);
+  });
+
+  it('names every frozen workflow it claims to name', () => {
+    // The header's list said `preview.yml`, which has never existed, and omitted three that do.
+    const src = readFileSync(join(srcDir, 'messages.ts'), 'utf8');
+    const header = src.slice(0, src.indexOf('*/'));
+    for (const w of readdirSync(join(srcDir, '../templates/paper/.github/workflows'))) {
+      expect(header, w).toContain(w.replace(/\.yml$/, ''));
+    }
+  });
 
   it('messages.ts itself points at the surfaces it cannot hold', () => {
     // The review is only complete if the file says where the rest of the words are.

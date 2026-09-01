@@ -18,7 +18,11 @@
  * The output rules these strings follow (open-tasks/cli-output-pass.md):
  *   1. Nothing the CLI assumes may be silent, every default or auto-resolved value is declared
  *      in the plan before the confirm prompt.
- *   2. No design-doc jargon ([S#]/[R#], "frozen shim", "instance-config", "build_type=workflow").
+ *   2. No design-doc jargon ([S#]/[R#], "frozen shim", "build_type=workflow"). Enforced by a
+ *      lint in messages.test.ts, so this rule cannot drift silently. ⚑ "instance-config" was on
+ *      this list and is NOT enforced: it is the product's own name for the thing in four
+ *      tenant-facing template files, including the README a journal editor reads first. Renaming
+ *      it is a decision across the whole tenant surface, not a messages.ts edit ([R151]).
  *   3. Human prose on stderr by default; the JSON envelope only under `--json`, on stdout.
  *   4. An error names the file and the fix, and never shows a stack trace to a tenant.
  *
@@ -30,8 +34,9 @@
  *   engine/templates/paper/index.md ................ starter manuscript
  *   engine/templates/paper/CODEOWNERS .............. header comment
  *   engine/templates/paper/.github/workflows/*.yml . paper CI job names + `::error::` annotations
- *                                                    (check.yml, check-post.yml, preview.yml,
- *                                                    publish.yml: names show in the Actions tab)
+ *                                                    (ci, check, check-post, preview-deploy,
+ *                                                    prepare, publish, version-bump: the names
+ *                                                    show in the Actions tab)
  *   engine/templates/instance/README.md ............ what a journal editor reads first
  *   engine/templates/instance/journal.yml .......... journal's settings, comments and all
  *   engine/templates/instance/brand/brand.yml ...... branding knobs and their comments
