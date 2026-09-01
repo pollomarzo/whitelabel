@@ -163,6 +163,9 @@ export const flagNeedsValue = (name: string): string =>
   `--${name} needs a value. It was passed with none, which usually means an empty shell ` +
   `variable: quote it, or drop the flag to use the default.`;
 
+export const flagNeedsPort = (name: string, got: string): string =>
+  `--${name} needs a port number, not '${got}'.`;
+
 /* ═══════════════════════════════════════════════════════════════════════════════════════════
  * The confirm prompt: every plan ends here.
  * ═════════════════════════════════════════════════════════════════════════════════════════ */
@@ -759,7 +762,8 @@ export const pr = {
 export const workflow = {
   // deposit
   depositUsage: 'oak deposit: usage: oak deposit <prepare|publish|status> [...]',
-  depositNoToken: 'no token: set ZENODO_TOKEN or pass --token',
+  depositNoToken: (sandbox: boolean): string =>
+    `no token: set ${sandbox ? 'ZENODO_TOKEN_SANDBOX' : 'ZENODO_TOKEN'} or pass --token`,
   depositNoRepo: 'deposit prepare: pass --repo owner/repo (or set GITHUB_REPOSITORY)',
   depositPublishArgs: 'deposit publish: --pdf and --tag are required',
   depositDoiPrOpened: (url: string): string => `deposit prepare: opened DOI PR ${url}`,

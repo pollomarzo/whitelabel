@@ -33,8 +33,14 @@ const fixtureRepo = 'open-scholar-nexus/fixture-sample-paper';
  * they switch the output to GitHub annotations, and this suite is the contract for the human
  * side: inheriting them would make these assertions pass locally and fail in our own CI.
  */
-function oak(args: string[]): { code: number; stdout: string; stderr: string } {
-  const env = { ...process.env };
+function oak(
+  args: string[],
+  extraEnv: Record<string, string | undefined> = {},
+): { code: number; stdout: string; stderr: string } {
+  const env = { ...process.env, ...extraEnv };
+  // undefined UNSETS: `??` does not fall back on an empty string, so a test that blanked a
+  // variable would not exercise a fallback at all.
+  for (const [k, v] of Object.entries(extraEnv)) if (v === undefined) delete env[k];
   delete env.CI;
   delete env.GITHUB_ACTIONS;
   const r = spawnSync('node', [bundlePath, ...args], { encoding: 'utf8', env });
@@ -346,5 +352,29 @@ describe('a flag passed without a value is refused', () => {
     // One dash is a value, not a flag: only `--` is unambiguous enough to refuse.
     const r = oak(['validate', '--paper', '-weird', '--no-instance']);
     expect(r.stderr).not.toContain('needs a value');
+  });
+
+  it('refuses an empty value rather than falling through to the default', () => {
+    // `--instance "$VAR"` with VAR unset. The flag WAS passed, so the old advice to pass it
+    // was the least useful sentence available.
+    const r = oak(['validate', '--paper', fixturePaper, '--instance', '']);
+    expect(r.code).toBe(2);
+    expect(r.stderr).toContain('--instance needs a value');
+  });
+
+  it('refuses a port that is not a number', () => {
+    const r = oak(['start', '--paper', fixturePaper, '--port', 'abc']);
+    expect(r.code).toBe(2);
+    expect(r.stderr).toContain("--port needs a port number, not 'abc'");
+  });
+});
+
+describe('a sandbox deposit never reaches for the production token ([R133])', () => {
+  it('refuses when only the production token is set', () => {
+    const env = { ZENODO_TOKEN: 'production-secret', ZENODO_TOKEN_SANDBOX: undefined };
+    const r = oak(['deposit', 'prepare', '--sandbox', '--paper', fixturePaper], env);
+    expect(r.code).toBe(2);
+    expect(r.stderr).toContain('ZENODO_TOKEN_SANDBOX');
+    expect(r.stdout + r.stderr).not.toContain('production-secret');
   });
 });

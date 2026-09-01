@@ -27,10 +27,9 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      # `a && b || c` returns c when b is empty, and an unset secret IS empty, so a sandbox run
-      # in a repo that has only set ZENODO_TOKEN would send the PRODUCTION token to
-      # sandbox.zenodo.org. Refuse instead: the two environments are separate on purpose, and a
-      # credential quietly crossing between them is worse than a failed run.
+      # The two environments are separate on purpose, and a credential quietly crossing between
+      # them is worse than a failed run. Both secrets go to the CLI under their own names below,
+      # so this refuses early with a better message rather than being the only thing that does.
       - name: Refuse a sandbox run with no sandbox token
         if: ${{ inputs.sandbox && secrets.ZENODO_TOKEN_SANDBOX == '' }}
         run: |
@@ -42,4 +41,5 @@ jobs:
           args: deposit prepare ${{ inputs.sandbox && '--sandbox' || '' }}
         env:
           GH_TOKEN: ${{ github.token }}
-          ZENODO_TOKEN: ${{ inputs.sandbox && secrets.ZENODO_TOKEN_SANDBOX || secrets.ZENODO_TOKEN }}
+          ZENODO_TOKEN: ${{ secrets.ZENODO_TOKEN }}
+          ZENODO_TOKEN_SANDBOX: ${{ secrets.ZENODO_TOKEN_SANDBOX }}

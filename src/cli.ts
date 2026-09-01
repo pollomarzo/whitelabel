@@ -61,7 +61,9 @@ function flag(argv: string[], name: string): string | undefined {
   const i = argv.indexOf(`--${name}`);
   if (i < 0) return undefined;
   const value = argv[i + 1];
-  if (value === undefined || value.startsWith('--')) throw new UserError(msg.flagNeedsValue(name));
+  if (value === undefined || value === '' || value.startsWith('--')) {
+    throw new UserError(msg.flagNeedsValue(name));
+  }
   return value;
 }
 function has(argv: string[], name: string): boolean {
@@ -224,7 +226,13 @@ async function cmdBuild(argv: string[]): Promise<number> {
 
 /** The `myst start` flags `oak start` forwards (myst's own names and meanings). */
 function startOptsFrom(argv: string[]): StartOpts {
-  const num = (name: string) => (flag(argv, name) ? Number(flag(argv, name)) : undefined);
+  const num = (name: string) => {
+    const raw = flag(argv, name);
+    if (raw === undefined) return undefined;
+    const n = Number(raw);
+    if (!Number.isInteger(n) || n < 0) throw new UserError(msg.flagNeedsPort(name, raw));
+    return n;
+  };
   return {
     ...(num('port') !== undefined ? { port: num('port') } : {}),
     ...(num('server-port') !== undefined ? { serverPort: num('server-port') } : {}),
@@ -244,6 +252,9 @@ function startOptsFrom(argv: string[]): StartOpts {
  */
 async function cmdStart(argv: string[]): Promise<number> {
   const paperRoot = resolve(flag(argv, 'paper') ?? '.');
+  // Parsed before any resolution or compose: an argument this process cannot use is decidable
+  // now, and refusing it later means the author waits through a build for a typo ([R131]).
+  const startOpts = startOptsFrom(argv);
   const { createMystEdge } = await import('./myst.js');
   const edge = createMystEdge();
 
@@ -253,7 +264,7 @@ async function cmdStart(argv: string[]): Promise<number> {
   // something to show.
   if (isJournalRepo(paperRoot)) {
     process.stderr.write(msg.start.journalSite(paperRoot) + '\n');
-    await edge.start(paperRoot, startOptsFrom(argv));
+    await edge.start(paperRoot, startOpts);
     return await never();
   }
 
@@ -267,7 +278,7 @@ async function cmdStart(argv: string[]): Promise<number> {
   const { runStart } = await import('./build.js');
   const { materializeDerived } = await import('./materialize.js');
   process.stderr.write(msg.start.composed(paperRoot, resolved.root) + '\n');
-  const first = await runStart({ ...input, startOpts: startOptsFrom(argv) });
+  const first = await runStart({ ...input, startOpts });
   for (const w of first.warnings) process.stderr.write(annotate('warning', w) + '\n');
 
   // myst watches the DERIVED config (that is the one it was pointed at), so an edit to the
@@ -382,13 +393,11 @@ async function cmdDeposit(argv: string[]): Promise<number> {
   const sandbox = has(rest, 'sandbox');
   const siteUrl = flag(rest, 'site-url') ?? process.env.SITE_URL;
   // The environment picks the secret, same as `oak release` ([R102]).
+  // No cross-fallback: a sandbox run must not reach for the production token ([R133]).
   const token =
-    flag(rest, 'token') ??
-    (sandbox
-      ? (process.env.ZENODO_TOKEN_SANDBOX ?? process.env.ZENODO_TOKEN)
-      : process.env.ZENODO_TOKEN);
+    flag(rest, 'token') ?? (sandbox ? process.env.ZENODO_TOKEN_SANDBOX : process.env.ZENODO_TOKEN);
   if (!token) {
-    process.stderr.write(msg.workflow.depositNoToken + '\n');
+    process.stderr.write(msg.workflow.depositNoToken(sandbox) + '\n');
     return 2;
   }
   const api = new z.ZenodoApi(z.createFetchTransport(), sandbox, token);
