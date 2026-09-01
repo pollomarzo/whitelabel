@@ -130,15 +130,23 @@ function gh(args: string[], opts: { input?: string; cwd?: string; quiet?: boolea
   return run('gh', args, opts);
 }
 
-/** true when `gh <args>` returns 2xx, false when the target is definitively ABSENT (404).
- *  Anything else (403, 5xx, no `gh`) throws: read as absence, a forbidden DELETE becomes a
- *  teardown that never happened ([R108]/[R113]). */
-function ghOk(args: string[], env?: NodeJS.ProcessEnv): boolean {
+/** An absent git ref: the refs API says 422 "Reference does not exist" where most endpoints
+ *  say 404, so the caller that knows this passes it to {@link ghOk} ([R149]). */
+export const ABSENT_REF = /Reference does not exist/i;
+
+/**
+ * true when `gh <args>` returns 2xx, false when the target is definitively ABSENT (404, plus
+ * whatever `alsoAbsent` the caller knows means the same on its endpoint). Anything else (403,
+ * 5xx, no `gh`) throws: read as absence, a forbidden DELETE becomes a teardown that never
+ * happened ([R108]/[R113]).
+ */
+function ghOk(args: string[], env?: NodeJS.ProcessEnv, alsoAbsent?: RegExp): boolean {
   const r = spawnSync('gh', args, { encoding: 'utf8', ...(env ? { env } : {}) });
   if (r.error) throw r.error;
   if (r.status === 0) return true;
   const stderr = String(r.stderr ?? '');
   if (/HTTP 404|not found/i.test(stderr)) return false;
+  if (alsoAbsent?.test(stderr)) return false;
   throw new Error(`gh ${args[0] ?? ''} failed (exit ${r.status}): ${stderr.trim().split('\n')[0]}`);
 }
 
@@ -882,7 +890,9 @@ export const realConformanceGh: ConformanceGh = {
     return out ? out.split('\n').filter((t) => t.includes(marker)) : [];
   },
   deleteTag(repo, tag) {
-    ghOk(['api', '-X', 'DELETE', `repos/${repo}/git/refs/tags/${tag}`]);
+    // The refs API answers an ABSENT ref with 422 "Reference does not exist", not 404, so
+    // ghOk's 404-only tolerance would throw on the very case this is tolerant of ([R149]).
+    ghOk(['api', '-X', 'DELETE', `repos/${repo}/git/refs/tags/${tag}`], undefined, ABSENT_REF);
   },
   labelPr(repo, prNumber, label) {
     gh(['pr', 'edit', String(prNumber), '--repo', repo, '--add-label', label]);
