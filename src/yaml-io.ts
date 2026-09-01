@@ -10,6 +10,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseDocument, type Document } from 'yaml';
 import { BRAND_ASSET_KEYS, type OwnOverride } from './compose.js';
+import { EDITION_ID } from './schema.js';
 import * as msg from './messages.js';
 import { UserError } from './messages.js';
 
@@ -66,6 +67,11 @@ export function readEngineCoordinateRaw(
   }
   if (typeof edition !== 'string' || !edition) {
     throw new UserError(msg.build.missingEngineCoordinate('edition', mystPath));
+  }
+  // The shape check belongs HERE, not only on the schema: this raw read feeds
+  // `extendsChainFor` a pass before anything validates the resolved config ([R141]).
+  if (!EDITION_ID.safeParse(edition).success) {
+    throw new UserError(msg.build.badEdition(edition, mystPath));
   }
   return { version, edition };
 }

@@ -17,8 +17,7 @@
  * unit-testable with a fake: the real edge (myst.ts) pulls in the bundled myst-cli.
  */
 import { join } from 'node:path';
-import type { ISession } from 'myst-cli';
-import { compose, extendsChainFor, type ResolvedProject, type ComposeInput } from './compose.js';
+import { type ResolvedProject } from './compose.js';
 import { runLayerA } from './validate.js';
 import {
   materializeDerived,
@@ -29,16 +28,7 @@ import {
 } from './materialize.js';
 import * as msg from './messages.js';
 import { originRepo } from './gh.js';
-import {
-  readDoc,
-  writeDerivedDoc,
-  setExtends,
-  applyOwnOverride,
-  readEngineCoordinateRaw,
-  readBrandAssetOptions,
-  readTenantTypstTemplate,
-  DERIVED_CONFIG_FILE,
-} from './yaml-io.js';
+import { DERIVED_CONFIG_FILE } from './yaml-io.js';
 
 export interface RunBuildInput extends MaterializeInput {
   /** Defaults to a full build (HTML + exports). HTML-only is useful until the pinned
