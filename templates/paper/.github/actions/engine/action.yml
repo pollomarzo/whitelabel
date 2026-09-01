@@ -13,9 +13,8 @@ runs:
   using: composite
   steps:
     # --- resolve the engine ref from the paper's own myst.yml (raw, pre-extends) ------
-    # Quoted key form ["oaktree-sapling"]: an unquoted hyphenated key is yq-version
-    # sensitive; explicit guard so a missing options block fails LOUDLY, not as a
-    # baffling downstream checkout error.
+    # Quoted key form: an unquoted hyphenated key is yq-version sensitive. The explicit guard
+    # makes a missing options block fail here, not as a baffling checkout error.
     - id: ref
       shell: bash
       run: |
@@ -39,10 +38,8 @@ runs:
         echo "engine=$engine" >> "$GITHUB_OUTPUT"
         echo "instance=$(yq '.instance_repo // "."' "$pins")" >> "$GITHUB_OUTPUT"
 
-    # --- dec. 23 / [R41]: the repo is pinned but the ref FLOATS, and a public engine resolves
-    # refs/pull/N/merge too, i.e. an unmerged engine PR. run.sh's dist/cli.cjs check does not
-    # stop that, because a PR can commit one. So refuse the classes that are not a published
-    # line of the engine when the paper content is untrusted (a fork PR).
+    # --- the repo is pinned but the ref FLOATS, and a public engine resolves refs/pull/N/merge
+    # too. From a fork PR, refuse the classes that are not a published line of the engine.
     # https://scholar.nexus/oaktree-sapling/design/paper-ci
     - id: refclass
       shell: bash

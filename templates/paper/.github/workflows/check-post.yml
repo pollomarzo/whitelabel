@@ -1,12 +1,9 @@
 name: Journal checks post
 
-# Stage 2 of the journal checks: post only, in base context, holding the write token that fork
-# pull requests never get. It downloads Stage 1's report and posts it, as a "Journal checks"
-# Check Run on the head commit plus a sticky comment. It never re-runs validate and never
-# rebuilds paper content.
-#
-# The artifact it reads is written by the untrusted half, so read the trust rules before
-# changing what this job takes from it:
+# Stage 2 of the journal checks: post only, base context, holding the write token fork PRs never
+# get. Posts Stage 1's report as a Check Run plus a sticky comment; never re-runs validate, never
+# rebuilds paper content. The artifact is written by the untrusted half, so read the trust rules
+# before changing what this job takes from it:
 # https://scholar.nexus/oaktree-sapling/design/paper-ci
 
 on:
@@ -38,11 +35,10 @@ jobs:
           run-id: ${{ github.event.workflow_run.id }}
           github-token: ${{ github.token }}
 
-      # The PR number is the ONE value this job cannot read from its own event, because
-      # workflow_run.pull_requests is empty for forks. It therefore comes from the untrusted
-      # artifact and needs both checks below: the shape, matched against the whole string, and
-      # the ownership, against the commit this run is actually about. Do not add a third value
-      # here without reading why: https://scholar.nexus/oaktree-sapling/design/paper-ci
+      # The ONE value this job cannot read from its own event (workflow_run.pull_requests is
+      # empty for forks), so it comes from the untrusted artifact and needs both checks below.
+      # Do not add a second such value without reading why:
+      # https://scholar.nexus/oaktree-sapling/design/paper-ci
       - id: meta
         env:
           GH_TOKEN: ${{ github.token }}
@@ -62,9 +58,8 @@ jobs:
           fi
           echo "pr=$pr" >> "$GITHUB_OUTPUT"
 
-      # Posts the precomputed report: the Check Run on the PR HEAD sha and, when a PR, the
-      # sticky comment. Best-effort inside the engine: a post failure degrades to a
-      # `::warning::`, never fails this job.
+      # Posts the precomputed report. Best-effort inside the engine: a post failure degrades to
+      # a `::warning::` rather than failing this job.
       - uses: ./.github/actions/engine
         with:
           args: >-

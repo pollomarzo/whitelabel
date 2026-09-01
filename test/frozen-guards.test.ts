@@ -4,6 +4,11 @@
  * `template.test.ts` asserts which files are stamped; nothing asserted what any of them DOES,
  * which is how [R90] survived a month of green CI. These extract a step's `run:` script by id
  * and execute it, so the assertion is on the shipped bytes rather than on a copy.
+ *
+ * ⚑ This is bash, not a GitHub runner: `${{ }}` is already resolved by the time a real step runs,
+ * `$GITHUB_OUTPUT` is a real file there, and the shell setup differs. So this covers the SCRIPT
+ * logic and will not catch a workflow-level or expression-level fault. Treat a green run here as
+ * necessary, not sufficient; the live conformance run is what exercises the real thing.
  */
 import { describe, it, expect } from 'vitest';
 import { spawnSync } from 'node:child_process';

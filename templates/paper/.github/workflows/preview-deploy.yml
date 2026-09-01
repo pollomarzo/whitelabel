@@ -1,10 +1,9 @@
 name: Preview deploy
 
-# Stage 2 of the always-split preview. Runs in BASE-repo
-# context after Paper CI completes, so it holds the preview secret that fork PRs never
-# get. It ONLY downloads Stage 1's inert artifact and deploys it; it never rebuilds fork
-# content (that would reopen the injection hole through the shim's back door). The engine
-# ref + action code come from the BASE default branch (guaranteed by workflow_run).
+# Stage 2 of the preview: base context, so it holds the secret fork PRs never get. It ONLY
+# deploys Stage 1's inert artifact and never rebuilds fork content, which would reopen the
+# injection hole. Engine ref and action code come from the base default branch.
+# https://scholar.nexus/oaktree-sapling/design/paper-ci
 
 on:
   workflow_run:
@@ -17,8 +16,7 @@ permissions:
   pull-requests: write # sticky preview comment + new-version reminder
 
 concurrency:
-  # head_branch alone collides across forks (two forks PRing from `main` would cancel each
-  # other's previews): key on head repo too.
+  # head_branch alone collides across forks, so key on head repo too.
   group: preview-${{ github.event.workflow_run.head_repository.full_name }}-${{ github.event.workflow_run.head_branch }}
   cancel-in-progress: true
 
@@ -36,8 +34,8 @@ jobs:
           path: site
           run-id: ${{ github.event.workflow_run.id }}
           github-token: ${{ github.token }}
-      # The artifact is Stage-1 output, so its `.pr-number` is fork-controlled. Same guard as
-      # check-post.yml: shape, then the PR must be the one this run built ([R136]).
+      # `.pr-number` is fork-controlled. Same two checks as check-post.yml: shape, then the PR
+      # must be the one this run built.
       - id: pr-owner
         env:
           GH_TOKEN: ${{ github.token }}
@@ -57,10 +55,9 @@ jobs:
           fi
         shell: bash
 
-      # deploys the inert artifact (deletes .pr-number first); if no Cloudflare
-      # secrets are present, `oak deploy-preview` degrades to an artifact-link comment
-      # instead of failing. It also posts the new-version reminder here, where it
-      # has pull-requests: write (fork Stage-1 runs never do).
+      # Deploys the inert artifact (stripping .pr-number first). With no Cloudflare secrets it
+      # degrades to an artifact-link comment rather than failing. The new-version reminder runs
+      # here too, where it has pull-requests: write.
       - uses: ./.github/actions/engine
         with:
           args: deploy-preview site
@@ -68,6 +65,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          # The Paper CI run that holds the paper-build artifact; lets the CLI deep-link the
-          # artifact-degrade comment straight to that run (not the whole Actions tab).
+          # Lets the degrade comment deep-link the run holding the artifact.
           PAPER_BUILD_RUN_ID: ${{ github.event.workflow_run.id }}

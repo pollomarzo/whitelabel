@@ -1,9 +1,9 @@
 name: Paper CI
 
-# Stage 1 of the always-split preview. Builds on every PR + push
-# with NO secrets and a read-only token, so fork PRs get full validation + a build. The
-# preview DEPLOY happens in preview-deploy.yml (workflow_run, base context) because forks
-# never receive secrets. Pages deploy (push to main) rides here behind a job-scoped token.
+# Stage 1 of the preview: builds every PR and push with NO secrets and a read-only token, so
+# fork PRs still get a full build. The DEPLOY is preview-deploy.yml, in base context. The Pages
+# deploy (push to main) rides here behind a job-scoped token.
+# https://scholar.nexus/oaktree-sapling/design/paper-ci
 
 on:
   pull_request:
@@ -15,9 +15,8 @@ permissions:
   contents: read # the untrusted build job never holds pages/id-token
 
 concurrency:
-  # Key on head repo as well as branch: two forks working on a branch called `main` would
-  # otherwise share a group and cancel each other, and `ci-main` alone also collided with the
-  # push-to-main group, so opening a fork PR from `main` cancelled an in-flight Pages deploy.
+  # Head repo as well as branch: two forks on a branch called `main` would otherwise cancel each
+  # other, and `ci-main` alone collided with the push group, cancelling in-flight Pages deploys.
   group: ${{ github.event_name == 'pull_request' && format('ci-pr-{0}-{1}', github.event.pull_request.head.repo.full_name, github.head_ref) || 'ci-push-main' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
@@ -29,11 +28,9 @@ jobs:
       - uses: ./.github/actions/engine
         with:
           args: build
-      # upload-artifact follows symlinks and stores their TARGET content as a regular file, so a
-      # symlink in the build output puts a runner-readable file on the public preview. This strips
-      # them, but note where the step lives: on a PR this file is the PR's own copy, so anyone who
-      # can plant the symlink can delete this step in the same commit. It is a guard against
-      # accident, not against an author who means it.
+      # upload-artifact stores a symlink's TARGET as a regular file, putting a runner-readable
+      # file on the public preview. Note this file is the PR's own copy, so whoever plants the
+      # symlink can delete this step in the same commit: a guard against accident, not intent.
       - name: Drop symlinks from the build output
         run: find _build/html -type l -delete
       - name: Stash PR number # workflow_run.pull_requests is EMPTY for forks

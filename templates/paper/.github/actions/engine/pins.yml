@@ -1,16 +1,11 @@
-# Pins: the trust boundary. The engine repo (org/repo) is
-# pinned here; only the *ref* (project.options.oaktree-sapling.version in myst.yml) floats.
-# Read by BOTH the CI shim (yq, in action.yml) and local `oak`, so CI and local share one
-# source of truth and can't drift. Covered by the broad `.github/` CODEOWNERS gate: no
-# new gated path. `oak bootstrap` / copier fills these; editing them is CODEOWNERS-gated
-# because an instance/edition config can name MyST plugins (JS run at build time), so the
-# instance repo is a code-adjacent source (same trust argument as the engine source).
+# Pins: the trust boundary. The engine REPO is pinned here; only the ref
+# (project.options.oaktree-sapling.version in myst.yml) floats. Read by both the CI shim and
+# local `oak`, so the two cannot drift. CODEOWNERS-gated, because an instance config can name
+# MyST plugins (JS at build time), which makes it code-adjacent.
+# https://scholar.nexus/oaktree-sapling/design/paper-ci
 
-# INTERIM home: the engine is developed on a personal account first; it moves to
-# open-scholar-nexus/oaktree-sapling later via replayed commits. Because this is
-# the only place the home is named, the move is a one-line owner swap here.
+# Interim home, and the only place it is named, so the canonical move is a one-line swap.
 engine_repo: pollomarzo/whitelabel
 
-# owner/repo of INSTANCE-CONFIG. Set to "." (or omit) when instance-config is co-located
-# in this repo (repo=journal). copier replaces the placeholder below at bootstrap.
+# owner/repo of INSTANCE-CONFIG, or "." when it is co-located in this repo (repo=journal).
 instance_repo: pollomarzo/CHANGE-ME-instance-config
