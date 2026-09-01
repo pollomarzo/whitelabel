@@ -1,6 +1,6 @@
 {
   "name": "oaktree-sapling",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "White-label journal engine: MyST + GitHub + Zenodo. All platform logic, referenced by version.",
   "author": "paolo marzolo",
   "license": "BSD-3-Clause",
