@@ -595,6 +595,7 @@ async function cmdNotify(argv: string[]): Promise<number> {
     const f = join(resolve(flag(rest, 'site') ?? 'site'), '.pr-number');
     if (existsSync(f)) pr = readFileSync(f, 'utf8').trim();
   }
+  if (pr) preview.assertPrNumber(pr);
   if (!pr) {
     process.stderr.write(msg.workflow.notifyNoPr + '\n');
     return 2;
