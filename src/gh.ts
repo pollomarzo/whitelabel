@@ -131,7 +131,7 @@ function gh(args: string[], opts: { input?: string; cwd?: string; quiet?: boolea
 }
 
 /** An absent git ref: the refs API says 422 "Reference does not exist" where most endpoints
- *  say 404, so the caller that knows this passes it to {@link ghOk} ([R149]). */
+ *  say 404, so EVERY ref delete passes it to {@link ghOk} ([R149]). */
 export const ABSENT_REF = /Reference does not exist/i;
 
 /**
@@ -162,8 +162,8 @@ function ghAs(
 }
 
 /** The fork-token twin of {@link ghOk}, with the same 404-only tolerance. */
-function ghOkAs(token: string, args: string[]): boolean {
-  return ghOk(args, { ...process.env, GH_TOKEN: token });
+function ghOkAs(token: string, args: string[], alsoAbsent?: RegExp): boolean {
+  return ghOk(args, { ...process.env, GH_TOKEN: token }, alsoAbsent);
 }
 
 /**
@@ -882,7 +882,7 @@ export const realConformanceGh: ConformanceGh = {
     return out ? out.split('\n').map((r) => r.replace(/^refs\/heads\//, '')) : [];
   },
   deleteBranch(repo, branch) {
-    ghOk(['api', '-X', 'DELETE', `repos/${repo}/git/refs/heads/${branch}`]);
+    ghOk(['api', '-X', 'DELETE', `repos/${repo}/git/refs/heads/${branch}`], undefined, ABSENT_REF);
   },
   listTags(repo, marker) {
     // No "contains" ref filter: list tags and match the middle marker in JS.
@@ -1090,7 +1090,11 @@ export const realConformanceGh: ConformanceGh = {
     ]);
     const branches = out ? out.split('\n').map((r) => r.replace(/^refs\/heads\//, '')) : [];
     for (const branch of branches) {
-      ghOkAs(forkToken, ['api', '-X', 'DELETE', `repos/${forkRepo}/git/refs/heads/${branch}`]);
+      ghOkAs(
+        forkToken,
+        ['api', '-X', 'DELETE', `repos/${forkRepo}/git/refs/heads/${branch}`],
+        ABSENT_REF,
+      );
     }
     return branches;
   },
@@ -1170,7 +1174,11 @@ export const realConformanceGh: ConformanceGh = {
     return { number, headSha: postSha };
   },
   deleteForkBranch(forkRepo, forkToken, branch) {
-    ghOkAs(forkToken, ['api', '-X', 'DELETE', `repos/${forkRepo}/git/refs/heads/${branch}`]);
+    ghOkAs(
+      forkToken,
+      ['api', '-X', 'DELETE', `repos/${forkRepo}/git/refs/heads/${branch}`],
+      ABSENT_REF,
+    );
   },
   approveWorkflowRun(repo, runId) {
     // The fork-PR first-time-contributor gate is on the BASE repo, so approve with the PRIMARY
