@@ -6,7 +6,14 @@
  * `/.github/`-gated.
  */
 import { describe, it, expect } from 'vitest';
-import { mkdtempSync, readFileSync, writeFileSync, appendFileSync, cpSync } from 'node:fs';
+import {
+  mkdtempSync,
+  readFileSync,
+  writeFileSync,
+  appendFileSync,
+  cpSync,
+  existsSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseDocument } from 'yaml';
@@ -18,6 +25,7 @@ import {
 } from '../src/bootstrap.js';
 import {
   computeDrift,
+  extraFrozenFiles,
   readAnswers,
   cmdUpgrade,
   type UpgradePr,
@@ -156,6 +164,47 @@ function deps(pr: UpgradePr, target: string, materialize: () => string): Upgrade
 /* --------------------------------------------------------------------------
  * cmdUpgrade
  * ------------------------------------------------------------------------ */
+
+describe('a frozen file the target no longer ships ([R143])', () => {
+  const withRetired = () => {
+    const repo = makeRepo();
+    writeFileSync(join(repo, '.github/workflows/retired.yml'), 'on: push\njobs: {}\n');
+    return repo;
+  };
+
+  it('is not drift, but IS reported', () => {
+    const repo = withRetired();
+    expect(computeDrift(repo, TEMPLATE_ROOT, readAnswers(repo))).toEqual([]);
+    expect(extraFrozenFiles(repo, TEMPLATE_ROOT)).toEqual(['.github/workflows/retired.yml']);
+  });
+
+  it('reaches the operator even when everything else is up to date', async () => {
+    const repo = withRetired();
+    const lines: string[] = [];
+    const { pr } = fakePr();
+    const out = await cmdUpgrade(
+      { repoRoot: repo, mode: 'both' },
+      {
+        ...deps(pr, 'v1.0.0', () => TEMPLATE_ROOT),
+        log: (m) => lines.push(m),
+      },
+    );
+    expect(out.result.up_to_date).toBe(true);
+    expect(out.result.extra).toEqual(['.github/workflows/retired.yml']);
+    expect(lines.join('\n')).toContain('retired.yml');
+  });
+
+  it('leaves it on disk: a tenant may own it', () => {
+    const repo = withRetired();
+    const { pr } = fakePr();
+    return cmdUpgrade(
+      { repoRoot: repo, mode: 'files-only' },
+      deps(pr, 'v2.0.0', () => TEMPLATE_ROOT),
+    ).then(() => {
+      expect(existsSync(join(repo, '.github/workflows/retired.yml'))).toBe(true);
+    });
+  });
+});
 
 describe('cmdUpgrade', () => {
   it('--version-only writes only myst.yml and PRs just that path', async () => {

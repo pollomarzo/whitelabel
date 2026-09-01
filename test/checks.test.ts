@@ -259,6 +259,9 @@ describe('cmdCheckPost (Stage-2 orchestration, fake seams)', () => {
     expect(out.commentPosted).toBe(true);
     expect(stickies).toHaveLength(1);
     expect(out.warnings.join(' ')).toContain('Check Run not posted');
+    // The Check Run IS the required merge gate, so its absence is not an 'ok' run ([R144]):
+    // the PR is left blocked by a check that will never arrive.
+    expect(out.status).toBe('error');
   });
 
   it('a throwing sticky seam degrades to a warning (no crash)', () => {
@@ -272,6 +275,8 @@ describe('cmdCheckPost (Stage-2 orchestration, fake seams)', () => {
     expect(out.commentPosted).toBe(false);
     expect(runs).toHaveLength(1);
     expect(out.warnings.join(' ')).toContain('comment not posted');
+    // Cosmetic by comparison: the check carries the verdict, so this stays 'ok' ([R144]).
+    expect(out.status).toBe('ok');
   });
 });
 

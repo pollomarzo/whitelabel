@@ -112,6 +112,29 @@ export function renderFrozenFile(
 }
 
 /**
+ * Frozen-path files ON DISK that the target template does not ship ([R143]).
+ *
+ * Reported, never deleted: this path also holds a tenant's own additions (a `dependabot.yml`,
+ * their own workflow), and with no stamped manifest the engine cannot tell those from a
+ * workflow it shipped and later retired. So the human decides, with the list in front of them.
+ */
+export function extraFrozenFiles(repoRoot: string, templateAtTarget: string): string[] {
+  const shipped = new Set(frozenFiles(templateAtTarget));
+  const out: string[] = [];
+  const walk = (dir: string, prefix: string): void => {
+    if (!existsSync(dir)) return;
+    for (const name of readdirSync(dir).sort()) {
+      const abs = join(dir, name);
+      const rel = prefix ? posix.join(prefix, name) : name;
+      if (statSync(abs).isDirectory()) walk(abs, rel);
+      else if (!shipped.has(rel)) out.push(rel);
+    }
+  };
+  walk(join(repoRoot, '.github'), '.github');
+  return out.sort();
+}
+
+/**
  * Drift = frozen files whose target render differs from the on-disk file (or that are absent
  * on disk). 2-way, reset-to-template semantics. Returns the changed relative paths, sorted.
  */
@@ -209,16 +232,24 @@ export async function cmdUpgrade(input: UpgradeInput, deps: UpgradeDeps): Promis
   // Only materialize + diff the template when a files resync is requested (the frequent
   // version-only bump needs no clone).
   let drift: string[] = [];
+  let extra: string[] = [];
   let templateAtTarget: string | null = null;
   if (wantFiles) {
     templateAtTarget = deps.materializeTemplate(answers.engineRepo, target);
     drift = computeDrift(repoRoot, templateAtTarget, answers);
+    extra = extraFrozenFiles(repoRoot, templateAtTarget);
   }
   const filesChanged = wantFiles && drift.length > 0;
 
   if (!versionChanged && !filesChanged) {
     deps.log(msg.upgrade.upToDate(target, answers.engineRepo, targetGiven));
-    return { exitCode: 0, result: { status: 'ok', target, drift: [], pr: null, up_to_date: true } };
+    // Still say what the target does not ship: "up to date" must not imply "nothing to look at"
+    // when a retired workflow is sitting there running ([R143]).
+    if (extra.length) deps.log(msg.upgrade.planExtraFiles(extra));
+    return {
+      exitCode: 0,
+      result: { status: 'ok', target, drift: [], extra, pr: null, up_to_date: true },
+    };
   }
 
   const plan = [
@@ -227,6 +258,7 @@ export async function cmdUpgrade(input: UpgradeInput, deps: UpgradeDeps): Promis
     ...(versionChanged ? [msg.upgrade.planBumpVersion(answers.version, target)] : []),
     ...(filesChanged ? [msg.upgrade.planResync(drift.length, target, drift.join(', '))] : []),
     ...(wantFiles && !filesChanged ? [msg.upgrade.planFilesMatch(target)] : []),
+    ...(extra.length ? [msg.upgrade.planExtraFiles(extra)] : []),
     msg.upgrade.planAsPr,
   ];
   if (!(await deps.confirm(plan)))
@@ -252,22 +284,31 @@ export async function cmdUpgrade(input: UpgradeInput, deps: UpgradeDeps): Promis
   const url = deps.pr.open(repoRoot, {
     branch: `${UPGRADE_BRANCH_PREFIX}${target}`,
     title: msg.upgrade.prTitle(target),
-    body: upgradeBody(target, versionChanged, drift),
+    body: upgradeBody(target, versionChanged, drift, extra),
     paths,
   });
   deps.log(msg.upgrade.logPrOpened(url));
   return {
     exitCode: 0,
-    result: { status: 'ok', target, drift, version_bumped: versionChanged, pr: url, paths },
+    result: { status: 'ok', target, drift, extra, version_bumped: versionChanged, pr: url, paths },
   };
 }
 
-function upgradeBody(target: string, versionChanged: boolean, drift: string[]): string {
+function upgradeBody(
+  target: string,
+  versionChanged: boolean,
+  drift: string[],
+  extra: string[],
+): string {
   const lines = [msg.upgrade.prBodyHeader(target), ''];
   if (versionChanged) lines.push(msg.upgrade.prBodyVersion(target));
   if (drift.length) {
     lines.push(msg.upgrade.prBodyFiles(target));
     for (const d of drift) lines.push(`  - \`${d}\``);
+  }
+  if (extra.length) {
+    lines.push('', msg.upgrade.prBodyExtra(target));
+    for (const e of extra) lines.push(`  - \`${e}\``);
   }
   lines.push('', msg.upgrade.prBodyFooter);
   return lines.join('\n');

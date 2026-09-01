@@ -480,6 +480,15 @@ export const upgrade = {
     `- sets \`project.options.oaktree-sapling.version\` → \`${target}\` in myst.yml`,
   prBodyFiles: (target: string): string =>
     `- restores these engine-managed files to their ${target} version (a code owner must approve changes under \`.github/\`):`,
+  planExtraFiles: (extra: string[]): string =>
+    `  ! ${extra.length} file(s) under .github/ that this engine version does not ship: ` +
+    `${extra.join(', ')}. Left alone. If one is a workflow a past engine shipped and has ` +
+    `since retired, it is still running: delete it by hand.`,
+
+  prBodyExtra: (target: string): string =>
+    `Not touched, but worth a look: these live under \`.github/\` and are not part of ${target}. ` +
+    `A retired engine workflow left here keeps running.`,
+
   prBodyFooter: '_Opened by `oak upgrade`. Review the preview build before merging._',
 };
 
