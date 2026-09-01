@@ -353,11 +353,18 @@ describe('a flag passed without a value is refused', () => {
     expect(r.stderr).not.toContain('needs a value');
   });
 
-  it('refuses an empty value rather than falling through to the default', () => {
+  it('refuses an empty --instance, where empty is a mistake not a meaning', () => {
     // `--instance "$VAR"` with VAR unset: the flag WAS passed, so "pass --instance" was useless.
     const r = oak(['validate', '--paper', fixturePaper, '--instance', '']);
     expect(r.code).toBe(2);
     expect(r.stderr).toContain('--instance needs a value');
+  });
+
+  it('ACCEPTS an empty value where empty is the meaning ([R147])', () => {
+    // `ci/run.sh` passes `--base-url ""` on every PR build: empty means served at the root.
+    // Refusing it broke every paper build in the fleet, caught by a live cert.
+    const r = oak(['validate', '--paper', fixturePaper, '--no-instance', '--base-url', '']);
+    expect(r.stderr).not.toContain('--base-url needs a value');
   });
 
   it('refuses a port that is not a number', () => {
