@@ -32,6 +32,17 @@ describe('readEngineCoordinateRaw (local yq equivalent, §6a)', () => {
       /project\.options\.oaktree-sapling/,
     );
   });
+
+  it('refuses an edition carrying a path, BEFORE it reaches the extends chain ([R141])', () => {
+    // This read runs a pass before anything validates the resolved config, so a shape check on
+    // the schema alone leaves the traversal open: verified by writing the derived file.
+    for (const bad of ['../../secret/loot', './x', 'a/b']) {
+      const doc = parseDocument(
+        `version: 1\nproject:\n  options:\n    oaktree-sapling:\n      version: v1\n      edition: ${bad}\n`,
+      );
+      expect(() => readEngineCoordinateRaw(doc, '/p/myst.yml'), bad).toThrow(/plain name/);
+    }
+  });
 });
 
 describe('working-tree injection preserves author content ([R3])', () => {

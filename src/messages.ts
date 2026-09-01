@@ -523,6 +523,9 @@ export const build = {
   /** No journal settings could be resolved. The common way to reach this is a paper whose
    *  pins.yml still carries the template's `.` placeholder, so the text explains both meanings
    *  of `instance_repo` rather than naming a flag nobody can reach from a CI log. */
+  badEdition: (got: string, mystPath: string): string =>
+    `project.options.oaktree-sapling.edition is ${JSON.stringify(got.slice(0, 40))} in ${mystPath}. ` +
+    `It names a file (editions/<edition>.yml), so it must be a plain name: letters, digits, . _ -`,
   noInstance: (verb: 'build' | 'start' | 'validate', paperRoot: string): string =>
     `oak ${verb}: no instance-config resolved; ` +
     `pass --instance <path> (or --no-instance for ` +
