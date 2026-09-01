@@ -134,6 +134,9 @@ function gh(args: string[], opts: { input?: string; cwd?: string; quiet?: boolea
  *  say 404, so EVERY ref delete passes it to {@link ghOk} ([R149]). */
 export const ABSENT_REF = /Reference does not exist/i;
 
+/** An approve on a run that has no gate: normal, not a fault ([R150]). */
+export const NOT_GATED = /not waiting for approval/i;
+
 /**
  * true when `gh <args>` returns 2xx, false when the target is definitively ABSENT (404, plus
  * whatever `alsoAbsent` the caller knows means the same on its endpoint). Anything else (403,
@@ -1182,9 +1185,12 @@ export const realConformanceGh: ConformanceGh = {
   },
   approveWorkflowRun(repo, runId) {
     // The fork-PR first-time-contributor gate is on the BASE repo, so approve with the PRIMARY
-    // token. TOLERANT: a no-op error when approval isn't required. NOTE: whether fork runs need
-    // approval every time (vs. only the first) is UNCERTAIN; the tolerant approve covers both,
-    // and live-testing will settle it.
-    ghOk(['api', '-X', 'POST', `repos/${repo}/actions/runs/${runId}/approve`]);
+    // token. An ungated run answers 403 "not waiting for approval", which is the normal case,
+    // not a fault: live testing settled that fork runs are NOT gated every time ([R150]).
+    ghOk(
+      ['api', '-X', 'POST', `repos/${repo}/actions/runs/${runId}/approve`],
+      undefined,
+      NOT_GATED,
+    );
   },
 };

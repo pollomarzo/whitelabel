@@ -252,6 +252,26 @@ describe('the tolerant probes tell absent from forbidden ([R108], [R113])', () =
     expect(() => realConformanceGh.deleteTag('o/r', 'v9.9.9')).toThrow(/422/);
   });
 
+  it('approving an UNGATED run is a no-op, which GitHub spells 403 ([R150])', () => {
+    // The load-bearing case: live testing settled that fork runs are not gated every time, so
+    // this is the normal path, not the exception.
+    child.respond = () => ({
+      status: 1,
+      stdout: '',
+      stderr: 'gh: This workflow run is not waiting for approval (HTTP 403)',
+    });
+    expect(() => realConformanceGh.approveWorkflowRun('o/r', 9)).not.toThrow();
+  });
+
+  it('but a 403 that is NOT about gating still throws', () => {
+    child.respond = () => ({
+      status: 1,
+      stdout: '',
+      stderr: 'gh: Resource not accessible by integration (HTTP 403)',
+    });
+    expect(() => realConformanceGh.approveWorkflowRun('o/r', 9)).toThrow(/403/);
+  });
+
   it('every ref delete tolerates it, not just the one that failed a cert ([R149])', () => {
     child.respond = () => ({
       status: 1,

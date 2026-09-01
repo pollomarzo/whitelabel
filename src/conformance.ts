@@ -261,12 +261,20 @@ async function pollUntil<T>(
   );
 }
 
-/** A `gh` child that failed on a transport or permission fault, in the shape gh.ts's `run`
- *  formats: the GitHub API is a third party, so a 403 or a 502 must not redden a cert ([R113]). */
+/**
+ * A `gh` child that failed because the API could not SERVE us, in the shape gh.ts's `run`
+ * formats: a rate limit, a 5xx, a dropped connection ([R113]). Those are a third party's bad day
+ * and must not redden a cert.
+ *
+ * A 401/403 that is not a rate limit is the opposite: the API served us and REFUSED this
+ * request, which means a missing scope, a missing `permissions:` block or a call that does not
+ * apply. Those are ours, and reading them as third-party turned a harness bug green ([R150]).
+ */
 function isGitHubApiFault(err: unknown): boolean {
   const m = err instanceof Error ? err.message : String(err);
   if (!/^gh \S* ?failed \(exit /.test(m)) return false;
-  return /HTTP (401|403|429|5\d\d)|rate limit|ECONNRESET|EAI_AGAIN|ETIMEDOUT|timed out|connection reset|bad gateway|service unavailable/i.test(
+  if (/rate limit|secondary rate|abuse detection|HTTP 429/i.test(m)) return true;
+  return /HTTP 5\d\d|ECONNRESET|EAI_AGAIN|ETIMEDOUT|timed out|connection reset|bad gateway|service unavailable/i.test(
     m,
   );
 }

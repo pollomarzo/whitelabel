@@ -493,6 +493,38 @@ describe('cmdConformanceCertify', () => {
     expect(out.result.reason).toContain('timed out');
   });
 
+  it('a 403 that REFUSES our request is ours, and reddens ([R150])', async () => {
+    // A missing scope or `permissions:` block answers 403. Calling that a third party's fault
+    // made the cert green on exactly the defect it exists to catch.
+    const gh = fakeCertGh();
+    const out = await cmdConformanceCertify(
+      { repo: REPO, tag: TAG },
+      certDeps(gh, {
+        installEngine: () => {
+          throw new Error(
+            'gh api failed (exit 1): gh: Resource not accessible by integration (HTTP 403)',
+          );
+        },
+      }),
+    );
+    expect(out.exitCode).toBe(1);
+    expect(out.result).toMatchObject({ status: 'failed' });
+  });
+
+  it('a rate limit still is not ours ([R113] still holds)', async () => {
+    const gh = fakeCertGh();
+    const out = await cmdConformanceCertify(
+      { repo: REPO, tag: TAG },
+      certDeps(gh, {
+        installEngine: () => {
+          throw new Error('gh api failed (exit 1): gh: API rate limit exceeded (HTTP 403)');
+        },
+      }),
+    );
+    expect(out.exitCode).toBe(3);
+    expect(out.result).toMatchObject({ status: 'inconclusive' });
+  });
+
   it('runs teardown (reset) on both success and failure', async () => {
     const ok = fakeCertGh();
     await cmdConformanceCertify({ repo: REPO, tag: TAG, runId: '42' }, certDeps(ok));
