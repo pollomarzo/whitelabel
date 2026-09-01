@@ -235,6 +235,22 @@ describe('the tolerant probes tell absent from forbidden ([R108], [R113])', () =
     child.respond = () => ({ status: 1, stdout: '', stderr: 'gh: Forbidden (HTTP 403)' });
     expect(() => realConformanceGh.deleteBranch('o/r', 'cert-1')).toThrow(/403/);
   });
+
+  it('treats an absent TAG as already gone, which the refs API spells 422 ([R149])', () => {
+    // Not 404: `DELETE /git/refs/tags/x` on a missing ref answers 422 "Reference does not
+    // exist". Every cert deletes a possibly-absent deposit tag before pushing it.
+    child.respond = () => ({
+      status: 1,
+      stdout: '',
+      stderr: 'gh: Reference does not exist (HTTP 422)',
+    });
+    expect(() => realConformanceGh.deleteTag('o/r', 'v9.9.9')).not.toThrow();
+  });
+
+  it('still refuses a 422 that is NOT an absent ref', () => {
+    child.respond = () => ({ status: 1, stdout: '', stderr: 'gh: Validation failed (HTTP 422)' });
+    expect(() => realConformanceGh.deleteTag('o/r', 'v9.9.9')).toThrow(/422/);
+  });
 });
 
 describe('list endpoints paginate ([R108])', () => {
