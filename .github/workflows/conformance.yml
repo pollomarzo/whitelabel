@@ -88,10 +88,9 @@ jobs:
           FIXTURE: ${{ vars.CONFORMANCE_FIXTURE_REPO }}
           TAG: ${{ steps.r.outputs.tag }}
           ONLY_RESET: ${{ steps.r.outputs.only_reset }}
-          # Optional fork-PR preview phase: the second-account fork + its own PAT. When either is
-          # unset (not yet provisioned) the flag is empty and the phase self-skips, so certs keep
-          # working. The fork phase drives the fork via `gh api` under this PAT (not git), so it
-          # needs no git-credential setup of its own.
+          # Optional fork-PR preview phase: the second-account fork + its own PAT. Unset means the
+          # flag is not passed at all and the phase self-skips, so certs keep working. The fork
+          # phase drives the fork via `gh api` under this PAT, so it needs no git credentials.
           FORK_REPO: ${{ vars.CONFORMANCE_FORK_REPO }}
           CONFORMANCE_FORK_PAT: ${{ secrets.CONFORMANCE_FORK_PAT }}
         run: |
@@ -103,7 +102,11 @@ jobs:
             exit 0
           fi
           set +e
-          node dist/cli.cjs conformance certify --repo "$FIXTURE" --tag "$TAG" --run-id "${{ github.run_id }}" --fork-repo "$FORK_REPO" --record cert.json
+          # Pass --fork-repo only when it HAS a value: an empty flag value is refused ([R134]),
+          # and this phase is meant to self-skip when the fork is not provisioned.
+          fork=()
+          [ -n "$FORK_REPO" ] && fork=(--fork-repo "$FORK_REPO")
+          node dist/cli.cjs conformance certify --repo "$FIXTURE" --tag "$TAG" --run-id "${{ github.run_id }}" "${fork[@]}" --record cert.json
           echo "code=$?" >> "$GITHUB_OUTPUT"
           set -e
 
