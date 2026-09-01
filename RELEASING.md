@@ -38,6 +38,19 @@ A `-` in the version marks it `--prerelease`, keeping it out of `releases/latest
 runs the **real release path**; it stays healthy because it is exercised constantly, instead of
 being a rarely-run 2am surprise.
 
+### Latest does not imply certified ([R114])
+
+A stable `vX.Y.Z` enters `releases/latest` the moment it is cut, and `latest` is what
+`oak bootstrap` and the scheduled `oak upgrade --version-only` resolve. Conformance runs *after*
+the cut, on the post-cut hook, so there is a window in which tenants can pick up a release nothing
+has certified. A cut that later fails conformance stays `latest` until someone acts.
+
+**Accepted, not fixed** (decided 2026-09-01). Cutting every release as a pre-release and having
+`conformance.yml` promote it on a CERTIFIED verdict would close it structurally, at the cost of
+making every stable release depend on the harness being available. Until that is built, treat a
+stable cut as a two-step act: **cut, then watch the conformance run, and yank or supersede the
+release if it does not come back green.** Do not announce a version to tenants before it has.
+
 ## Before a cut
 
 - **`npm test`** (includes the integration canary that renders the fixture PDF through the bundled
