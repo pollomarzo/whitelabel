@@ -36,6 +36,27 @@ jobs:
           path: site
           run-id: ${{ github.event.workflow_run.id }}
           github-token: ${{ github.token }}
+      # The artifact is Stage-1 output, so its `.pr-number` is fork-controlled. Same guard as
+      # check-post.yml: shape, then the PR must be the one this run built ([R136]).
+      - id: pr-owner
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          [ -f site/.pr-number ] || exit 0
+          pr=$(cat site/.pr-number)
+          if [[ ! "$pr" =~ ^[0-9]{1,10}$ ]]; then
+            echo "::error::.pr-number in the artifact is not a number; refusing to comment"
+            exit 1
+          fi
+          pr_head=$(gh api "repos/$REPO/pulls/$pr" --jq .head.sha)
+          if [ "$pr_head" != "$HEAD_SHA" ]; then
+            echo "::error::PR #$pr heads at $pr_head, not the $HEAD_SHA this run built; refusing to comment"
+            exit 1
+          fi
+        shell: bash
+
       # deploys the inert artifact (deletes .pr-number first); if no Cloudflare
       # secrets are present, `oak deploy-preview` degrades to an artifact-link comment
       # instead of failing. It also posts the new-version reminder here, where it

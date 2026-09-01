@@ -39,11 +39,24 @@ runs:
         echo "engine=$engine" >> "$GITHUB_OUTPUT"
         echo "instance=$(yq '.instance_repo // "."' "$pins")" >> "$GITHUB_OUTPUT"
 
-    # --- check out ENGINE@ref. The repository is pinned and only the ref floats, so the ref
-    # resolves inside the engine repo. That is the whole of the guarantee: a public engine also
-    # resolves refs/pull/N/merge. What actually keeps CI on releases is run.sh's dist/cli.cjs
-    # check, since only a release tag carries one.
+    # --- dec. 23 / [R41]: the repo is pinned but the ref FLOATS, and a public engine resolves
+    # refs/pull/N/merge too, i.e. an unmerged engine PR. run.sh's dist/cli.cjs check does not
+    # stop that, because a PR can commit one. So refuse the classes that are not a published
+    # line of the engine when the paper content is untrusted (a fork PR).
     # https://scholar.nexus/oaktree-sapling/design/paper-ci
+    - id: refclass
+      shell: bash
+      env:
+        REF: ${{ steps.ref.outputs.ref }}
+        IS_FORK: ${{ github.event.pull_request.head.repo.fork || false }}
+      run: |
+        [ "$IS_FORK" = "true" ] || exit 0
+        if printf '%s' "$REF" | grep -Eq '^refs/pull/[0-9]+/merge$|^[0-9a-fA-F]{40}$'; then
+          echo "::error::engine ref '$REF' is a raw commit or an unmerged pull request. A fork PR may only build against a published engine ref; pin a released version in myst.yml."
+          exit 1
+        fi
+
+    # --- check out ENGINE@ref. The repository is pinned and the ref is now class-checked above.
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         repository: ${{ steps.pins.outputs.engine }}
