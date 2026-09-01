@@ -823,6 +823,8 @@ export const workflow = {
     `deploy-preview: Cloudflare deploy failed, degrading to artifact link (${message})`,
   cloudflareDegradedReason: (message: string): string => `Cloudflare deploy failed: ${message}`,
   noPrNumber: 'deploy-preview: no .pr-number in artifact; nothing to preview.',
+  previewStripped: (names: string[]): string =>
+    `deploy-preview: removed Cloudflare Pages control files before serving (${names.join(', ')}).`,
   notImplemented: (verb: string, slice: string): string =>
     `oak ${verb}: not implemented yet (${slice}).`,
   notifyUsage: 'oak notify: usage: oak notify new-version [--pr N | --site <dir>]',
