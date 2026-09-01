@@ -115,6 +115,37 @@ describe('takePrNumber', () => {
   });
 });
 
+describe('previewBranch keeps the PR number ([R139])', () => {
+  const P = 'paper-{repo}-{pr}';
+  const long = 'impact-scholars/karalasingham-2026-nmap-celegans';
+
+  it('does not truncate the PR number off a long paper name', () => {
+    // Every paper in a journal shares one Pages project, so the alias is the only thing
+    // separating them; dropping {pr} made every PR on this paper deploy to one alias.
+    expect(previewBranch(P, long, '5')).toMatch(/-5$/);
+    expect(previewBranch(P, long, '12')).toMatch(/-12$/);
+    expect(previewBranch(P, long, '5')).not.toBe(previewBranch(P, long, '12'));
+  });
+
+  it('keeps two long names apart once truncated', () => {
+    const a = previewBranch(P, 'o/suheylgulenc-2026-brainwide-intrinsic-timescales', '7');
+    const b = previewBranch(P, 'o/suheylgulenc-2026-brainwide-something-entirely-else', '7');
+    expect(a).not.toBe(b);
+  });
+
+  it('stays within the Cloudflare alias limit', () => {
+    for (const pr of ['1', '12', '123456']) {
+      expect(previewBranch(P, long, pr).length).toBeLessThanOrEqual(28);
+    }
+  });
+
+  it('leaves a name that already fits byte-identical', () => {
+    expect(previewBranch(P, 'impact-scholars/geetha-2026-pd', '12')).toBe(
+      'paper-geetha-2026-pd-12',
+    );
+  });
+});
+
 describe('previewBranch', () => {
   it('substitutes {repo}/{pr} and uses the short repo name', () => {
     expect(previewBranch('paper-{repo}-{pr}', 'impact-scholars/geetha-2026-pd', '9')).toBe(

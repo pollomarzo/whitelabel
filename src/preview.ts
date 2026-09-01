@@ -26,6 +26,7 @@
  */
 import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
+import { createHash } from 'node:crypto';
 import { readDoc } from './yaml-io.js';
 import * as msg from './messages.js';
 import { annotate, UserError } from './messages.js';
@@ -131,19 +132,34 @@ export function assertPrNumber(n: string): string {
   return n;
 }
 
-/** Apply `{repo}`/`{pr}` placeholders in the preview branch pattern, then slugify to a
- *  Cloudflare-Pages-safe branch alias (lowercase, `[a-z0-9-]`, ≤28 chars). `repo` may be
- *  `owner/name`: only the short name is used. */
-export function previewBranch(pattern: string, repo: string, pr: string): string {
-  const shortRepo = repo.includes('/') ? repo.slice(repo.indexOf('/') + 1) : repo;
-  return pattern
-    .replaceAll('{repo}', shortRepo)
-    .replaceAll('{pr}', pr)
+const BRANCH_MAX = 28;
+const slug = (x: string): string =>
+  x
     .toLowerCase()
     .replace(/[^a-z0-9-]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 28)
-    .replace(/-+$/g, '');
+    .replace(/^-+|-+$/g, '');
+
+/**
+ * Apply `{repo}`/`{pr}` placeholders in the preview branch pattern, then slugify to a
+ * Cloudflare-Pages-safe branch alias (lowercase, `[a-z0-9-]`, ≤28 chars). `repo` may be
+ * `owner/name`: only the short name is used.
+ *
+ * The budget is spent on `{repo}` LAST, so a long paper name cannot push `{pr}` off the end
+ * ([R139]). A truncated name also carries a hash of the full one, because every paper in a
+ * journal shares one Pages project and the alias is the only thing telling them apart.
+ */
+export function previewBranch(pattern: string, repo: string, pr: string): string {
+  const shortRepo = repo.includes('/') ? repo.slice(repo.indexOf('/') + 1) : repo;
+  const withPr = pattern.replaceAll('{pr}', pr);
+  const fixed = slug(withPr.replaceAll('{repo}', ''));
+  const full = slug(shortRepo);
+  let name = full;
+  if (fixed.length + full.length > BRANCH_MAX) {
+    const digest = createHash('sha256').update(full).digest('hex').slice(0, 4);
+    const room = BRANCH_MAX - fixed.length - (digest.length + 1);
+    name = room > 0 ? `${slug(full.slice(0, room))}-${digest}` : digest;
+  }
+  return slug(withPr.replaceAll('{repo}', name)).slice(0, BRANCH_MAX).replace(/-+$/g, '');
 }
 
 export type PreviewPlan =
