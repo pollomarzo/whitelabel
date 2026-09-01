@@ -864,7 +864,7 @@ async function cmdCheckPost(argv: string[]): Promise<number> {
     },
   );
   emit(argv, { ...out });
-  return 0;
+  return out.checkRunPosted ? 0 : 1;
 }
 
 /** Default engine home pin, matching readEngineRepo's fallback ([R56]). */

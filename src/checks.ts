@@ -249,7 +249,7 @@ export interface CheckPostDeps {
 }
 
 export interface CheckPostOutcome {
-  status: 'ok';
+  status: 'ok' | 'error';
   checkRunPosted: boolean;
   commentPosted: boolean;
   warnings: string[];
@@ -302,5 +302,12 @@ export function cmdCheckPost(
     }
   }
 
-  return { status: 'ok', checkRunPosted, commentPosted, warnings };
+  // The Check Run IS the merge gate, so failing to post it leaves the PR blocked with nothing
+  // said. A comment failure stays cosmetic: the check carries the verdict ([R144]).
+  return {
+    status: checkRunPosted ? 'ok' : 'error',
+    checkRunPosted,
+    commentPosted,
+    warnings,
+  };
 }
