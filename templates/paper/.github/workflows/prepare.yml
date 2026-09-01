@@ -1,13 +1,9 @@
 name: Prepare Zenodo deposit
 
-# Editor dispatches DOI reservation. Reserves/reuses a draft and opens the
-# one-file myst.yml PR writing project.doi/github/date; the CLI opens that PR
-# itself via GH_TOKEN (no peter-evans action; the write is a YAML round-trip).
-# `--sandbox` is an explicit human choice here; a prod prepare may replace a
-# committed sandbox DOI.
-#
-# No `version` input: prepare is version-agnostic: it only reserves the concept DOI. The
-# version is the tag, and it enters the deposit at publish time (publish.yml → `oak release`).
+# Editor-dispatched DOI reservation: reserves or reuses a draft and opens the one-file myst.yml
+# PR writing project.doi/github/date. `--sandbox` is an explicit human choice, and a prod prepare
+# may replace a committed sandbox DOI. No `version` input: prepare only reserves the CONCEPT DOI,
+# and the version enters the deposit at publish time.
 
 on:
   workflow_dispatch:
