@@ -251,6 +251,16 @@ describe('the tolerant probes tell absent from forbidden ([R108], [R113])', () =
     child.respond = () => ({ status: 1, stdout: '', stderr: 'gh: Validation failed (HTTP 422)' });
     expect(() => realConformanceGh.deleteTag('o/r', 'v9.9.9')).toThrow(/422/);
   });
+
+  it('every ref delete tolerates it, not just the one that failed a cert ([R149])', () => {
+    child.respond = () => ({
+      status: 1,
+      stdout: '',
+      stderr: 'gh: Reference does not exist (HTTP 422)',
+    });
+    expect(() => realConformanceGh.deleteBranch('o/r', 'cert-1')).not.toThrow();
+    expect(() => realConformanceGh.deleteForkBranch('f/r', 't', 'cert-1')).not.toThrow();
+  });
 });
 
 describe('list endpoints paginate ([R108])', () => {
