@@ -52,18 +52,19 @@ function engineRoot(): string {
 }
 
 /**
- * A `--name value` pair. Absent is undefined; PRESENT BUT MALFORMED throws, because the two are
- * not the same question: an unset flag falls back to an env var at several call sites, so a
- * `--repo` whose value vanished (an unquoted empty shell variable) would silently act on
- * whatever the environment names instead of refusing.
+ * A `--name value` pair. Absent is undefined; a flag with NO value at all throws, because the two
+ * differ where it matters: several call sites read `flag(...) ?? process.env.X`, and a trailing
+ * `--repo` yields undefined, which falls through to the environment instead of refusing.
+ *
+ * An EMPTY value is returned as-is ([R147]). `??` is nullish, so `''` never reaches that
+ * fallback, and empty is a legitimate value for some flags (`--base-url ""` means the site is
+ * served at the root). Flags where empty is wrong check for it themselves.
  */
 function flag(argv: string[], name: string): string | undefined {
   const i = argv.indexOf(`--${name}`);
   if (i < 0) return undefined;
   const value = argv[i + 1];
-  if (value === undefined || value === '' || value.startsWith('--')) {
-    throw new UserError(msg.flagNeedsValue(name));
-  }
+  if (value === undefined || value.startsWith('--')) throw new UserError(msg.flagNeedsValue(name));
   return value;
 }
 function has(argv: string[], name: string): boolean {
@@ -133,6 +134,9 @@ function resolveInstanceRoot(
 ): { root: string | null } | { error: string } {
   if (has(argv, 'no-instance')) return { root: null };
   const explicit = flag(argv, 'instance');
+  // Empty here is a mistake, not a meaning: falling through would tell the operator to pass the
+  // flag they just passed ([R147]).
+  if (explicit === '') throw new UserError(msg.flagNeedsValue('instance'));
   if (explicit) return { root: resolve(explicit) };
   if (existsSync(join(paperRoot, 'journal.yml'))) return { root: paperRoot };
   return { error: msg.build.noInstance(verb, paperRoot) };
