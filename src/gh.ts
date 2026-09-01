@@ -164,6 +164,15 @@ function ghOkAs(token: string, args: string[]): boolean {
  * support, not a screen for `-`: `ext::` spells the same attack. Userinfo is refused rather than
  * stripped because `--from` is copied into a public commit message.
  */
+/** `owner/name`, the shape every verb's usage line promises. Checked because the value reaches
+ *  `gh` positionally, where the callee's own option parser reads a leading dash ([R138]). */
+const REPO_NAME = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/;
+
+export function assertRepoName(repo: string): string {
+  if (!REPO_NAME.test(repo)) throw new UserError(msg.workflow.badRepoName(repo));
+  return repo;
+}
+
 const INGEST_URL =
   /^(https:\/\/github\.com\/|git@github\.com:)[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+(\.git)?\/?$/;
 const INGEST_REF = /^[A-Za-z0-9_][A-Za-z0-9._/-]*$/;
