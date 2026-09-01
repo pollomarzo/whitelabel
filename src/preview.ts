@@ -95,14 +95,43 @@ export const LABEL_ZENODO_FAILED = 'zenodo-publish-failed';
  * journal.yml → tenant preview config ([R27]), mirrors loadJournalZenodo
  * ------------------------------------------------------------------------ */
 
-/** Read the tenant's `preview:` block from `<instanceRoot>/journal.yml`. A fresh tenant (or a
- *  build with no instance) has none, return the schema defaults (`provider: artifact`). */
-export function loadJournalPreview(instanceRoot: string | null): PreviewConfig {
-  const empty = () => JournalConfig.parse({ name: 'x' }).preview;
+/**
+ * Read the tenant's `preview:` block from `<instanceRoot>/journal.yml`. A fresh tenant (or a
+ * build with no instance) has none, so the schema defaults apply (`provider: artifact`).
+ *
+ * A journal.yml that will not parse is the TENANT's error, and deploy-preview does not fail the
+ * run ([R16]), so it degrades like any other unusable provider and `problem` carries the reason
+ * into the comment an editor actually reads ([R140]).
+ */
+export function loadJournalPreview(instanceRoot: string | null): {
+  preview: PreviewConfig;
+  problem?: string;
+} {
+  const empty = () => ({ preview: JournalConfig.parse({ name: 'x' }).preview });
   if (!instanceRoot) return empty();
   const path = join(instanceRoot, 'journal.yml');
   if (!existsSync(path)) return empty();
-  return JournalConfig.parse(readDoc(path).toJS() ?? {}).preview;
+  try {
+    return { preview: JournalConfig.parse(readDoc(path).toJS() ?? {}).preview };
+  } catch (e) {
+    return { ...empty(), problem: msg.workflow.previewBadJournal(path, firstLine(e)) };
+  }
+}
+
+/** The part of a thrown error a reader can act on. A zod failure's `message` is a JSON dump
+ *  whose first line is `[`, so name the offending key instead. */
+function firstLine(e: unknown): string {
+  const issues = (e as { issues?: Array<{ path?: unknown[]; message?: string }> })?.issues;
+  const first = Array.isArray(issues) ? issues[0] : undefined;
+  if (first) {
+    const where = (first.path ?? []).join('.');
+    return where ? `${where}: ${first.message}` : (first.message ?? 'invalid');
+  }
+  const line = String((e as Error)?.message ?? e)
+    .split('\n')
+    .map((l) => l.trim())
+    .find(Boolean);
+  return line ?? 'unreadable';
 }
 
 /* --------------------------------------------------------------------------
@@ -270,13 +299,16 @@ export async function cmdDeployPreview(
     return ok({ preview: 'skipped', reason: msg.workflow.previewNoPrNumberReason });
   }
 
-  const preview = loadJournalPreview(instanceRoot);
+  const { preview, problem } = loadJournalPreview(instanceRoot);
+  if (problem) process.stderr.write(annotate('warning', problem) + '\n');
   // Deep-link the specific Paper CI run that holds the paper-build artifact (Stage 2 knows it as
   // workflow_run.id); fall back to the Actions tab when it wasn't passed (e.g. a local run).
   const runUrl = input.artifactRunId
     ? `${serverUrl}/${repo ?? ''}/actions/runs/${input.artifactRunId}`
     : `${serverUrl}/${repo ?? ''}/actions`;
-  const plan = planPreview({ preview, cf, repo: repo ?? 'paper', pr });
+  const plan = problem
+    ? ({ mode: 'artifact', reason: problem } as PreviewPlan)
+    : planPreview({ preview, cf, repo: repo ?? 'paper', pr });
 
   let outcome: Record<string, unknown>;
   if (plan.mode === 'cloudflare') {

@@ -765,6 +765,10 @@ export const workflow = {
   badRepoName: (got: string): string =>
     `--repo takes owner/name, not ${JSON.stringify(got.slice(0, 60))}.`,
 
+  previewBadJournal: (path: string, why: string): string =>
+    `${path} could not be read (${why}), so the preview fell back to an artifact link. ` +
+    `Fix the journal config and re-run; nothing else in this run depends on it.`,
+
   checkPostBadReport: (path: string): string =>
     `${path} is not a checks report (no checkRun.conclusion). It comes from the Stage-1 ` +
     `artifact, so this means that artifact is truncated, corrupt or hostile; nothing was posted.`,
