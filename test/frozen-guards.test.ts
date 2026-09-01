@@ -19,8 +19,8 @@ import { parseDocument } from 'yaml';
 
 const SHIM = 'templates/paper';
 
-/** The `run:` script of the step with this `id`, from a frozen workflow or action. */
-function stepScript(file: string, id: string): string {
+/** The `run:` script of the step with this `id` (or `name`), from a frozen workflow or action. */
+function stepScript(file: string, id: string | undefined, name?: string): string {
   const doc = parseDocument(readFileSync(join(SHIM, file), 'utf8')).toJS() as {
     runs?: { steps: Array<Record<string, string>> };
     jobs?: Record<string, { steps: Array<Record<string, string>> }>;
@@ -28,8 +28,8 @@ function stepScript(file: string, id: string): string {
   const steps = doc.runs
     ? doc.runs.steps
     : Object.values(doc.jobs ?? {}).flatMap((j) => j.steps ?? []);
-  const step = steps.find((s) => s.id === id);
-  if (!step?.run) throw new Error(`no step '${id}' with a run: in ${file}`);
+  const step = steps.find((s) => (id ? s.id === id : s.name === name));
+  if (!step?.run) throw new Error(`no step '${id ?? name}' with a run: in ${file}`);
   return step.run;
 }
 
@@ -105,5 +105,15 @@ describe('preview-deploy refuses a PR number the artifact made up ([R136])', () 
   it('no-ops on a push build, which has no PR number', () => {
     const f = fixture(null, 'deadbeef');
     expect(run(script, { ...f.env, REPO: 'o/r', HEAD_SHA: 'deadbeef' }, f.dir).code).toBe(0);
+  });
+});
+
+describe('the Stage-1 artifact stays readable by the PREVIOUS Stage 2 ([R146])', () => {
+  const script = stepScript('.github/workflows/check.yml', undefined, 'Record PR number');
+
+  it('still writes head-sha, which an older check-post.yml cats', () => {
+    // An upgrade PR runs the PR's Stage 1 against the BASE's Stage 2, so dropping a field from
+    // the artifact breaks the very PR that would install the fix.
+    expect(script).toContain('> head-sha');
   });
 });
