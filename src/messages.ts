@@ -762,6 +762,10 @@ export const pr = {
 export const workflow = {
   // deposit
   depositUsage: 'oak deposit: usage: oak deposit <prepare|publish|status> [...]',
+  previewBadPrNumber: (got: string): string =>
+    `.pr-number is not a PR number (${JSON.stringify(got.slice(0, 40))}). It comes from the ` +
+    `build artifact, so a value of this shape means that artifact is corrupt or hostile.`,
+
   depositNoToken: (sandbox: boolean): string =>
     `no token: set ${sandbox ? 'ZENODO_TOKEN_SANDBOX' : 'ZENODO_TOKEN'} or pass --token`,
   depositNoRepo: 'deposit prepare: pass --repo owner/repo (or set GITHUB_REPOSITORY)',

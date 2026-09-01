@@ -28,7 +28,7 @@ import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { readDoc } from './yaml-io.js';
 import * as msg from './messages.js';
-import { annotate } from './messages.js';
+import { annotate, UserError } from './messages.js';
 import { JournalConfig, type PreviewConfig } from './schema.js';
 
 /* --------------------------------------------------------------------------
@@ -108,14 +108,27 @@ export function loadJournalPreview(instanceRoot: string | null): PreviewConfig {
  * Pure logic
  * ------------------------------------------------------------------------ */
 
+/** A PR number, as a whole string. The file comes from the untrusted Stage-1 artifact and the
+ *  value is interpolated into a `gh api` path, so anything else is refused ([R136]). */
+const PR_NUMBER = /^[0-9]{1,10}$/;
+
 /** Read `.pr-number` from the build dir and DELETE it ([R26]) so it never serves publicly.
- *  Returns null when absent (a push build, or a non-PR run); the caller then no-ops. */
+ *  Returns null when absent (a push build, or a non-PR run); the caller then no-ops. A file
+ *  present but malformed throws: that is a corrupt or hostile artifact, not an absent one. */
 export function takePrNumber(siteDir: string): string | null {
   const f = join(siteDir, '.pr-number');
   if (!existsSync(f)) return null;
   const n = readFileSync(f, 'utf8').trim();
   rmSync(f, { force: true });
-  return n || null;
+  if (!n) return null;
+  if (!PR_NUMBER.test(n)) throw new UserError(msg.workflow.previewBadPrNumber(n));
+  return n;
+}
+
+/** The same shape check for a PR number reaching `oak notify` by flag or by file ([R136]). */
+export function assertPrNumber(n: string): string {
+  if (!PR_NUMBER.test(n)) throw new UserError(msg.workflow.previewBadPrNumber(n));
+  return n;
 }
 
 /** Apply `{repo}`/`{pr}` placeholders in the preview branch pattern, then slugify to a

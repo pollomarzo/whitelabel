@@ -367,6 +367,14 @@ describe('a flag passed without a value is refused', () => {
   });
 });
 
+describe('a PR number is a PR number ([R136])', () => {
+  it('refuses one that is not, whether it came from a flag or the artifact', () => {
+    const r = oak(['notify', 'new-version', '--pr', '1/comments?x=', '--paper', fixturePaper]);
+    expect(r.code).toBe(2);
+    expect(r.stderr).toContain('not a PR number');
+  });
+});
+
 describe('a sandbox deposit never reaches for the production token ([R133])', () => {
   it('refuses when only the production token is set', () => {
     const env = { ZENODO_TOKEN: 'production-secret', ZENODO_TOKEN_SANDBOX: undefined };

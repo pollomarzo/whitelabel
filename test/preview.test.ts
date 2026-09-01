@@ -100,6 +100,19 @@ describe('takePrNumber', () => {
   it('treats a blank file as null', () => {
     expect(takePrNumber(siteWithPr('   '))).toBeNull();
   });
+
+  it('refuses a value that is not a PR number ([R136])', () => {
+    // The file comes from the Stage-1 artifact, which runs fork content.
+    for (const hostile of ['1/comments?x=', '../../../user/repos', '1 2', 'abc']) {
+      expect(() => takePrNumber(siteWithPr(hostile))).toThrow(/not a PR number/);
+    }
+  });
+
+  it('still deletes the file it refused, so it cannot be served ([R26])', () => {
+    const dir = siteWithPr('../../etc');
+    expect(() => takePrNumber(dir)).toThrow();
+    expect(existsSync(join(dir, '.pr-number'))).toBe(false);
+  });
 });
 
 describe('previewBranch', () => {
