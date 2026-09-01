@@ -29,6 +29,14 @@ import { z } from 'zod';
  * `.loose()` tolerates future engine option keys on a paper pinned to a newer
  * engine; a paper is always read by its matched engine, but the resilience is free.
  */
+/** An edition id, which is a FILENAME SEGMENT (`editions/<id>.yml`) in compose's extends chain,
+ *  in validate's layer list and in what `oak bootstrap` writes, so it may not carry a path
+ *  ([R141]). Author-controlled on a fork PR. */
+export const EDITION_ID = z
+  .string()
+  .min(1)
+  .regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/, 'must be a plain name (letters, digits, . _ -)');
+
 export const OaktreeSaplingOptions = z
   .object({
     /** Engine ref: a released tag (`vX.Y.Z`), the engine default branch, a SHA, or
@@ -37,7 +45,7 @@ export const OaktreeSaplingOptions = z
     /** Per-paper edition coordinate (dec. 22): selects `editions/<edition>.yml`.
      *  Required in the repo=paper (n=1) path we build first; a repo=journal build
      *  reads the version from `journal.yml` but still carries `edition` per paper. */
-    edition: z.string().min(1),
+    edition: EDITION_ID,
   })
   .loose();
 export type OaktreeSaplingOptions = z.infer<typeof OaktreeSaplingOptions>;
@@ -158,7 +166,7 @@ export const RegistryEntry = z
      * metadata (title, keywords) is still fetched per paper, never cached here.
      */
     site_url: z.string().optional(),
-    edition: z.string().min(1),
+    edition: EDITION_ID,
   })
   .loose();
 export type RegistryEntry = z.infer<typeof RegistryEntry>;

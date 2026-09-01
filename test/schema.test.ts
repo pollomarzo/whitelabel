@@ -34,6 +34,22 @@ describe('OaktreeSaplingOptions', () => {
   });
 });
 
+describe('the edition id cannot carry a path ([R141])', () => {
+  const opts = (edition: string) => () => OaktreeSaplingOptions.parse({ version: 'v1', edition });
+
+  it('refuses a traversal, which would compose an extends outside the instance root', () => {
+    for (const bad of ['../../../etc/shadow', './x', 'a/b', '..', '-lead']) {
+      expect(opts(bad), bad).toThrow();
+    }
+  });
+
+  it('accepts the ids a journal actually uses', () => {
+    for (const good of ['2026', 'ed-2026', 'spring_2026', 'v1.2']) {
+      expect(opts(good), good).not.toThrow();
+    }
+  });
+});
+
 describe('readEngineOptions (finding 3: sibling options coexist)', () => {
   it('extracts the engine key without tripping on a sibling youtube option', () => {
     const projectOptions = {
