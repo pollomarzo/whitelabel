@@ -367,6 +367,41 @@ describe('a flag passed without a value is refused', () => {
   });
 });
 
+describe('--repo takes owner/name ([R138])', () => {
+  it('refuses a value gh would read as an option or a foreign URL', () => {
+    for (const bad of ['-u', 'https://evil.example/x/y', 'notarepo']) {
+      const r = oak(['upgrade', '--repo', bad, '--yes']);
+      expect(r.code, bad).toBe(2);
+      expect(r.stderr, bad).toContain('takes owner/name');
+    }
+  });
+});
+
+describe('check-post refuses a report the artifact made up ([R137])', () => {
+  const post = (body: string) => {
+    const dir = mkdtempSync(join(tmpdir(), 'oak-report-'));
+    const f = join(dir, 'report.json');
+    writeFileSync(f, body);
+    return oak(['check-post', '--report', f, '--repo', 'o/r', '--sha', 'deadbeef']);
+  };
+
+  it('refuses JSON it cannot parse', () => {
+    const r = post('{ truncated');
+    expect(r.code).toBe(1);
+    expect(r.stderr).toContain('is not a checks report');
+  });
+
+  it('refuses valid JSON that carries no verdict', () => {
+    // Stage 1's own `jq -e .checkRun.conclusion` guard runs in the fork-controlled half, so
+    // Stage 2 cannot lean on it.
+    for (const body of ['{}', '{"checkRun":{}}', '{"checkRun":{"conclusion":3}}', 'null']) {
+      const r = post(body);
+      expect(r.code, body).toBe(1);
+      expect(r.stderr, body).toContain('is not a checks report');
+    }
+  });
+});
+
 describe('a PR number is a PR number ([R136])', () => {
   it('refuses one that is not, whether it came from a flag or the artifact', () => {
     const r = oak(['notify', 'new-version', '--pr', '1/comments?x=', '--paper', fixturePaper]);

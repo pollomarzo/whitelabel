@@ -837,7 +837,20 @@ async function cmdCheckPost(argv: string[]): Promise<number> {
     process.stderr.write(msg.workflow.checkPostNoReport(reportPath) + '\n');
     return 2;
   }
-  const report = JSON.parse(readFileSync(reportPath, 'utf8'));
+  // Stage 1 is fork-controlled, so this file is untrusted input. A bad one is a sentence, not
+  // a stack: Stage 1's own jq guard runs in that same untrusted half ([R137]).
+  let report;
+  try {
+    report = JSON.parse(readFileSync(reportPath, 'utf8'));
+  } catch {
+    process.stderr.write(annotate('error', msg.workflow.checkPostBadReport(reportPath)) + '\n');
+    return 1;
+  }
+  const cr = report?.checkRun;
+  if (!cr || typeof cr.conclusion !== 'string') {
+    process.stderr.write(annotate('error', msg.workflow.checkPostBadReport(reportPath)) + '\n');
+    return 1;
+  }
 
   const gh = await import('./gh.js');
   const { cmdCheckPost: run, frozenPathsTouched } = await import('./checks.js');
@@ -1025,7 +1038,7 @@ async function cmdUpgrade(argv: string[]): Promise<number> {
     : has(argv, 'files-only')
       ? 'files-only'
       : 'both';
-  const repoRoot = paper ? resolve(paper) : gh.tempClone(repo!);
+  const repoRoot = paper ? resolve(paper) : gh.tempClone(gh.assertRepoName(repo!));
 
   const out = await upgrade.cmdUpgrade(
     { repoRoot, to: flag(argv, 'to'), mode },

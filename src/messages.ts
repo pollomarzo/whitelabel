@@ -762,6 +762,13 @@ export const pr = {
 export const workflow = {
   // deposit
   depositUsage: 'oak deposit: usage: oak deposit <prepare|publish|status> [...]',
+  badRepoName: (got: string): string =>
+    `--repo takes owner/name, not ${JSON.stringify(got.slice(0, 60))}.`,
+
+  checkPostBadReport: (path: string): string =>
+    `${path} is not a checks report (no checkRun.conclusion). It comes from the Stage-1 ` +
+    `artifact, so this means that artifact is truncated, corrupt or hostile; nothing was posted.`,
+
   previewBadPrNumber: (got: string): string =>
     `.pr-number is not a PR number (${JSON.stringify(got.slice(0, 40))}). It comes from the ` +
     `build artifact, so a value of this shape means that artifact is corrupt or hostile.`,
