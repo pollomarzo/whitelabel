@@ -159,6 +159,10 @@ export const usage = (): string =>
 export const unknownCommand = (verb: string, near: string | null): string =>
   `oak: unknown command '${verb}'${near ? `; did you mean '${near}'?` : ''}\n`;
 
+export const flagNeedsValue = (name: string): string =>
+  `--${name} needs a value. It was passed with none, which usually means an empty shell ` +
+  `variable: quote it, or drop the flag to use the default.`;
+
 /* ═══════════════════════════════════════════════════════════════════════════════════════════
  * The confirm prompt: every plan ends here.
  * ═════════════════════════════════════════════════════════════════════════════════════════ */

@@ -1,11 +1,8 @@
 #!/usr/bin/env node
 /**
- * cli.ts: the `oak` entry point (bundled to dist/cli.cjs per tag; CI calls it directly
- * via ci/run.sh). Verb surface maps the 7 current isp-actions-config workflows (impl §2).
- *
- * Implemented: `build` (slice 2). The rest are stubbed with their slice number. The myst
- * edge is imported lazily inside `build` so `oak` with no/other args stays light and the
- * dep only loads when actually building.
+ * cli.ts: the `oak` entry point (bundled to dist/cli.cjs per tag; CI calls it directly via
+ * ci/run.sh). Every verb below is implemented. The myst edge is imported lazily inside `build`
+ * so `oak` with no/other args stays light and the dep only loads when actually building.
  */
 import { join, resolve } from 'node:path';
 import {
@@ -44,8 +41,6 @@ type Verb =
   | 'upgrade'
   | 'conformance';
 
-const STUB_SLICE: Partial<Record<Verb, string>> = {};
-
 /** engineRoot = the dir holding paper-base.yml. When run as dist/cli.cjs it is one level
  *  up from the bundle; in dev (tsx/src) it is two up from src/. Detect by probing. */
 function engineRoot(): string {
@@ -56,9 +51,18 @@ function engineRoot(): string {
   return resolve(__dirname, '..');
 }
 
+/**
+ * A `--name value` pair. Absent is undefined; PRESENT BUT MALFORMED throws, because the two are
+ * not the same question: an unset flag falls back to an env var at several call sites, so a
+ * `--repo` whose value vanished (an unquoted empty shell variable) would silently act on
+ * whatever the environment names instead of refusing.
+ */
 function flag(argv: string[], name: string): string | undefined {
   const i = argv.indexOf(`--${name}`);
-  return i >= 0 ? argv[i + 1] : undefined;
+  if (i < 0) return undefined;
+  const value = argv[i + 1];
+  if (value === undefined || value.startsWith('--')) throw new UserError(msg.flagNeedsValue(name));
+  return value;
 }
 function has(argv: string[], name: string): boolean {
   return argv.includes(`--${name}`);
@@ -1167,10 +1171,6 @@ async function main(argv: string[]): Promise<number> {
   if (verb === 'bootstrap') return cmdBootstrap(argv.slice(1));
   if (verb === 'upgrade') return cmdUpgrade(argv.slice(1));
   if (verb === 'conformance') return cmdConformance(argv.slice(1));
-  if (verb && verb in STUB_SLICE) {
-    process.stderr.write(msg.workflow.notImplemented(verb, STUB_SLICE[verb]!) + '\n');
-    return 1;
-  }
   // A word we do not know is an ERROR, not an invitation to read the manual. Printing usage
   // alone answers a question nobody asked and hides the one that matters: a typo looks exactly
   // like a bare `oak`, so the reader assumes the command ran and did nothing.

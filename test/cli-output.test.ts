@@ -326,3 +326,25 @@ describe('subprocess output carries its provenance', () => {
     expect(labelChildOutput('gh', undefined)).toBe('');
   });
 });
+
+describe('a flag passed without a value is refused', () => {
+  it('does not swallow the next flag as the value', () => {
+    const r = oak(['notify', 'new-version', '--repo', '--pr', '1']);
+    expect(r.code).toBe(2);
+    expect(r.stderr).toContain('--repo needs a value');
+  });
+
+  it('does not fall back to the environment when the value is missing', () => {
+    // The dangerous half: several call sites read `flag(...) ?? process.env.X`, so a value that
+    // vanished (an unquoted empty shell variable) would act on the environment's repo instead.
+    const r = oak(['notify', 'new-version', '--pr', '1', '--repo']);
+    expect(r.code).toBe(2);
+    expect(r.stderr).toContain('--repo needs a value');
+  });
+
+  it('still accepts a value that merely looks unusual', () => {
+    // One dash is a value, not a flag: only `--` is unambiguous enough to refuse.
+    const r = oak(['validate', '--paper', '-weird', '--no-instance']);
+    expect(r.stderr).not.toContain('needs a value');
+  });
+});
