@@ -45,10 +45,12 @@ jobs:
           echo "report ok; conclusion: $(jq -r '.checkRun.conclusion' report.json)"
 
       # Stage 2 cannot get this from its own event: workflow_run.pull_requests is EMPTY for forks.
-      # The head sha is NOT stashed here: this file is fork-controlled, and a value Stage 2 can read
-      # from its own event must never be taken from the artifact instead.
+      # Stage 2 takes the head sha from its OWN event and must never read it here: this file is
+      # fork-controlled. It is still WRITTEN, unread, so that an upgrade PR whose Stage 2 is still
+      # the previous version keeps working; drop it once no repo runs a shim older than v0.0.3.
       - name: Record PR number
         run: |
+          echo "${{ github.event.pull_request.head.sha || github.sha }}" > head-sha
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             echo "${{ github.event.pull_request.number }}" > pr-number
           fi
