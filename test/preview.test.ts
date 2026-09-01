@@ -243,12 +243,38 @@ describe('comment bodies', () => {
   });
 });
 
+describe('a journal.yml the tenant broke ([R140])', () => {
+  const inst = (body: string) => {
+    const d = mkdtempSync(join(tmpdir(), 'oak-inst-'));
+    writeFileSync(join(d, 'journal.yml'), body);
+    return d;
+  };
+
+  it('degrades instead of throwing', () => {
+    for (const body of ['name: J\npreview:\n  provider: nonsense\n', 'name: [unclosed\n']) {
+      expect(() => loadJournalPreview(inst(body)), body).not.toThrow();
+      expect(loadJournalPreview(inst(body)).preview.provider, body).toBe('artifact');
+    }
+  });
+
+  it('names the offending key, not a JSON dump', () => {
+    // The reason rides into the PR comment, so `([)` (a zod message's first line) is no use.
+    const got = loadJournalPreview(inst('name: J\npreview:\n  provider: nonsense\n'));
+    expect(got.problem).toContain('journal.yml');
+    expect(got.problem).toContain('preview.provider');
+  });
+
+  it('a readable one carries no problem', () => {
+    expect(loadJournalPreview('test/fixture-instance').problem).toBeUndefined();
+  });
+});
+
 describe('loadJournalPreview', () => {
   it('returns schema defaults with no instance', () => {
-    expect(loadJournalPreview(null).provider).toBe('artifact');
+    expect(loadJournalPreview(null).preview.provider).toBe('artifact');
   });
   it('reads the fixture-instance journal.yml (provider: artifact)', () => {
-    expect(loadJournalPreview('test/fixture-instance').provider).toBe('artifact');
+    expect(loadJournalPreview('test/fixture-instance').preview.provider).toBe('artifact');
   });
 });
 
