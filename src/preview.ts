@@ -161,6 +161,31 @@ export function assertPrNumber(n: string): string {
   return n;
 }
 
+/** Cloudflare Pages runs these from the deploy root (`_worker.js`/`functions/` are code;
+ *  `_redirects`/`_headers`/`_routes.json` rewrite responses). A fork controls the artifact, so a
+ *  paper preview could ship one and get code execution on the tenant's Pages project ([R154]). */
+const PAGES_CONTROL_FILES = [
+  '_worker.js',
+  'functions',
+  '_routes.json',
+  '_redirects',
+  '_headers',
+  '_middleware.js',
+];
+
+/** Remove Pages control files from the deploy root; returns the names removed ([R154]). */
+export function stripPagesControlFiles(siteDir: string): string[] {
+  const removed: string[] = [];
+  for (const name of PAGES_CONTROL_FILES) {
+    const p = join(siteDir, name);
+    if (existsSync(p)) {
+      rmSync(p, { recursive: true, force: true });
+      removed.push(name);
+    }
+  }
+  return removed;
+}
+
 const BRANCH_MAX = 28;
 const slug = (x: string): string =>
   x
@@ -298,6 +323,11 @@ export async function cmdDeployPreview(
     process.stderr.write(msg.workflow.noPrNumber + '\n');
     return ok({ preview: 'skipped', reason: msg.workflow.previewNoPrNumberReason });
   }
+
+  // Strip fork-controlled Pages control files before any deploy path ([R154]).
+  const stripped = stripPagesControlFiles(siteDir);
+  if (stripped.length)
+    process.stderr.write(annotate('warning', msg.workflow.previewStripped(stripped)) + '\n');
 
   const { preview, problem } = loadJournalPreview(instanceRoot);
   if (problem) process.stderr.write(annotate('warning', problem) + '\n');

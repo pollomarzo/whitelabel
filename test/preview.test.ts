@@ -4,11 +4,12 @@
  * strip ([R26]), journal-driven CF config ([R27]), and the new-version reminder ([R23]).
  */
 import { describe, it, expect } from 'vitest';
-import { mkdtempSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, existsSync, mkdirSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   takePrNumber,
+  stripPagesControlFiles,
   previewBranch,
   planPreview,
   recordUrlForDoi,
@@ -112,6 +113,39 @@ describe('takePrNumber', () => {
     const dir = siteWithPr('../../etc');
     expect(() => takePrNumber(dir)).toThrow();
     expect(existsSync(join(dir, '.pr-number'))).toBe(false);
+  });
+});
+
+describe('stripPagesControlFiles removes what turns a static upload into an origin ([R154])', () => {
+  it('removes a fork-planted _worker.js', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'oak-strip-'));
+    writeFileSync(
+      join(dir, '_worker.js'),
+      'export default { fetch(){ return new Response("x") } }',
+    );
+    writeFileSync(join(dir, 'index.html'), '<h1>ok</h1>');
+    const removed = stripPagesControlFiles(dir);
+    expect(removed).toContain('_worker.js');
+    expect(existsSync(join(dir, '_worker.js'))).toBe(false);
+    expect(existsSync(join(dir, 'index.html'))).toBe(true);
+  });
+
+  it('removes the redirect/header/routes files and a functions dir', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'oak-strip-'));
+    writeFileSync(join(dir, '_redirects'), '/* https://evil.example 302');
+    writeFileSync(join(dir, '_headers'), '/*\n  Set-Cookie: x');
+    writeFileSync(join(dir, '_routes.json'), '{}');
+    mkdirSync(join(dir, 'functions'));
+    writeFileSync(join(dir, 'functions', 'index.js'), 'export function onRequest(){}');
+    const removed = stripPagesControlFiles(dir);
+    expect(removed.sort()).toEqual(['_headers', '_redirects', '_routes.json', 'functions']);
+    expect(readdirSync(dir)).toHaveLength(0);
+  });
+
+  it('is a no-op on a clean static build', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'oak-strip-'));
+    writeFileSync(join(dir, 'index.html'), 'ok');
+    expect(stripPagesControlFiles(dir)).toEqual([]);
   });
 });
 
@@ -340,6 +374,28 @@ describe('cmdDeployPreview', () => {
     });
     const c = stickies.find((s) => s.header === STICKY_PREVIEW)!;
     expect(c.body).toContain('/actions/runs/12345');
+  });
+
+  it('strips a fork-planted _worker.js before the deployer sees the dir ([R154])', async () => {
+    const dir = siteWithPr('7');
+    writeFileSync(
+      join(dir, '_worker.js'),
+      'export default { fetch(){ return new Response("pwn") } }',
+    );
+    let sawWorker = true;
+    const snoop: PagesDeployer = {
+      async deploy(opts) {
+        sawWorker = existsSync(join(opts.dir, '_worker.js'));
+        return 'https://paper-repo-7.pages.dev';
+      },
+    };
+    const { gh } = fakeGh();
+    await cmdDeployPreview(baseInput(dir, { instanceRoot: instanceCf(dir) }), {
+      deployer: snoop,
+      gh,
+    });
+    expect(sawWorker).toBe(false);
+    expect(existsSync(join(dir, '_worker.js'))).toBe(false);
   });
 
   it('no-ops when there is no .pr-number', async () => {
