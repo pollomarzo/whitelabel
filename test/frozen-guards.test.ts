@@ -12,10 +12,18 @@
  */
 import { describe, it, expect } from 'vitest';
 import { spawnSync } from 'node:child_process';
-import { readFileSync, mkdtempSync, writeFileSync, chmodSync } from 'node:fs';
+import {
+  readFileSync,
+  mkdtempSync,
+  writeFileSync,
+  chmodSync,
+  mkdirSync,
+  existsSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseDocument } from 'yaml';
+import { readdirSync } from 'node:fs';
 
 const SHIM = 'templates/paper';
 
@@ -67,6 +75,47 @@ describe('the engine action refuses an untrusted ref class ([R41])', () => {
   });
 });
 
+describe('the engine action refuses a malformed ref before echoing it ([R155])', () => {
+  const script = stepScript('.github/actions/engine/action.yml', 'ref');
+
+  /** Run the ref step with `yq` stubbed to print `value` and a real GITHUB_OUTPUT file. */
+  function refStep(value: string) {
+    const dir = mkdtempSync(join(tmpdir(), 'oak-ref-'));
+    const bin = mkdtempSync(join(tmpdir(), 'oak-bin-'));
+    writeFileSync(join(dir, 'myst.yml'), 'project: {}');
+    writeFileSync(join(bin, 'yq'), `#!/bin/sh\nprintf '%s' "$YQ_VALUE"\n`);
+    chmodSync(join(bin, 'yq'), 0o755);
+    const outFile = join(dir, 'gh_output');
+    writeFileSync(outFile, '');
+    const r = run(
+      script,
+      { PATH: `${bin}:${process.env.PATH}`, YQ_VALUE: value, GITHUB_OUTPUT: outFile },
+      dir,
+    );
+    return { ...r, output: readFileSync(outFile, 'utf8') };
+  }
+
+  it('refuses a block-scalar version that injects a second $GITHUB_OUTPUT line', () => {
+    const r = refStep('v0.0.3\ninjected=PWNED');
+    expect(r.code).toBe(1);
+    expect(r.output).not.toContain('injected=PWNED');
+  });
+
+  it('refuses a version carrying a shell metacharacter', () => {
+    for (const v of ['v1;id', 'v1 2', 'v1$(id)', 'v1`id`']) {
+      expect(refStep(v).code).toBe(1);
+    }
+  });
+
+  it('writes exactly one ref= line for the versions a paper actually pins', () => {
+    for (const v of ['v1.2.3', 'v0.0.0-dev.35', 'refs/pull/7/merge', 'a'.repeat(40), 'main']) {
+      const r = refStep(v);
+      expect(r.code).toBe(0);
+      expect(r.output.trim()).toBe(`ref=${v}`);
+    }
+  });
+});
+
 describe('preview-deploy refuses a PR number the artifact made up ([R136])', () => {
   const script = stepScript('.github/workflows/preview-deploy.yml', 'pr-owner');
 
@@ -112,8 +161,93 @@ describe('the Stage-1 artifact stays readable by the PREVIOUS Stage 2 ([R146])',
   const script = stepScript('.github/workflows/check.yml', undefined, 'Record PR number');
 
   it('still writes head-sha, which an older check-post.yml cats', () => {
-    // An upgrade PR runs the PR's Stage 1 against the BASE's Stage 2, so dropping a field from
-    // the artifact breaks the very PR that would install the fix.
+    // An upgrade PR runs new Stage 1 against old Stage 2, which still cats this field.
     expect(script).toContain('> head-sha');
+  });
+});
+
+describe('the dispatch step takes args as data, not as script ([R153])', () => {
+  const script = stepScript('.github/actions/engine/action.yml', 'dispatch');
+
+  /** The runner resolves `${{ }}` by TEXT substitution before bash sees the script, so deliver
+   *  the payload both ways: whichever shape the action ships, this is what would reach it. */
+  function dispatch(args: string) {
+    const dir = mkdtempSync(join(tmpdir(), 'oak-dispatch-'));
+    mkdirSync(join(dir, '.engine/ci'), { recursive: true });
+    const stub = join(dir, '.engine/ci/run.sh');
+    writeFileSync(stub, '#!/usr/bin/env bash\nprintf "%s\\n" "$@" > argv\n');
+    chmodSync(stub, 0o755);
+    const r = run(script.replaceAll('${{ inputs.args }}', args), { ARGS: args }, dir);
+    const f = join(dir, 'argv');
+    return {
+      ...r,
+      dir,
+      argv: existsSync(f) ? readFileSync(f, 'utf8').split('\n').filter(Boolean) : [],
+    };
+  }
+
+  it('does not run a command substitution carried in a tag name', () => {
+    // A v* tag reaches the token-bearing publish job; $IFS avoids the space git forbids.
+    const d = dispatch('release --tag v1.0.0$(touch${IFS}pwned)');
+    expect(existsSync(join(d.dir, 'pwned'))).toBe(false);
+    expect(d.argv).toEqual(['release', '--tag', 'v1.0.0$(touch${IFS}pwned)']);
+  });
+
+  it('does not run a backquoted command either', () => {
+    const d = dispatch('release --tag v1.0.0`touch${IFS}pwned`');
+    expect(existsSync(join(d.dir, 'pwned'))).toBe(false);
+  });
+
+  it('does not let a metacharacter start a second command', () => {
+    const d = dispatch('release --tag v1;touch pwned');
+    expect(existsSync(join(d.dir, 'pwned'))).toBe(false);
+  });
+
+  it('still word-splits the verb and its flags, which the shim depends on', () => {
+    expect(dispatch('check-post --report journal-checks/report.json --repo o/r').argv).toEqual([
+      'check-post',
+      '--report',
+      'journal-checks/report.json',
+      '--repo',
+      'o/r',
+    ]);
+  });
+
+  it('splits without globbing: a word is one argument even if it matches a file', () => {
+    const d = dispatch('release --tag v*');
+    writeFileSync(join(d.dir, 'v-decoy'), '');
+    expect(dispatch('release --tag v*').argv).toEqual(['release', '--tag', 'v*']);
+  });
+});
+
+describe('no frozen run: script interpolates an expression ([R153])', () => {
+  /** Every `run:` in the frozen surface, with the file and step that carries it. */
+  function runScripts(): Array<{ where: string; script: string }> {
+    const files = [
+      ...readdirSync(join(SHIM, '.github/workflows')).map((f) => `.github/workflows/${f}`),
+      '.github/actions/engine/action.yml',
+    ];
+    const out: Array<{ where: string; script: string }> = [];
+    for (const file of files) {
+      const doc = parseDocument(readFileSync(join(SHIM, file), 'utf8')).toJS() as {
+        runs?: { steps: Array<Record<string, string>> };
+        jobs?: Record<string, { steps: Array<Record<string, string>> }>;
+      };
+      const steps = doc.runs
+        ? doc.runs.steps
+        : Object.values(doc.jobs ?? {}).flatMap((j) => j.steps ?? []);
+      for (const s of steps)
+        if (s.run) out.push({ where: `${file}: ${s.id ?? s.name ?? '(unnamed)'}`, script: s.run });
+    }
+    return out;
+  }
+
+  it('every value a script reads arrives through env:, so none can be spliced', () => {
+    const spliced = runScripts().filter((s) => s.script.includes('${{'));
+    expect(spliced.map((s) => s.where)).toEqual([]);
+  });
+
+  it('finds the scripts it claims to check', () => {
+    expect(runScripts().length).toBeGreaterThan(5);
   });
 });

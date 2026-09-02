@@ -37,9 +37,11 @@ jobs:
       # Reached only when the engine died before writing anything, since even a usage error
       # produces a report. Points at the step holding the real message.
       - name: Ensure a valid report was produced
+        env:
+          VALIDATE_OUTCOME: ${{ steps.validate.outcome }}
         run: |
           if ! jq -e '.checkRun.conclusion' report.json >/dev/null 2>&1; then
-            echo "::error::oak validate wrote no report at all. The engine died before it could report. The real error is in the '${{ steps.validate.outcome }}' validate step's log above; nothing was posted to the PR."
+            echo "::error::oak validate wrote no report at all. The engine died before it could report. The real error is in the '$VALIDATE_OUTCOME' validate step's log above; nothing was posted to the PR."
             exit 1
           fi
           echo "report ok; conclusion: $(jq -r '.checkRun.conclusion' report.json)"
@@ -49,10 +51,14 @@ jobs:
       # fork-controlled. It is still WRITTEN, unread, so that an upgrade PR whose Stage 2 is still
       # the previous version keeps working; drop it once no repo runs a shim older than v0.0.3.
       - name: Record PR number
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          EVENT_NAME: ${{ github.event_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
-          echo "${{ github.event.pull_request.head.sha || github.sha }}" > head-sha
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            echo "${{ github.event.pull_request.number }}" > pr-number
+          printf '%s\n' "$HEAD_SHA" > head-sha
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            printf '%s\n' "$PR_NUMBER" > pr-number
           fi
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
