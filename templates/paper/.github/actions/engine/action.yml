@@ -23,6 +23,13 @@ runs:
           echo "::error::project.options.oaktree-sapling.version missing from myst.yml"
           exit 1
         fi
+        # fork-controlled on a PR: reject anything outside a plain ref charset before echoing,
+        # or a newline would inject a second $GITHUB_OUTPUT line.
+        case "$ref" in
+          *[!A-Za-z0-9._/-]*)
+            echo "::error::engine ref '$ref' has characters a git ref cannot; pin a plain version in myst.yml"
+            exit 1 ;;
+        esac
         echo "ref=$ref" >> "$GITHUB_OUTPUT"
 
     # --- pins.yml = the single source of truth, read by CI *and* local oak --
@@ -68,9 +75,13 @@ runs:
         environment-file: paper-environment.yml
         cache-environment: true
 
-    # --- dispatch. INSTANCE_REPO comes from pins.yml ('.' when co-located, repo=journal).
-    # Debuggability: run.sh echoes what it resolved at the top of every run.
-    - shell: bash
+    # --- dispatch. INSTANCE_REPO from pins.yml ('.' when co-located). args via env, never
+    # spliced: git allows $( ) in the v* tag it carries. Unquoted + set -f: word-split, no glob.
+    - id: dispatch
+      shell: bash
       env:
         INSTANCE_REPO: ${{ steps.pins.outputs.instance }}
-      run: .engine/ci/run.sh ${{ inputs.args }}
+        ARGS: ${{ inputs.args }}
+      run: |
+        set -f
+        .engine/ci/run.sh $ARGS
