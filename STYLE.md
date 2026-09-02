@@ -18,14 +18,16 @@ The role line is what a reader skims in `NOTES.md`'s module map.
 
 ## Comments
 
-Comments here are load-bearing and the usual "delete comments that narrate code" advice does not apply wholesale. The rule, three ways:
+Comments earn their place or go. Keep them strictly necessary and short: state the constraint, not the story around it. A comment that survives review is load-bearing; the narrative around it is not.
 
-- A comment stating a **constraint, invariant, or ratified decision stays**, and cites its `[R#]`. Prefer pointing to its R# than re-stating, and if a docs page is available link to it.
-- A comment explaining **why this is not the obvious approach stays**. These encode the dead ends, and they are what a fork's maintainer needs. `readBrandAssetOptions`'s "read from brand.yml directly, not the merged config, so only brand-declared assets are treated as brand-relative" is the model; maintain these short.
+- A comment stating a **constraint, invariant, or ratified decision stays**, in one line, citing its `[R#]` (or a docs link) rather than restating it. The `[R#]` holds the "what would go wrong"; do not spell it out.
+- A comment saying **why this is not the obvious approach stays**, in a line. `readBrandAssetOptions`'s "read from brand.yml directly, not the merged config" is the model: the dead end, named, nothing more.
 - A comment **narrating the next line goes**.
-- A comment **explaining a long rationale** becomes a link or an ID.
+- A **long rationale** becomes a link or an `[R#]`, never a paragraph in the source.
 
-Every export gets JSDoc. Cross-reference other symbols with `{@link Name}`, not a bare mention.
+When in doubt, cut. A three-line justification is a one-line constraint plus its `[R#]`.
+
+Every export gets JSDoc, kept to the contract (what it returns, what it throws), not a narrative. Cross-reference other symbols with `{@link Name}`, not a bare mention.
 
 Every cited `[R#]` must resolve in the ledger. Seeded files under `templates/` carry **no** `[R#]` (a tenant cannot resolve them); the engine's own `templates/*/README.md` may, since those stay in the engine repo.
 
