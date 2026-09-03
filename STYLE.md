@@ -18,18 +18,41 @@ The role line is what a reader skims in `NOTES.md`'s module map.
 
 ## Comments
 
-Comments earn their place or go. Keep them strictly necessary and short: state the constraint, not the story around it. A comment that survives review is load-bearing; the narrative around it is not.
+Comments earn their place or go: state the constraint, not the story.
 
-- A comment stating a **constraint, invariant, or ratified decision stays**, in one line, citing its `[R#]` (or a docs link) rather than restating it. The `[R#]` holds the "what would go wrong"; do not spell it out.
-- A comment saying **why this is not the obvious approach stays**, in a line. `readBrandAssetOptions`'s "read from brand.yml directly, not the merged config" is the model: the dead end, named, nothing more.
-- A comment **narrating the next line goes**.
-- A **long rationale** becomes a link or an `[R#]`, never a paragraph in the source.
+**Keep**, each in one line:
 
-When in doubt, cut. A three-line justification is a one-line constraint plus its `[R#]`.
+- A comment stating a **constraint, invariant, or ratified decision**, citing the reference the reader can open (below) rather than restating it.
+- A comment saying **why this is not the obvious approach**: a dead end, named.
+- A comment saying **why this looks wrong but is not**. It guards against a plausible wrong edit, so it reads as narration and is the one most likely to be deleted by mistake. Keep it.
 
-Every export gets JSDoc, kept to the contract (what it returns, what it throws), not a narrative. Cross-reference other symbols with `{@link Name}`, not a bare mention.
+**Go:**
 
-Every cited `[R#]` must resolve in the ledger. Seeded files under `templates/` carry **no** `[R#]` (a tenant cannot resolve them); the engine's own `templates/*/README.md` may, since those stay in the engine repo.
+- A comment **narrating the next line**.
+- A comment describing **what the code used to do**. Comments describe the code as it is, not relative to what it replaced: no "no longer", "used to", "replaces", "instead of".
+- A **long rationale**: it becomes a link or an `[R#]`, never a paragraph.
+
+When in doubt, cut. A three-line justification is a one-line constraint plus its reference.
+
+### Which reference to cite
+
+Cite the one the reader *of this file* can open:
+
+- `[R#]` for engine internals (resolves in the ledger).
+- the user doc page for a verb's **observable behaviour**: test it by asking whether the sentence is still true reading only the CLI's observable behaviour; if so it is user docs, not a source comment.
+- where neither resolves, the one line must be self-contained.
+
+```ts
+// BAD:  read from brand.yml directly, not the merged config, so that only
+//       brand-declared assets are treated as brand-relative
+// GOOD: read from brand.yml, not merged config [R42]
+```
+
+Every cited `[R#]` must resolve in the ledger; a doc link owes the same CI treatment, a path-and-anchor resolution check, or it rots faster than the comment it replaced ([R160]). Seeded files under `templates/` carry **no** `[R#]` (a tenant cannot resolve them); the engine's own `templates/*/README.md` may, since those stay in the engine repo.
+
+### JSDoc
+
+Every export gets one: contract first (what it returns, what it throws), in a line or two. A constraint riding along in a JSDoc is still one line plus its `[R#]`. Cross-reference other symbols with `{@link Name}`, not a bare mention.
 
 ## Naming
 
