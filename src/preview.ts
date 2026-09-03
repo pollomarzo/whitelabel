@@ -93,8 +93,8 @@ export function loadJournalPreview(instanceRoot: string | null): {
   }
 }
 
-/** A readable line from a thrown error; a zod failure's `message` is a JSON dump, so name its
- *  offending key instead. */
+/** A readable line from a thrown error; a zod failure's `message` is a JSON dump whose first line
+ *  is `[`, so name its offending key instead rather than using `e.message`. */
 function firstLine(e: unknown): string {
   const issues = (e as { issues?: Array<{ path?: unknown[]; message?: string }> })?.issues;
   const first = Array.isArray(issues) ? issues[0] : undefined;
@@ -134,7 +134,9 @@ export function assertPrNumber(n: string): string {
   return n;
 }
 
-/** Cloudflare Pages runs these from the deploy root; a fork controls the artifact ([R154]). */
+/** Cloudflare Pages runs these from the deploy root: `_worker.js`/`functions/` are code,
+ *  `_redirects`/`_headers`/`_routes.json` rewrite responses. A fork controls the artifact, so a
+ *  new entry must be one of those two kinds ([R154]). */
 const PAGES_CONTROL_FILES = [
   '_worker.js',
   'functions',
@@ -270,9 +272,8 @@ export interface PreviewDeps {
   gh: GhPr;
 }
 
-/** `oak deploy-preview <site>`: strip `.pr-number`, deploy the inert artifact (or degrade to an
- *  artifact-link comment), post the sticky preview comment, then run the new-version reminder.
- *  NEVER fails the run ([R16]); a missing `.pr-number` no-ops. */
+/** `oak deploy-preview <site>` ([R16]): never fails the run; a missing `.pr-number` no-ops.
+ *  What an editor sees: docs/verbs/deploy-preview.md */
 export async function cmdDeployPreview(
   input: DeployPreviewInput,
   deps: PreviewDeps,
@@ -312,8 +313,9 @@ export async function cmdDeployPreview(
       deps.gh.sticky(repoRoot, pr, STICKY_PREVIEW, previewComment(url));
       outcome = { preview: 'cloudflare', url, branch: plan.branch };
     } catch (e) {
-      // The one [R16] degrade: a CF failure still leaves the reviewer the artifact link. A gh
-      // failure below is NOT degraded; it throws.
+      // The one [R16] degrade: a CF failure still leaves the reviewer the artifact link. Not
+      // error-swallowing, it posts a different useful comment; a gh failure below is NOT degraded,
+      // it throws.
       const failure = (e as Error).message;
       process.stderr.write(annotate('warning', msg.workflow.cloudflareDegraded(failure)) + '\n');
       deps.gh.sticky(
