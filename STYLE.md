@@ -39,7 +39,7 @@ When in doubt, cut. A three-line justification is a one-line constraint plus its
 Cite the one the reader *of this file* can open:
 
 - `[R#]` for engine internals (resolves in the ledger).
-- a `DOCS.*` symbol from `docs-links.ts` for a verb's **observable behaviour**: test it by asking whether the sentence is still true reading only the CLI's observable behaviour; if so it is user docs, not a source comment. Cite the symbol, never a raw `docs/` path or URL: the symbol resolves to a real page + `(label)=` anchor that the docs build already checks ([R160]), and a page that does not exist yet is not a link to make.
+- a `DOCS.*` symbol from `docs-links.ts` for a verb's **observable behaviour**: test it by asking whether the sentence is still true reading only the CLI's observable behaviour; if so it is user docs, not a source comment. Cite the symbol, never a raw `docs/` path or URL: `docs-links.test.ts` already asserts every symbol resolves to a real page + `(label)=` anchor, so a symbol never rots; a raw path is unchecked, and a page that does not exist yet is not a link to make.
 - where neither resolves, the one line must be self-contained.
 
 ```ts
