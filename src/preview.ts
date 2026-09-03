@@ -272,8 +272,9 @@ export interface PreviewDeps {
   gh: GhPr;
 }
 
-/** `oak deploy-preview <site>` ([R16]): never fails the run; a missing `.pr-number` no-ops.
- *  What an editor sees: docs/verbs/deploy-preview.md */
+/** `oak deploy-preview <site>` ([R16]): serve the inert Stage-1 artifact at a preview URL (or
+ *  degrade to an artifact-link comment) and post it to the PR. Never fails the run; a missing
+ *  `.pr-number` no-ops. */
 export async function cmdDeployPreview(
   input: DeployPreviewInput,
   deps: PreviewDeps,
