@@ -274,7 +274,7 @@ export interface PreviewDeps {
 
 /** `oak deploy-preview <site>` ([R16]): serve the inert Stage-1 artifact at a preview URL (or
  *  degrade to an artifact-link comment) and post it to the PR. Never fails the run; a missing
- *  `.pr-number` no-ops. */
+ *  `.pr-number` no-ops. Observable behaviour: DOCS.deployPreview. */
 export async function cmdDeployPreview(
   input: DeployPreviewInput,
   deps: PreviewDeps,
