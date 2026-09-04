@@ -200,6 +200,8 @@ async function buildPaper(argv: string[]): Promise<{ paperRoot: string; resolved
   return { paperRoot, resolvedId: res.resolvedProject.id };
 }
 
+/** `oak build`: the two-pass compose+build of a paper, driving {@link buildPaper}.
+ *  Observable behaviour: DOCS.build. */
 async function cmdBuild(argv: string[]): Promise<number> {
   const { resolvedId } = await buildPaper(argv);
   process.stderr.write(msg.build.done(resolvedId ?? '?') + '\n');
@@ -235,6 +237,8 @@ function startOptsFrom(argv: string[]): StartOpts {
  * Never returns: myst's `startServer` resolves once the server is UP, and `main()`'s return
  * would exit the process out from under it. The wait is what keeps the server alive; Ctrl-C
  * ends it.
+ *
+ * Observable behaviour: DOCS.start.
  */
 async function cmdStart(argv: string[]): Promise<number> {
   const paperRoot = resolve(flag(argv, 'paper') ?? '.');
@@ -361,7 +365,8 @@ function emit(
   for (const line of (human ?? summarize)(result)) process.stderr.write(line + '\n');
 }
 
-/** `oak deposit <prepare|publish|status>`, the Zenodo deposit verbs (slice 3). */
+/** `oak deposit <prepare|publish|status>`, the Zenodo deposit verbs (slice 3).
+ *  Observable behaviour: DOCS.deposit. */
 async function cmdDeposit(argv: string[]): Promise<number> {
   const sub = argv[0];
   const rest = argv.slice(1);
@@ -448,7 +453,8 @@ function findExportedPdf(paperRoot: string): string | null {
 }
 
 /** `oak release --tag vX`: build + deposit publish + attach the bundle to the tag Release,
- *  post a commit comment / failure issue via gh (§1e). Env is derived from the committed DOI. */
+ *  post a commit comment / failure issue via gh (§1e). Env is derived from the committed DOI.
+ *  Observable behaviour: DOCS.release. */
 async function cmdRelease(argv: string[]): Promise<number> {
   const tag = flag(argv, 'tag');
   if (!tag) {
@@ -557,9 +563,9 @@ async function cmdDeployPreview(argv: string[]): Promise<number> {
 }
 
 /** `oak notify new-version [--pr N | --site <dir>]`, the standalone new-version reminder.
- *  deploy-preview runs the same logic internally ([R16]); this is the manual/testable entry.
- *  The PR number comes from `--pr` or a `.pr-number` in `--site` (read-only, deploy-preview
- *  owns the [R26] delete). */
+ *  deploy-preview runs the same logic internally ([R16]); this is the manual/testable entry, and
+ *  its `.pr-number` read is read-only (deploy-preview owns the [R26] delete).
+ *  Observable behaviour: DOCS.notify. */
 async function cmdNotify(argv: string[]): Promise<number> {
   if (argv[0] !== 'new-version') {
     process.stderr.write(msg.workflow.notifyUsage + '\n');
@@ -674,13 +680,10 @@ function validateSummary(out: {
   return lines;
 }
 
-/**
- * `oak validate`: run the journal-controlled checks (slice 4). Layer A (engine invariants, also
- * the `oak build` pre-flight phase) + Layer B (journal-selected editorial checks). Emits the
- * report to stdout and, with `--report <path>`, writes the full JSON envelope for the Stage-2 `oak
- * check-post` job to post. Does NOT post to GitHub itself: all PR write-back is uniform Stage-2
- * (the untrusted validate job holds no write token).
- */
+/** `oak validate`: run Layer-A engine invariants + the journal's Layer-B editorial checks (slice
+ *  4), with `--report <path>` writing the JSON envelope the Stage-2 `oak check-post` job posts.
+ *  Does NOT post to GitHub itself: the untrusted validate job holds no write token.
+ *  Observable behaviour: DOCS.validate. */
 async function cmdValidate(argv: string[]): Promise<number> {
   const paperRoot = resolve(flag(argv, 'paper') ?? '.');
   const reportPath = flag(argv, 'report');
@@ -791,10 +794,9 @@ async function cmdValidate(argv: string[]): Promise<number> {
 }
 
 /** `oak check-post --report <path> --repo <o/r> --sha <headsha> [--pr <n>]`, Stage-2 write-back
- *  (slice 4b). Reads the precomputed `oak validate` report and posts a first-class Check Run on
- *  the PR HEAD sha plus, when a PR, an always-on sticky comment. Runs in trusted base context
- *  (checks:write + pull-requests:write); never re-runs validate or touches myst. Best-effort:
- *  a failing post degrades to a `::warning::`, never fails the job (needs GH_TOKEN). */
+ *  (slice 4b). Runs in trusted base context (checks:write + pull-requests:write); never re-runs
+ *  validate or touches myst. Best-effort: a failing post degrades to a `::warning::`, never fails
+ *  the job (needs GH_TOKEN). Observable behaviour: DOCS.checkPost. */
 async function cmdCheckPost(argv: string[]): Promise<number> {
   const reportPath = flag(argv, 'report');
   const repo = flag(argv, 'repo') ?? process.env.GITHUB_REPOSITORY;
@@ -883,7 +885,8 @@ function secretsFrom(argv: string[]) {
 /** The typed secret flags, for the refusals that distinguish a typed one from an env value. */
 const SECRET_FLAGS = ['zenodo-token', 'zenodo-token-sandbox', 'cf-token', 'cf-account'] as const;
 
-/** `oak bootstrap <paper|journal>`: onboarding (slice 5). */
+/** `oak bootstrap <paper|journal>`: onboarding (slice 5).
+ *  Observable behaviour: DOCS.bootstrap. */
 async function cmdBootstrap(argv: string[]): Promise<number> {
   const sub = argv[0];
   const rest = argv.slice(1);
@@ -997,7 +1000,8 @@ async function cmdBootstrap(argv: string[]): Promise<number> {
   return 2;
 }
 
-/** `oak upgrade`: render-and-compare lifecycle (slice 5). */
+/** `oak upgrade`: render-and-compare lifecycle (slice 5).
+ *  Observable behaviour: DOCS.upgrade. */
 async function cmdUpgrade(argv: string[]): Promise<number> {
   const gh = await import('./gh.js');
   const upgrade = await import('./upgrade.js');
@@ -1029,8 +1033,9 @@ async function cmdUpgrade(argv: string[]): Promise<number> {
   return out.exitCode;
 }
 
-/** `oak conformance`: the paper-CI conformance harness (plan-paper-ci-conformance.md). Slice
- *  C0: `reset` (idempotent teardown of a cert run's ephemeral state). */
+/** `oak conformance <reset|certify>`: the paper-CI conformance harness
+ *  (plan-paper-ci-conformance.md). `reset` is idempotent teardown of a cert run's ephemeral state.
+ *  Observable behaviour: DOCS.conformance. */
 async function cmdConformance(argv: string[]): Promise<number> {
   const sub = argv[0];
   const rest = argv.slice(1);

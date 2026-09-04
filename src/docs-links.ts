@@ -60,6 +60,26 @@ export const DOCS = {
   cli: 'reference/cli',
   /** `oak deploy-preview`: a preview URL commented on the PR (or an artifact link). */
   deployPreview: 'reference/cli#deploy-preview',
+  /** `oak build`: the two-pass compose+build of a paper, and its `--exports-only`/`--no-exports` shapes. */
+  build: 'reference/cli#build',
+  /** `oak start`: the live dev server, and what it recomposes when `myst.yml` changes. */
+  start: 'reference/cli#start',
+  /** `oak validate`: the checks it runs, the verdict it prints, and the `--report` envelope. */
+  validate: 'reference/cli#validate',
+  /** `oak check-post`: the Check Run and sticky PR comment it posts from a validate report. */
+  checkPost: 'reference/cli#check-post',
+  /** `oak deposit <prepare|publish|status>`: the Zenodo verbs, and what `--sandbox` isolates. */
+  deposit: 'reference/cli#deposit',
+  /** `oak release --tag vX`: build, deposit, Release asset, and the comment or issue it leaves. */
+  release: 'reference/cli#release',
+  /** `oak notify new-version`: the standalone reminder and where its PR number comes from. */
+  notify: 'reference/cli#notify',
+  /** `oak bootstrap <paper|journal>`: onboarding a repo from templates. */
+  bootstrap: 'reference/cli#bootstrap',
+  /** `oak upgrade`: render-and-compare against a paper or repo, and the PR it opens. */
+  upgrade: 'reference/cli#upgrade',
+  /** `oak conformance <reset|certify>`: the paper-CI harness and its recorded verdict. */
+  conformance: 'reference/cli#conformance',
   /** `journal.yml`. */
   fileJournalYml: 'reference/files#file-journal-yml',
   /** `brand/brand.yml`. */
