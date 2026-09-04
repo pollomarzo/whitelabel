@@ -525,8 +525,8 @@ export const build = {
 
   /**
    * `oak build` run in the journal repo. The journal repo carries a `journal.yml` but its
-   * `myst.yml` is the WEBSITE, not a paper, before the shape check, the co-located rung took
-   * that `journal.yml` as proof of a paper and the run died deep inside the config read.
+   * `myst.yml` is the WEBSITE, not a paper. Without this shape check the co-located rung takes
+   * that `journal.yml` as proof of a paper and the run dies deep inside the config read.
    */
   inJournalRepo: (root: string): string =>
     `oak build: ${root} is the journal repo, not a paper. Its journal.yml holds the journal's ` +
