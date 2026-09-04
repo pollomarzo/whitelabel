@@ -121,8 +121,8 @@ export interface ZenodoTransport {
   ): Promise<TransportResponse>;
 }
 
-/** The real transport: global `fetch` (Node 24). Mirrors the python `request` helper:
- *  the access token rides as a query param, and a non-2xx logs the body to stderr. */
+/** The real transport: global `fetch` (Node 24). The access token rides as a query param;
+ *  a non-2xx logs the body to stderr. */
 export function createFetchTransport(): ZenodoTransport {
   return {
     async request(method, url, opts) {
@@ -207,8 +207,8 @@ export class ZenodoApi {
     return res;
   }
 
-  /** Paginated listing: walks `page=1..` at `size=100` until a short page. Replaces the
-   *  python's single unpaginated `size=100` fetch at all three lookup call sites ([R20]). */
+  /** Paginated listing: walks `page=1..` at `size=100` until a short page, so all three lookup
+   *  call sites paginate ([R20]). */
   async listMyDepositions(opts: { q?: string } = {}): Promise<Deposition[]> {
     const size = 100;
     const out: Deposition[] = [];
@@ -301,8 +301,9 @@ function matchRelated(items: Deposition[], identifier: string): Deposition | nul
   return null;
 }
 
+/** The deposition's concept DOI. `conceptdoi` is only set after first publish; before that,
+ *  build it from `conceptrecid`. */
 export function conceptDoiFor(dep: Deposition, sandbox: boolean): string {
-  // `conceptdoi` is only set after first publish; before that, build from `conceptrecid`.
   return dep.conceptdoi ?? `${doiPrefix(sandbox)}${dep.conceptrecid}`;
 }
 
@@ -410,6 +411,11 @@ export interface MetadataInput {
   extraDescParas?: string[] | null;
 }
 
+/**
+ * Build the Zenodo deposition metadata from a myst project plus the tenant's `zenodo:` config.
+ * The description is assembled as HTML paragraphs (abstract, tenant blurb, extra part, links);
+ * an id-first URN related identifier rides alongside the github URL ([R7]).
+ */
 export function buildMetadata(input: MetadataInput): Record<string, unknown> {
   const {
     project,
@@ -444,8 +450,7 @@ export function buildMetadata(input: MetadataInput): Record<string, unknown> {
 
   const desc: string[] = [];
   if (abstractParas) desc.push(...abstractParas.map((p) => `<p>${escapeHtml(p)}</p>`));
-  // The ISP "created as part of the Neuromatch Impact Scholars Program" blurb was hardcoded
-  // in the python; it is now an OPTIONAL per-tenant field ([R19]); a fresh tenant has none.
+  // Optional per-tenant blurb ([R19]); a fresh tenant has none.
   if (zenodo.description_blurb) desc.push(`<p>${escapeHtml(zenodo.description_blurb)}</p>`);
   if (extraDescParas) desc.push(...extraDescParas.map((p) => `<p>${escapeHtml(p)}</p>`));
   const yt = youtubeUrl(project);
@@ -478,7 +483,7 @@ export function buildMetadata(input: MetadataInput): Record<string, unknown> {
     related_identifiers: related,
     access_right: 'open',
   };
-  // Community is now optional per-tenant ([R19]); the hardcoded `neuromatch` is gone.
+  // Optional per-tenant community ([R19]).
   if (zenodo.community) md.communities = [{ identifier: zenodo.community }];
   if (keywords.length) md.keywords = keywords;
   if (version !== undefined) md.version = version;
@@ -596,8 +601,7 @@ export function resolveTemplateDir(template: string, paperRoot: string): string 
  *
  * Otherwise the bytes MUST be archived: a tenant's or an author's template rides in no other
  * artifact, so without this the DOI'd PDF quietly stops being reproducible (§7 / [R66]),
- * which is why unlocatable bytes are a hard error rather than a warning. This is the real
- * cost of template precedence, and the reason it cannot ship half-built.
+ * which is why unlocatable bytes are a hard error rather than a warning.
  */
 export function templateArchiveDir(paperRoot: string, engineRoot: string): string | null {
   const template = readStampedTemplate(paperRoot);
@@ -620,23 +624,6 @@ export function templateArchiveDir(paperRoot: string, engineRoot: string): strin
 }
 
 /**
- * Assemble the deposit bundle: the five fixed engine files plus every file in the paper's
- * `deposit/` folder, uploaded verbatim ([R28]). A `deposit/` file whose name collides with
- * one of the fixed names is a hard error (surfaced as a validate-style error). Empty or
- * absent `deposit/` → just the five. Returns the assembled file paths, sorted.
- *
- * `engine.zip` is a `git archive` of the engine checkout at its pinned ref ([R34]/[R66]):
- * because bin/typst + dist/cli.cjs + templates/typst/ are committed at the
- * engine tag leaf, this one archive carries the whole toolchain-minus-node, making the deposit
- * self-contained for re-rendering the PDF (linux-x86_64 + node + the deposit, nothing fetched).
- *
- * Plus a CONDITIONAL sixth file, `template.zip` ([R76]): when the rendered typst template is
- * NOT the engine's own (a tenant's or an author's, local or remote) it rides in no other
- * artifact, so its resolved bytes are archived here. Self-containment was previously an
- * accident of the template happening to sit inside what `engine.zip` already captured; with
- * template precedence it becomes an explicit rule. See {@link templateArchiveDir}.
- */
-/**
  * What can make a deposit impossible, in one place so a caller can ask before writing to Zenodo
  * ([R101]). `oak validate` reports the same collision at PR time, off {@link depositCollisions}.
  */
@@ -655,6 +642,18 @@ export function assertBundlePreconditions(repoRoot: string, engineRoot: string):
   templateArchiveDir(repoRoot, engineRoot);
 }
 
+/**
+ * Assemble the deposit bundle: the five fixed engine files plus every file in the paper's
+ * `deposit/` folder, uploaded verbatim ([R28]). A `deposit/` name colliding with a fixed name
+ * is a hard error. Empty or absent `deposit/` → just the five. Returns the file paths, sorted.
+ *
+ * `engine.zip` is a `git archive` of the engine at its pinned ref ([R34]/[R66]): bin/typst +
+ * dist/cli.cjs + templates/typst/ are committed at the tag leaf, so this one archive carries the
+ * whole toolchain-minus-node, self-contained for re-rendering (linux-x86_64 + node, nothing
+ * fetched). Plus a CONDITIONAL sixth file, `template.zip` ([R76]): a rendered typst template
+ * that is NOT the engine's own rides in no other artifact, so its bytes are archived here. See
+ * {@link templateArchiveDir}.
+ */
 export async function buildBundle(
   out: string,
   pdf: string,
@@ -1009,6 +1008,10 @@ export interface StatusInput {
   instanceRoot: string | null;
 }
 
+/**
+ * `oak deposit status`: report the deposit state for the paper's committed concept DOI, plus a
+ * preview of the metadata a publish would build. Read-only; never writes to Zenodo or the tree.
+ */
 export async function cmdStatus(input: StatusInput): Promise<Outcome> {
   const { mystPath, siteUrl, api, instanceRoot } = input;
   const sandbox = api.sandbox;
