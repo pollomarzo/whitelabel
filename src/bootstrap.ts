@@ -32,10 +32,9 @@ import {
   copyFileSync,
   writeFileSync,
   readFileSync,
-  existsSync,
 } from 'node:fs';
 import { join, dirname, posix } from 'node:path';
-import { readDoc, writeDoc } from './yaml-io.js';
+import { readDoc } from './yaml-io.js';
 import { themeZipUrl } from './assets.js';
 import { LABEL_EDITOR_ACTION, LABEL_ZENODO_FAILED } from './preview.js';
 
@@ -82,12 +81,11 @@ export function siteTemplateRoot(engineRoot: string): string {
 }
 
 /**
- * The engine's own `myst-cli` range, copied VERBATIM into the site scaffold's
- * `package.json` as its `mystmd` dependency ([R80]). No parsing, no normalizing: the site should render with
- * roughly the myst the engine bundles, so the gallery plugin and the theme behave the same
- * in both builds. This is hygiene, not correctness; the site is not the reproducibility
- * anchor (the Zenodo deposit is, design §7), so a caret range is enough and a
- * resolved-version pin would be false precision.
+ * The engine's own `myst-cli` range, copied VERBATIM (no parsing) into the site scaffold's
+ * `package.json` as its `mystmd` dependency ([R80]): the site renders with roughly the myst
+ * the engine bundles, so the gallery plugin and theme behave the same in both builds. A caret
+ * range is enough, not a resolved-version pin: the site is not the reproducibility anchor, the
+ * Zenodo deposit is (design §7).
  */
 export function engineMystRange(engineRoot: string): string {
   const pkg = JSON.parse(readFileSync(join(engineRoot, 'package.json'), 'utf8')) as {
@@ -118,16 +116,11 @@ export function listFiles(dir: string, prefix = ''): string[] {
 /**
  * Basenames a template file ships under → the basename it is stamped as.
  *
- * `.gitignore` is the whole list, and npm is the reason: a leading-dot `.gitignore` is
- * stripped from EVERY npm tarball, unconditionally and with no opt-out. Shipping it as-is
- * means an engine installed from npm seeds repos with no `.gitignore` at all, so a tenant
- * commits `_build/` and `node_modules/`, while a git checkout of the engine seeds it fine.
- * The templates therefore hold `gitignore`, and the stamp puts the dot back.
- *
- * The VALUES are therefore exactly the basenames npm would strip, which is what the
- * `templates survive npm packaging` test asserts against: one list, not two that must
- * agree. Keyed on the basename, not the whole rel path, so a template file added in a
- * SUBDIRECTORY is covered too: npm strips it at any depth.
+ * npm strips a leading-dot `.gitignore` from EVERY tarball, no opt-out, so an npm-installed
+ * engine would seed a tenant repo with no `.gitignore` at all (a git checkout seeds it fine).
+ * The templates hold `gitignore`; the stamp puts the dot back. The values are exactly the
+ * basenames npm strips, so the `templates survive npm packaging` test reads this one list;
+ * keyed on the basename, not the rel path, so a file added in a SUBDIRECTORY is covered too.
  */
 export const STAMP_RENAME: Record<string, string> = { gitignore: '.gitignore' };
 
@@ -297,11 +290,8 @@ export function siteUrlFor(repo: string): string {
  *      so there is nothing for a drift test to catch,
  *   3. the journal name (myst.yml `project.title` + the `pages/index.md` heading),
  *   4. the `myst-cli` range, into the scaffold's `package.json`, where `js-yaml` is pinned
- *      too, so the site has ONE dependency list. The workflow just runs `npm install` +
- *      `npx myst`, and is byte-copied. (An earlier shape pinned MyST via `npx -y mystmd@…`
- *      in the workflow, which meant two pinning mechanisms and two installs for one site;
- *      `npx -y` was already fetching MyST on every run, so consolidating removed an install
- *      rather than adding one.)
+ *      too, so the site has ONE dependency list, not two pinning mechanisms. The workflow
+ *      just runs `npm install` + `npx myst` and is byte-copied.
  *
  * No `project.id` (myst doesn't require one, and the engine's id machinery is paper-only),
  * no edition rename, no file-path rewriting.
@@ -780,7 +770,6 @@ function applyProvisioning(
     log(msg.bootstrap.logDefaultBranch(current));
   });
 
-  // protect-main
   step('protect_main', () => {
     if (prov.rulesetExists(repo, RULESET_PROTECT_MAIN)) {
       actions.protect_main = 'already exists';
@@ -792,7 +781,6 @@ function applyProvisioning(
     }
   });
 
-  // editors-only-v-tags
   step('v_tags', () => {
     const bypass = owner.team
       ? [{ actor_id: prov.teamId(owner.team), actor_type: 'Team', bypass_mode: 'always' }]
@@ -807,7 +795,6 @@ function applyProvisioning(
     }
   });
 
-  // Pages
   step('pages', () => {
     if (prov.pagesEnabled(repo)) {
       actions.pages = 'already enabled';
@@ -867,7 +854,6 @@ function applyProvisioning(
     }
   });
 
-  // labels
   step('labels', () => {
     for (const l of LABELS)
       prov.createLabel(repo, l.name, { color: l.color, description: l.description });
