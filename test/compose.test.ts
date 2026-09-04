@@ -10,7 +10,7 @@ const EDITION = 'fixture-edition';
 
 /** What loadConfig().project would return AFTER resolving paper-base + edition:
  *  the typst export carries `articles` (from the edition) and NO template (the edition
- *  no longer declares one: finding 2). Plus a sibling `youtube` option (finding 3). */
+ *  declares none: finding 2). Plus a sibling `youtube` option (finding 3). */
 const resolvedProject: ResolvedProject = {
   id: 'fixture-2026-sample-paper',
   title: 'A Fixture Paper',
@@ -199,7 +199,7 @@ describe('compose: typst template precedence: author > tenant > engine ([R76])',
     expect(r.warnings.join(' ')).not.toMatch(/overrides/);
   });
 
-  it('honors a FLOATING author template, precedence never drops what is declared', () => {
+  it('honours a FLOATING author template, precedence never drops what is declared', () => {
     const floating = 'https://github.com/o/isp-lapreprint-typst.git';
     const r = compose(base({ resolvedProject: withAuthorTemplate(floating) }));
     expect(templateOf(r)).toBe(floating); // hygiene is a validate WARN, not a runtime drop

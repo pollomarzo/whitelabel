@@ -64,7 +64,7 @@ export const BRAND_ASSET_KEYS = {
  *  (A URL is fine for HTML but NOT typst, which can't fetch, so a brand watermark must be
  *  a real file; validating that belongs in `oak validate`, not here.) */
 export function isBrandAssetUrl(value: string): boolean {
-  return /^[a-zA-Z][\w+.-]*:\/\//.test(value); // a scheme://… URL (fine for HTML, NOT typst)
+  return /^[a-zA-Z][\w+.-]*:\/\//.test(value); // matches scheme://…
 }
 
 /**
@@ -264,33 +264,22 @@ export function compose(input: ComposeInput): ComposeResult {
   // --- ownOverride: engine overrides merged into the paper's OWN config ([R52]) -----
   const ownOverride: OwnOverride = {};
 
-  // Typst export: compose stamps `output:` (engine-owned, TYPST_OUTPUT) and `template:`
-  // (resolved by precedence, [R76], see below). Because myst merges exports by id
-  // WHOLE-ENTRY (no field merge), the winning entry must be complete: spread the resolved
-  // export (carries the edition's `articles`) and set both stamped fields. Placed in own
-  // config so base-wins is deterministic.
-  //
-  // Both are set HERE rather than declared in paper-base.yml for the same reason: a paper that
-  // overrides the whole entry (a multi-article export, e.g. paper + supplement) would silently
-  // drop a field declared only in paper-base, giving stable paths to simple papers and leaked
-  // ones to exactly the papers that most need them.
+  // Typst export: stamp `output:` (TYPST_OUTPUT) and `template:` (precedence, [R76], below).
+  // myst merges exports by id WHOLE-ENTRY (no field merge), so the winning entry must be
+  // complete: spread the resolved export (carries the edition's `articles`) and set both
+  // fields, in own config where base-wins is deterministic. Declaring them in paper-base
+  // instead would let a paper's whole-entry override (a multi-article export) silently drop
+  // them, breaking paths for exactly the papers that need them ([R52]/[R53]).
   const typst = (resolvedProject.exports ?? []).find(
     (e) => e['format'] === 'typst' || e['id'] === 'typst-pdf',
   );
   if (typst) {
     // --- Template precedence ([R76]): author > tenant > engine -----------------------
-    //
-    // compose is the authoritative STAMPER either way (the winning-by-id entry is what it
-    // spreads), so this is a precedence CHOICE about where the VALUE comes from, not a
-    // change of declarer. Whatever is declared is honored, name | path | URL, pinned or
-    // floating; compose never silently drops a declared template, because a silent drop
-    // produces the baffling "why isn't my template applied?". Floating is a validate WARN
-    // (the [R5] hygiene lint), and DOI reproducibility rides the deposit archiving the
-    // RESOLVED bytes (zenodo.ts), not this precedence chain.
-    //
-    // The author needs no new field and no flag: paper-base and editions never declare
-    // `template:`, so a `template:` surviving onto the resolved export can only be the
-    // author's own, written myst-natively in the deterministic base slot (no [R72] race).
+    // A `template:` surviving onto the resolved export can only be the author's own: paper-base
+    // and editions never declare one, so it lands myst-natively in the deterministic base slot
+    // with no [R72] race. Whatever is declared is honoured (name | path | URL, pinned or
+    // floating) and never silently dropped; floating is a validate WARN ([R5]), and DOI
+    // reproducibility rides the deposited RESOLVED bytes (zenodo.ts), not this chain.
     const authorTemplate =
       typeof typst['template'] === 'string' && typst['template']
         ? (typst['template'] as string)
@@ -304,10 +293,8 @@ export function compose(input: ComposeInput): ComposeResult {
     const template =
       assetOverrides.typstTemplate ?? authorTemplate ?? tenantTemplate ?? engineTemplate;
 
-    // The trust surface (and the whole reason an author override is allowed at all): a paper
-    // reskinning away from journal identity must be REVIEWABLE in the PR, never forbidden
-    // (that is the tenant's call, not the engine's), never silent. `oak validate` reports the
-    // same thing as a finding, which is what actually lands on the PR.
+    // An author reskin away from journal identity must be REVIEWABLE in the PR, never forbidden
+    // (the tenant's call, not the engine's) and never silent; `oak validate` mirrors it there.
     if (authorTemplate && tenantTemplate && !assetOverrides.typstTemplate) {
       warnings.push(
         `author template overrides the journal's: this paper declares its own typst ` +
