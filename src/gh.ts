@@ -169,12 +169,6 @@ function ghOkAs(token: string, args: string[], alsoAbsent?: RegExp): boolean {
   return ghOk(args, { ...process.env, GH_TOKEN: token }, alsoAbsent);
 }
 
-/**
- * Both reach `git fetch` positionally, and git parses options positionally, so a ref of
- * `--upload-pack=<command>` RUNS it ([R103]). Hence an allowlist of the two transports we
- * support, not a screen for `-`: `ext::` spells the same attack. Userinfo is refused rather than
- * stripped because `--from` is copied into a public commit message.
- */
 /** `owner/name`, the shape every verb's usage line promises. Checked because the value reaches
  *  `gh` positionally, where the callee's own option parser reads a leading dash ([R138]). */
 const REPO_NAME = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/;
@@ -184,6 +178,12 @@ export function assertRepoName(repo: string): string {
   return repo;
 }
 
+/**
+ * Both reach `git fetch` positionally, and git parses options positionally, so a ref of
+ * `--upload-pack=<command>` RUNS it ([R103]). Hence an allowlist of the two transports we
+ * support, not a screen for `-`: `ext::` spells the same attack. Userinfo is refused rather than
+ * stripped because `--from` is copied into a public commit message.
+ */
 const INGEST_URL =
   /^(https:\/\/github\.com\/|git@github\.com:)[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+(\.git)?\/?$/;
 const INGEST_REF = /^[A-Za-z0-9_][A-Za-z0-9._/-]*$/;
@@ -838,6 +838,11 @@ function committedMystValue(repo: string, path: string[]): string | null {
   return value != null ? String(value) : null;
 }
 
+/** Head-ref names from a `git/matching-refs/heads/<prefix>` listing, `refs/heads/` stripped. */
+function matchingHeadRefs(out: string): string[] {
+  return out ? out.split('\n').map((r) => r.replace(/^refs\/heads\//, '')) : [];
+}
+
 /** The real GitHub seam for `oak conformance` (slice C0: reset). Drives the fixture repos via
  *  the fixture-scoped PAT (gh reads GH_TOKEN). Deletes are DELETE-ref calls wrapped so an
  *  already-absent target is a no-op, not a throw. */
@@ -882,7 +887,7 @@ export const realConformanceGh: ConformanceGh = {
       '--jq',
       '.[].ref',
     ]);
-    return out ? out.split('\n').map((r) => r.replace(/^refs\/heads\//, '')) : [];
+    return matchingHeadRefs(out);
   },
   deleteBranch(repo, branch) {
     ghOk(['api', '-X', 'DELETE', `repos/${repo}/git/refs/heads/${branch}`], undefined, ABSENT_REF);
@@ -1091,7 +1096,7 @@ export const realConformanceGh: ConformanceGh = {
       '--jq',
       '.[].ref',
     ]);
-    const branches = out ? out.split('\n').map((r) => r.replace(/^refs\/heads\//, '')) : [];
+    const branches = matchingHeadRefs(out);
     for (const branch of branches) {
       ghOkAs(
         forkToken,
