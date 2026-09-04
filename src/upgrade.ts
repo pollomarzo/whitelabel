@@ -53,9 +53,8 @@ function codeownersOnDisk(repoRoot: string): Record<string, string> {
 }
 
 export function readAnswers(repoRoot: string): TemplateAnswers {
-  // A directory that is not a paper repo has no pins.yml at all, and reading it threw an
-  // ENOENT stack trace at the tenant. An ABSENT file is the same answer as an empty one:
-  // "no engine pin here", and cmdUpgrade already turns that into a sentence.
+  // A non-paper directory has no pins.yml; an absent file is the same answer as an empty one
+  // ("no engine pin here"), which cmdUpgrade turns into a sentence rather than an ENOENT stack.
   const pinsPath = join(repoRoot, PINS_REL);
   const pins = existsSync(pinsPath) ? readDoc(pinsPath) : null;
   const engineRepo = String(pins?.get('engine_repo') ?? '');
@@ -220,7 +219,7 @@ export async function cmdUpgrade(input: UpgradeInput, deps: UpgradeDeps): Promis
       result: { status: 'error', message: msg.upgrade.notAPaperRepo(PINS_REL) },
     };
   }
-  // Same rule as bootstrap: a target we picked must say so. "--to v1.2.3" and "whatever is
+  // A target we picked must say so (same rule as bootstrap): "--to v1.2.3" and "whatever is
   // newest right now" are different promises, and only one of them is reproducible.
   const targetGiven = Boolean(input.to);
   const target = input.to ?? deps.resolveTarget(answers.engineRepo);

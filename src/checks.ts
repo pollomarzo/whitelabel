@@ -117,19 +117,14 @@ const GITHUB_MAX_ANNOTATIONS = 50;
  * conclusion (gates merge); optional findings annotate as warnings and never gate. Results
  * carrying `file`+`position` become inline annotations (capped at 50).
  *
- * GitHub's Checks API keys annotations off REPO-RELATIVE paths; a path it can't resolve is
- * dropped (a batch of them 422s the whole POST). curvenote is inconsistent, some checks emit
- * an absolute `file` (`selectCurrentProjectFile`), others a relative one (`loadProjectFromDisk`
- * → `index.md`). So `pathBase` (the repo checkout root, `GITHUB_WORKSPACE`, else the paper
- * root) relativizes ONLY the absolute paths; already-relative ones pass through untouched.
+ * GitHub keys annotations off repo-relative paths and 422s a batch it cannot resolve, so
+ * `pathBase` (the checkout root, `GITHUB_WORKSPACE`, else the paper root) relativizes only the
+ * absolute paths curvenote emits; already-relative ones pass through untouched.
  *
- * A finding anchored to the DERIVED config never annotates. Since [R82] the session reads
- * `myst.oak.yml`, so curvenote's config-anchored results (`getFrontmatter` returns
- * `selectCurrentProjectFile`) now name a generated, gitignored file: GitHub cannot resolve
- * the path, and rewriting it to `myst.yml` would be worse: the derived file has a banner, an
- * injected `extends:` block and compose's stamps, so its line numbers are not the author's.
- * A confident annotation on an unrelated line beats no annotation for nobody. The finding
- * still lands in the summary table and the sticky comment; only the inline pin is dropped.
+ * A finding anchored to the DERIVED config never annotates: since [R82] the session reads the
+ * generated, gitignored `myst.oak.yml`, which GitHub cannot resolve and whose line numbers are
+ * not the author's, so its inline pin is dropped while the finding still shows in the summary
+ * and sticky comment.
  */
 export function toCheckRun(
   results: EngineCheckResult[],
@@ -153,10 +148,8 @@ export function toCheckRun(
     )
     .join('\n');
   const table = `${messages.pr.checkTableHeader}\n${rows}`;
-  // Notes describe HOW the run happened, never WHETHER it passed; they must not touch
-  // `conclusion`. But they have to be VISIBLE: a run that could not compose reads the
-  // author's config, so some of the passes below mean less than they look like they do, and
-  // the Check Run is where a reviewer actually looks. Above the table, not below it.
+  // Notes report HOW the run happened, never WHETHER it passed: they must not touch
+  // `conclusion`, but must stay visible, so they render above the table where reviewers look.
   const summary = notes.length
     ? `${notes.map((n) => `> ⚠️ ${n}`).join('\n>\n')}\n\n${table}`
     : table;
@@ -178,12 +171,11 @@ export function toCheckRun(
 /* --------------------------------------------------------------------------
  * Stage-2 PR write-back: the sticky comment + Check Run poster (slice 4b).
  *
- * All PR write-back moves to the trusted Stage-2 `workflow_run` job (base context): the
- * untrusted `pull_request` job that runs `oak validate` over fork content holds no write
- * token. Stage 1 writes the report file; Stage 2 runs `oak check-post`, which reads that
- * precomputed report and posts BOTH a first-class Check Run (gates + annotates) AND an
- * always-on sticky PR comment (visibility, authors rarely click the Check Run "Details").
- * Never re-runs validate / rebuilds paper content.
+ * PR write-back runs in the trusted Stage-2 `workflow_run` job (base context): the untrusted
+ * `pull_request` job that runs `oak validate` over fork content holds no write token. Stage 1
+ * writes the report file; Stage 2 runs `oak check-post`, which reads that precomputed report
+ * and posts BOTH a first-class Check Run (gates + annotates) AND an always-on sticky PR comment
+ * (authors rarely click the Check Run "Details"). Never re-runs validate or rebuilds content.
  * ------------------------------------------------------------------------ */
 
 /** Sticky-comment header for the journal-checks PR comment (stable identifier, do not rename;
@@ -195,10 +187,9 @@ export const STICKY_CHECKS = 'oak-journal-checks';
 export interface ChecksReport {
   status?: 'ok' | 'error';
   checkRun: CheckRun;
-  /** `oak validate`'s info-level notes ([R82]), for anything reading the report directly.
-   *  Stage 2 does not re-render them: `toCheckRun` already embedded them in `checkRun.summary`,
-   *  which both the Check Run and the sticky comment print, so a DEGRADED run is visibly
-   *  different from a composed one in the PR UI without check-post knowing they exist. */
+  /** `oak validate`'s info-level notes ([R82]), for anything reading the report directly. Stage
+   *  2 does not re-render them: `toCheckRun` already embedded them in `checkRun.summary`, so a
+   *  degraded run reads differently in the PR UI without check-post knowing notes exist. */
   notes?: string[];
   [k: string]: unknown;
 }
