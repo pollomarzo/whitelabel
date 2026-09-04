@@ -311,6 +311,20 @@ function checkOutcome(runs: CheckRunRef[], name: string): CheckRunRef | null {
   return cr;
 }
 
+/** null = still running; the run (picked by `find`) when it completed success; throws, quoting
+ *  its url, when it completed !success. `label` names the run in that error. */
+function runOutcome(
+  runs: WorkflowRun[],
+  find: (r: WorkflowRun) => boolean,
+  label: string,
+): WorkflowRun | null {
+  const run = runs.find(find);
+  if (!run || run.status !== 'completed') return null;
+  if (run.conclusion !== 'success')
+    throw new Error(`${label} concluded ${run.conclusion}: ${run.url}`);
+  return run;
+}
+
 /** Project-Pages URL for a fixture repo (owner.github.io/name/). */
 export function pagesUrlFor(repo: string): string {
   const [owner, name] = repo.split('/');
@@ -403,15 +417,12 @@ export async function cmdConformanceCertify(
     // 5. Paper CI (build + deploy-pages) concluded success on the merge commit.
     await pollUntil(
       'Paper CI (push→main)',
-      () => {
-        const ci = gh
-          .workflowRunsForCommit(repo, mergeSha)
-          .find((r) => r.name === 'Paper CI' && r.event === 'push');
-        if (!ci || ci.status !== 'completed') return null;
-        if (ci.conclusion !== 'success')
-          throw new Error(`Paper CI concluded ${ci.conclusion}: ${ci.url}`);
-        return ci;
-      },
+      () =>
+        runOutcome(
+          gh.workflowRunsForCommit(repo, mergeSha),
+          (r) => r.name === 'Paper CI' && r.event === 'push',
+          'Paper CI',
+        ),
       { sleep, log },
     );
 
@@ -440,15 +451,12 @@ export async function cmdConformanceCertify(
     // Stage 1: Paper CI build on the PR (secretless by design, the untrusted build job).
     await pollUntil(
       `Paper CI (PR #${previewPr.number} build)`,
-      () => {
-        const ci = gh
-          .workflowRunsForCommit(repo, previewPr.headSha)
-          .find((r) => r.name === 'Paper CI' && r.event === 'pull_request');
-        if (!ci || ci.status !== 'completed') return null;
-        if (ci.conclusion !== 'success')
-          throw new Error(`Paper CI (PR) concluded ${ci.conclusion}: ${ci.url}`);
-        return ci;
-      },
+      () =>
+        runOutcome(
+          gh.workflowRunsForCommit(repo, previewPr.headSha),
+          (r) => r.name === 'Paper CI' && r.event === 'pull_request',
+          'Paper CI (PR)',
+        ),
       { sleep, log },
     );
 
@@ -532,13 +540,12 @@ export async function cmdConformanceCertify(
     }
     await pollUntil(
       `Publish Zenodo deposit success for ${depositTag}`,
-      () => {
-        const run = gh.workflowRunsForCommit(repo, tagSha).find((r) => r.id === publishRun.id);
-        if (!run || run.status !== 'completed') return null;
-        if (run.conclusion !== 'success')
-          throw new Error(`Publish Zenodo deposit concluded ${run.conclusion}: ${run.url}`);
-        return run;
-      },
+      () =>
+        runOutcome(
+          gh.workflowRunsForCommit(repo, tagSha),
+          (r) => r.id === publishRun.id,
+          'Publish Zenodo deposit',
+        ),
       { sleep, log },
     );
 
@@ -587,15 +594,12 @@ export async function cmdConformanceCertify(
       // Stage 1: the secretless build concludes success.
       await pollUntil(
         `fork Paper CI (secretless Stage-1) #${forkPr.number}`,
-        () => {
-          const r = gh
-            .workflowRunsForCommit(repo, forkPr.headSha)
-            .find((x) => x.name === 'Paper CI' && x.event === 'pull_request');
-          if (!r || r.status !== 'completed') return null;
-          if (r.conclusion !== 'success')
-            throw new Error(`fork Paper CI concluded ${r.conclusion}: ${r.url}`);
-          return r;
-        },
+        () =>
+          runOutcome(
+            gh.workflowRunsForCommit(repo, forkPr.headSha),
+            (r) => r.name === 'Paper CI' && r.event === 'pull_request',
+            'fork Paper CI',
+          ),
         { sleep, log },
       );
 
