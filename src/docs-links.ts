@@ -56,6 +56,10 @@ export const DOCS = {
 
   /** Every file in a journal repo and who reads it. */
   files: 'reference/files',
+  /** What each `oak` verb produces, seen from the outside. */
+  cli: 'reference/cli',
+  /** `oak deploy-preview`: a preview URL commented on the PR (or an artifact link). */
+  deployPreview: 'reference/cli#deploy-preview',
   /** `journal.yml`. */
   fileJournalYml: 'reference/files#file-journal-yml',
   /** `brand/brand.yml`. */
