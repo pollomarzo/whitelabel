@@ -18,16 +18,41 @@ The role line is what a reader skims in `NOTES.md`'s module map.
 
 ## Comments
 
-Comments here are load-bearing and the usual "delete comments that narrate code" advice does not apply wholesale. The rule, three ways:
+Comments earn their place or go: state the constraint, not the story.
 
-- A comment stating a **constraint, invariant, or ratified decision stays**, and cites its `[R#]`. Prefer pointing to its R# than re-stating, and if a docs page is available link to it.
-- A comment explaining **why this is not the obvious approach stays**. These encode the dead ends, and they are what a fork's maintainer needs. `readBrandAssetOptions`'s "read from brand.yml directly, not the merged config, so only brand-declared assets are treated as brand-relative" is the model; maintain these short.
-- A comment **narrating the next line goes**.
-- A comment **explaining a long rationale** becomes a link or an ID.
+**Keep**, each in one line:
 
-Every export gets JSDoc. Cross-reference other symbols with `{@link Name}`, not a bare mention.
+- A comment stating a **constraint, invariant, or ratified decision**, citing the reference the reader can open (below) rather than restating it.
+- A comment saying **why this is not the obvious approach**: a dead end, named.
+- A comment saying **why this looks wrong but is not**. It guards against a plausible wrong edit, so it reads as narration and is the one most likely to be deleted by mistake. Keep it.
 
-Every cited `[R#]` must resolve in the ledger. Seeded files under `templates/` carry **no** `[R#]` (a tenant cannot resolve them); the engine's own `templates/*/README.md` may, since those stay in the engine repo.
+**Go:**
+
+- A comment **narrating the next line**.
+- A comment describing **what the code used to do**. Comments describe the code as it is, not relative to what it replaced: no "no longer", "used to", "replaces", "instead of".
+- A **long rationale**: it becomes a link or an `[R#]`, never a paragraph.
+
+When in doubt, cut. A three-line justification is a one-line constraint plus its reference.
+
+### Which reference to cite
+
+Cite the one the reader *of this file* can open:
+
+- `[R#]` for engine internals (resolves in the ledger).
+- a `DOCS.*` symbol from `docs-links.ts` for a verb's **observable behaviour**: test it by asking whether the sentence is still true reading only the CLI's observable behaviour; if so it is user docs, not a source comment. Cite the symbol, never a raw `docs/` path or URL: `docs-links.test.ts` already asserts every symbol resolves to a real page + `(label)=` anchor, so a symbol never rots; a raw path is unchecked, and a page that does not exist yet is not a link to make.
+- where neither resolves, the one line must be self-contained.
+
+```ts
+// BAD:  read from brand.yml directly, not the merged config, so that only
+//       brand-declared assets are treated as brand-relative
+// GOOD: read from brand.yml, not merged config [R42]
+```
+
+Every cited `[R#]` must resolve in the ledger. Seeded files under `templates/` carry **no** `[R#]` (a tenant cannot resolve them) and cite the docs URL instead; the engine's own `templates/*/README.md` may cite `[R#]`, since those stay in the engine repo.
+
+### JSDoc
+
+Every export gets one: contract first (what it returns, what it throws), in a line or two. A constraint riding along in a JSDoc is still one line plus its `[R#]`. Cross-reference other symbols with `{@link Name}`, not a bare mention.
 
 ## Naming
 
