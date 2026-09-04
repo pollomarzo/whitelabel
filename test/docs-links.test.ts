@@ -59,6 +59,21 @@ describe('every documentation topic resolves', () => {
     );
   });
 
+  it('every DOCS.<symbol> named in source is a real key', () => {
+    // A code reference is typechecked; a `DOCS.foo` in a COMMENT is not, so a renamed symbol
+    // leaves the comment pointing at nothing. This is check 1 for the comment side.
+    const keys = new Set(Object.keys(DOCS));
+    const offenders: string[] = [];
+    for (const name of readdirSync(srcDir)) {
+      if (extname(name) !== '.ts' || name === 'docs-links.ts') continue;
+      const src = readFileSync(join(srcDir, name), 'utf8');
+      for (const m of src.matchAll(/\bDOCS\.([A-Za-z_$][\w$]*)/g)) {
+        if (!keys.has(m[1]!)) offenders.push(`${name}: DOCS.${m[1]}`);
+      }
+    }
+    expect(offenders, `no such key in DOCS:\n  ${offenders.join('\n  ')}`).toEqual([]);
+  });
+
   it('docsUrl joins with exactly one slash, whatever the base looks like', () => {
     expect(docsUrl('guide/checks', 'https://example.org/docs')).toBe(
       'https://example.org/docs/guide/checks',
