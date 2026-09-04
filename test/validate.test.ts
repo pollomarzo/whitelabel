@@ -296,7 +296,7 @@ describe('runValidate: exit codes over the fixture instance', () => {
 
   it('a bad id (identity) does NOT short-circuit Layer B, editorial checks still run, id still gates (exit 1)', async () => {
     // id-gate-relocation: an id error is `identity`, not `structural`, so myst can still process
-    // and the author gets the full fix-list. Old behavior skipped Layer B on any Layer-A error.
+    // and the author gets the full fix-list, rather than Layer B being skipped on any Layer-A error.
     const bad = { id: 'fixture-template-placeholder', authors: [], abstract: '', keywords: [] };
     const out = await runValidate(
       {

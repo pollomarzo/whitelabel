@@ -287,6 +287,12 @@ export function checkTemplates(
 
 /* ---- instance-config readers -------------------------------------------- */
 
+/** A policy-less placeholder journal, so a run with no resolvable `journal.yml` keeps its shape
+ *  while the [R116] finding gates. */
+function emptyJournal(): JournalConfig {
+  return JournalConfig.parse({ name: 'unknown' });
+}
+
 /** null = a resolved instance root with no `journal.yml`: broken, not `--no-instance` ([R116]). */
 function loadJournal(instanceRoot: string | null, probes: FsProbes): JournalConfig | null {
   if (instanceRoot) {
@@ -294,7 +300,7 @@ function loadJournal(instanceRoot: string | null, probes: FsProbes): JournalConf
     if (!probes.existsProbe(p)) return null;
     return JournalConfig.parse(parse(readFileSync(p, 'utf8')));
   }
-  return JournalConfig.parse({ name: 'unknown' });
+  return emptyJournal();
 }
 
 function loadRegistry(instanceRoot: string | null, probes: FsProbes): Registry | null {
@@ -471,7 +477,7 @@ export function runLayerA(
       klass: 'config',
     });
   }
-  const journal = loaded ?? JournalConfig.parse({ name: 'unknown' });
+  const journal = loaded ?? emptyJournal();
 
   // Both id keys are optional. The sentinel is engine-owned (ENGINE_ID_SENTINEL); the pattern
   // is the tenant's, so its absence is stated rather than overridden ([R119]a).
@@ -762,8 +768,7 @@ export async function runValidate(
   // when Layer A already blocks. And even when Layer A is clean we GUARD the Layer-B call, so an
   // unexpected myst/curvenote throw degrades to a reported check error, never a crashed gate.
   // Layer A already blocked on an absent policy ([R116]); the default just keeps the shape.
-  const journal =
-    loadJournal(input.instanceRoot, probes) ?? JournalConfig.parse({ name: 'unknown' });
+  const journal = loadJournal(input.instanceRoot, probes) ?? emptyJournal();
   let checks: EngineCheckResult[] = [];
   // Only STRUCTURAL Layer-A errors (missing index.md / stray myst.yml) stop myst from
   // processing → skip Layer B. A bad id (identity) does NOT stop processing, so editorial
