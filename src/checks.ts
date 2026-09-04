@@ -212,7 +212,7 @@ export function checksComment(report: ChecksReport, shimTouched: string[] = []):
   const { conclusion, title, summary } = report.checkRun;
   const banner = shimTouched.length ? [shimWarning(shimTouched), ''] : [];
   return [
-    `<!-- oak-sticky: ${STICKY_CHECKS} -->`,
+    messages.stickyMarker(STICKY_CHECKS),
     ...banner,
     messages.pr.checksHeadline(conclusion === 'success', title),
     '',

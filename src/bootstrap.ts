@@ -24,6 +24,7 @@
  * faked in tests); rendering is pure fs. This module does NOT import myst-cli.
  */
 import * as msg from './messages.js';
+import { firstLine } from './messages.js';
 import {
   readdirSync,
   statSync,
@@ -690,13 +691,6 @@ function zenodoReviewer(
 export interface StepFailure {
   step: string;
   why: string;
-}
-
-/** The first line of a thrown error; `gh`'s own first stderr line is already in it. */
-function firstLine(e: unknown): string {
-  return String((e as Error)?.message ?? e)
-    .split('\n')[0]!
-    .trim();
 }
 
 /**
