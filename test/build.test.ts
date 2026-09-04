@@ -101,7 +101,7 @@ describe('runBuild: the two-pass orchestrator ([R52])', () => {
     expect(res.resolvedProject.id).toBe('fixture-2026-sample-paper');
   });
 
-  it('honors assetOverrides (local typst template, omitted site template)', async () => {
+  it('honours assetOverrides (local typst template, omitted site template)', async () => {
     const paperRoot = tmpPaper();
     const { edge } = fakeEdge();
     await runBuild({

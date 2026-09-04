@@ -10,13 +10,11 @@
  *         theme `site.template` into the derived config → build.
  *
  * Both passes live in `materializeDerived` (`materialize.ts`), which `oak validate` calls too
- * ([R82]), one
- * materialization, so what validate checks cannot drift from what the build renders.
+ * ([R82]): one materialization, so what validate checks cannot drift from what the build renders.
  *
  * The myst edge (loadConfig + build) is injected as `MystEdge` so this orchestration is
  * unit-testable with a fake: the real edge (myst.ts) pulls in the bundled myst-cli.
  */
-import { join } from 'node:path';
 import { type ResolvedProject } from './compose.js';
 import { runLayerA } from './validate.js';
 import {
