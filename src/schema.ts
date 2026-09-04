@@ -20,15 +20,6 @@ import { z } from 'zod';
  * 1. The engine coordinate: project.options["oaktree-sapling"]
  * ------------------------------------------------------------------------ */
 
-/**
- * The one knob (design §6). Rides in myst's untyped `options` passthrough at
- * `project.options["oaktree-sapling"]`, so it coexists with sibling option keys
- * a paper already uses (e.g. `options.youtube`, live in suheylgulenc); we must
- * validate this subkey without touching its siblings.
- *
- * `.loose()` tolerates future engine option keys on a paper pinned to a newer
- * engine; a paper is always read by its matched engine, but the resilience is free.
- */
 /** An edition id, which is a FILENAME SEGMENT (`editions/<id>.yml`) in compose's extends chain,
  *  in validate's layer list and in what `oak bootstrap` writes, so it may not carry a path
  *  ([R141]). Author-controlled on a fork PR. */
@@ -37,6 +28,13 @@ export const EDITION_ID = z
   .min(1)
   .regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/, 'must be a plain name (letters, digits, . _ -)');
 
+/**
+ * The one knob (design §6). Rides in myst's untyped `options` passthrough at
+ * `project.options["oaktree-sapling"]`, so it coexists with sibling option keys
+ * a paper already uses (e.g. `options.youtube`, live in suheylgulenc); we validate
+ * this subkey without touching its siblings (finding 3). `.loose()` tolerates future
+ * engine option keys on a paper pinned to a newer engine.
+ */
 export const OaktreeSaplingOptions = z
   .object({
     /** Engine ref: a released tag (`vX.Y.Z`), the engine default branch, a SHA, or
