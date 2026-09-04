@@ -16,6 +16,7 @@
  * creds stay the fixture repo's own secrets, read back from the fixture run (plan §credentials).
  */
 import { STICKY_PREVIEW } from './preview.js';
+import { stickyMarker } from './messages.js';
 import { RESERVED_BUNDLE_NAMES } from './zenodo.js';
 import { UPGRADE_BRANCH_PREFIX } from './upgrade.js';
 
@@ -323,7 +324,7 @@ export interface CertifyInput {
 }
 
 /** The preview sticky's stable marker (preview.ts owns the identifier; keep in sync). */
-const PREVIEW_STICKY_MARK = `<!-- oak-sticky: ${STICKY_PREVIEW} -->`;
+const PREVIEW_STICKY_MARK = stickyMarker(STICKY_PREVIEW);
 
 /** Pull the Cloudflare `*.pages.dev` URL out of a preview sticky comment (null if it degraded
  *  to an artifact-link comment, i.e. no live preview to probe). */

@@ -96,6 +96,25 @@ export class UserError extends Error {
   }
 }
 
+/**
+ * A readable one-line summary of a thrown error, for embedding in a tenant-facing message. A zod
+ * failure's `message` is a JSON dump whose first line is `[`, so name its offending key instead;
+ * otherwise take the first non-empty trimmed line.
+ */
+export function firstLine(e: unknown): string {
+  const issues = (e as { issues?: Array<{ path?: unknown[]; message?: string }> })?.issues;
+  const first = Array.isArray(issues) ? issues[0] : undefined;
+  if (first) {
+    const where = (first.path ?? []).join('.');
+    return where ? `${where}: ${first.message}` : (first.message ?? 'invalid');
+  }
+  const line = String((e as Error)?.message ?? e)
+    .split('\n')
+    .map((l) => l.trim())
+    .find(Boolean);
+  return line ?? 'unreadable';
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════════════════════
  * Usage: the first screen a new tenant sees.
  * ═══════════════════════════════════════════════════════════════════════════════════════════
@@ -720,8 +739,14 @@ export const validate = {
 
 /* ═══════════════════════════════════════════════════════════════════════════════════════════
  * What an author reads on their pull request (sticky comments + the Check Run).
- * The `<!-- oak-sticky: … -->` marker line is prepended by the caller; these are the bodies.
+ * The {@link stickyMarker} line is prepended by the caller; these are the bodies.
  * ═════════════════════════════════════════════════════════════════════════════════════════ */
+
+/** The hidden upsert-key line prepended to a sticky PR comment; `gh`'s sticky() matches on it,
+ *  so its bytes must stay identical across every caller. */
+export function stickyMarker(header: string): string {
+  return `<!-- oak-sticky: ${header} -->`;
+}
 
 export const pr = {
   previewDeployed: (url: string): string =>

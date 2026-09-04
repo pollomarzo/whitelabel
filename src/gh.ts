@@ -358,7 +358,7 @@ export const realGhPr: GhPr = {
     // the green-check-no-comment failure [R69] refuses ([R108]).
     const repo = originRepo(repoRoot);
     if (!repo) throw new Error(msg.workflow.noOriginRepo(repoRoot));
-    const marker = `<!-- oak-sticky: ${header} -->`;
+    const marker = msg.stickyMarker(header);
     // Find an existing sticky (its body opens with the marker) and edit it; else create.
     let existingId = '';
     try {

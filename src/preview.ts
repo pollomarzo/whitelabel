@@ -11,7 +11,7 @@ import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { readDoc } from './yaml-io.js';
 import * as msg from './messages.js';
-import { annotate, UserError } from './messages.js';
+import { annotate, firstLine, stickyMarker, UserError } from './messages.js';
 import { JournalConfig, type PreviewConfig } from './schema.js';
 
 /* --------------------------------------------------------------------------
@@ -91,22 +91,6 @@ export function loadJournalPreview(instanceRoot: string | null): {
   } catch (e) {
     return { ...empty(), problem: msg.workflow.previewBadJournal(path, firstLine(e)) };
   }
-}
-
-/** A readable line from a thrown error; a zod failure's `message` is a JSON dump whose first line
- *  is `[`, so name its offending key instead rather than using `e.message`. */
-function firstLine(e: unknown): string {
-  const issues = (e as { issues?: Array<{ path?: unknown[]; message?: string }> })?.issues;
-  const first = Array.isArray(issues) ? issues[0] : undefined;
-  if (first) {
-    const where = (first.path ?? []).join('.');
-    return where ? `${where}: ${first.message}` : (first.message ?? 'invalid');
-  }
-  const line = String((e as Error)?.message ?? e)
-    .split('\n')
-    .map((l) => l.trim())
-    .find(Boolean);
-  return line ?? 'unreadable';
 }
 
 /* --------------------------------------------------------------------------
@@ -214,14 +198,12 @@ export function planPreview(input: {
   };
 }
 
-const STICKY_MARK = (header: string): string => `<!-- oak-sticky: ${header} -->`;
-
 export function previewComment(url: string): string {
-  return [STICKY_MARK(STICKY_PREVIEW), msg.pr.previewDeployed(url)].join('\n');
+  return [stickyMarker(STICKY_PREVIEW), msg.pr.previewDeployed(url)].join('\n');
 }
 
 export function artifactComment(runUrl: string, reason: string): string {
-  return [STICKY_MARK(STICKY_PREVIEW), msg.pr.previewArtifact(runUrl, reason)].join('\n');
+  return [stickyMarker(STICKY_PREVIEW), msg.pr.previewArtifact(runUrl, reason)].join('\n');
 }
 
 /** Zenodo record URL from a DOI prefix (sandbox `10.5072` vs prod `10.5281`); an unknown prefix
@@ -245,7 +227,7 @@ export function hasVersionTag(tags: string[]): boolean {
 }
 
 export function newVersionComment(doi: string, recordUrl: string): string {
-  return [STICKY_MARK(STICKY_NEWVERSION), msg.pr.newVersionReminder(doi, recordUrl)].join('\n');
+  return [stickyMarker(STICKY_NEWVERSION), msg.pr.newVersionReminder(doi, recordUrl)].join('\n');
 }
 
 /* --------------------------------------------------------------------------
