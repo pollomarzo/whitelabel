@@ -51,6 +51,7 @@ project:
         - file: guide/journal-yml.md
         - file: guide/branding.md
         - file: guide/checks.md
+        - file: guide/interactive-figure.md
         - file: guide/pins.md
     - title: Reference
       children:
