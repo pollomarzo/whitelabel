@@ -26,10 +26,14 @@ jobs:
       # The two environments are separate on purpose. Both secrets reach the CLI under their own
       # names below, so this is the better message, not the only guard.
       - name: Refuse a sandbox run with no sandbox token
-        if: ${{ inputs.sandbox && secrets.ZENODO_TOKEN_SANDBOX == '' }}
+        if: ${{ inputs.sandbox }}
+        env:
+          SANDBOX_TOKEN: ${{ secrets.ZENODO_TOKEN_SANDBOX }}
         run: |
-          echo "::error::sandbox run requested but ZENODO_TOKEN_SANDBOX is not set; refusing to fall back to the production token"
-          exit 1
+          if [ -z "$SANDBOX_TOKEN" ]; then
+            echo "::error::sandbox run requested but ZENODO_TOKEN_SANDBOX is not set; refusing to fall back to the production token"
+            exit 1
+          fi
 
       - uses: ./.github/actions/engine
         with:
