@@ -1,11 +1,7 @@
 name: Journal site
 
-# Builds + deploys the journal site to GitHub Pages. Plain MyST: no engine, no shim, no
-# secrets. The editorial PR that adds a registry entry lands in THIS repo, so it is
-# also the deploy trigger: publish → visible, one act, one repo.
-#
-# Actions are pinned by full commit SHA at a close-to-latest major; the same SHAs
-# the frozen paper shim uses.
+# Builds and deploys the journal site to GitHub Pages, on every push to main.
+# https://scholar.nexus/oaktree-sapling/reference/files#file-site-workflow
 
 on:
   push:
@@ -32,30 +28,10 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '22'
-      # Resolves where Pages actually serves this repo. `base_path` is `/<repo>` for a project
-      # site and EMPTY for a user/org site or a custom domain, which is exactly MyST's
-      # BASE_URL contract. Without it MyST emits root-absolute asset URLs (`/build/…`) and
-      # every image, stylesheet and script 404s on the subpath this tier deploys to. Asking
-      # GitHub rather than hardcoding `/<repo>` is what keeps the vanity-URL routes working.
       - id: pages
         uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5.0.0
-      # Installs BOTH MyST and the gallery plugin's own dependency (js-yaml), which are
-      # pinned together in package.json: the one place this site's versions live.
-      #
-      # The install is not optional: MyST downloads a remote plugin into `_build/cache/`
-      # and imports it FROM THERE, so the plugin's bare imports resolve upward from this
-      # repo's node_modules. A package fetched by `npx` lands outside that resolution path.
       - run: npm install --no-audit --no-fund
-      # `--strict` is LOAD-BEARING, not hygiene. Without it `myst build` logs errors and
-      # exits 0 (`cli/options.ts:98-102`), and a remote plugin that fails to load degrades
-      # QUIETLY: the page would deploy with `paper-cards` as an unknown directive: no
-      # gallery at all, over a perfectly good previous deploy. Only `--strict` catches that.
-      # `--strict` catches errors raised while BUILDING a page (a bad DOI, a missing image).
-      # It does NOT catch a plugin that never loaded: myst logs "Unknown plugin" and
-      # "unknown directive: paper-cards", then exits 0, and the gallery-less page deploys
-      # over a perfectly good one. Verified live, not assumed. So we also require a
-      # POSITIVE signal: myst prints the plugin's own name when it loads, and that name is
-      # ours, not a myst log format we don't control.
+      # myst exits 0 on a plugin that never loaded, so the exit code is not enough.
       - name: Build (and prove the gallery plugin loaded)
         env:
           BASE_URL: ${{ steps.pages.outputs.base_path }}

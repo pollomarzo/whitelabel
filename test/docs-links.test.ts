@@ -16,7 +16,7 @@
  * is not yet referenced by any message is still checked.
  */
 import { describe, it, expect } from 'vitest';
-import { readFileSync, existsSync, readdirSync } from 'node:fs';
+import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs';
 import { join, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DOCS, docsUrl } from '../src/docs-links.js';
@@ -72,6 +72,32 @@ describe('every documentation topic resolves', () => {
       }
     }
     expect(offenders, `no such key in DOCS:\n  ${offenders.join('\n  ')}`).toEqual([]);
+  });
+
+  it('every documentation URL seeded into a tenant repo resolves', () => {
+    // A seeded file is copied into a tenant repo and never resynced, so it writes the URL out
+    // in full rather than citing a DOCS symbol.
+    const offenders: string[] = [];
+    const walk = (dir: string): void => {
+      for (const name of readdirSync(dir)) {
+        const abs = join(dir, name);
+        if (statSync(abs).isDirectory()) walk(abs);
+        else
+          for (const m of readFileSync(abs, 'utf8').matchAll(
+            new RegExp(`${DOCS_BASE}/([\\w./-]*[\\w-])(?:#([\\w-]+))?`, 'g'),
+          )) {
+            const file = join(docsDir, `${m[1]}.md`);
+            if (!existsSync(file)) offenders.push(`${abs}: no docs page for ${m[0]}`);
+            else if (m[2] && !readFileSync(file, 'utf8').includes(`(${m[2]})=`))
+              offenders.push(`${abs}: no "(${m[2]})=" target for ${m[0]}`);
+          }
+      }
+    };
+    walk(join(root, 'templates'));
+    expect(
+      offenders,
+      `seeded docs links that do not resolve:\n  ${offenders.join('\n  ')}`,
+    ).toEqual([]);
   });
 
   it('docsUrl joins with exactly one slash, whatever the base looks like', () => {

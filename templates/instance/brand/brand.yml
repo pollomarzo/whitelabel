@@ -1,9 +1,7 @@
 version: 1
 
-# Brand: the journal's visual identity. HTML assets (site.options.logo /
-# favicon) may be absolute URLs; the typst PDF watermark MUST be a REAL local file, which
-# compose() absolutizes (`./logo.svg` → <instanceRoot>/brand/logo.svg). Replace logo.svg
-# with your own mark.
+# The journal's look, applied to the website and to every paper's site and PDF.
+# https://scholar.nexus/oaktree-sapling/guide/branding
 site:
   options:
     logo_text: CHANGE-ME Journal
@@ -12,4 +10,5 @@ site:
     # logo_url: https://example.org
 project:
   options:
+    # https://scholar.nexus/oaktree-sapling/guide/branding#pdf-logo
     logo: ./logo.svg

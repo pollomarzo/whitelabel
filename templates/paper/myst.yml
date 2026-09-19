@@ -1,37 +1,31 @@
 version: 1
 
-# Starter paper, stamped by `oak bootstrap`. NEW-MODEL committed paper: NO `extends:`
-# (compose injects the engine/edition/brand chain at build time), and the single engine
-# coordinate rides myst's untyped `options` passthrough. `oak bootstrap` / `oak upgrade`
-# fill `version`/`edition` below.
-#
-# The `authors:`/`keywords:` templates below are COMMENTED OUT: uncomment and fill them with
-# your real metadata. They show exactly the fields the journal's editorial checks expect
-# (authors + ORCID + CRediT roles, keywords, and an `abstract` part in index.md), so you don't
-# have to guess, but they stay inert until you fill them, so nothing fake ships by accident.
+# Your paper's metadata. Fill in the form below; do not add `extends:`.
+# https://scholar.nexus/oaktree-sapling/start/paper
 project:
-  # Set a FRESH, UNIQUE id that matches the journal's `id_pattern`. Until you do, the build's
-  # pre-flight rejects this placeholder; that safeguard (not a bug) is why a fresh repo is red.
+  # A fresh id, unique in this journal. The build rejects this placeholder.
+  # https://scholar.nexus/oaktree-sapling/guide/journal-yml#id-pattern
   id: CHANGE-ME-template-placeholder
   title: CHANGE-ME (your paper title)
   # authors:
   #   - name: Ada Lovelace
-  #     orcid: 0000-0000-0000-0000          # the journal checks for a valid ORCID
+  #     orcid: 0000-0000-0000-0000
   #     affiliations:
   #       - Your Institution
   #     email: you@example.org
-  #     corresponding: true                 # at least one corresponding author
-  #     roles:                              # CRediT taxonomy terms
+  #     corresponding: true
+  #     roles:
   #       - conceptualization
   #       - writing - original draft
   # keywords:
   #   - keyword one
   #   - keyword two
   bibliography:
-    - bib.bib
+  - bib.bib
   options:
-    # The ONE engine knob. `oak bootstrap` / `oak upgrade` write these; only the
-    # `version` ref floats (a released engine tag, never a branch tip; CI runs releases).
+    # written by `oak bootstrap` and `oak upgrade`.
+    # this is what tells oaktree-sapling where to look for
+    # your journal's configuration
     oaktree-sapling:
       version: CHANGE-ME-engine-version
       edition: CHANGE-ME-edition
