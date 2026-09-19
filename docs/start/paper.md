@@ -63,6 +63,10 @@ The seeded `myst.yml` is a form, and until you fill it in the build fails on pur
 : The engine version and edition. The editor's bootstrap filled these in and a scheduled
   workflow keeps the version current. Leave them alone.
 
+One key not to add is `extends:`. A build merges your `myst.yml` with the journal's settings
+and writes the result to a separate file, leaving yours untouched, so there is nothing for you
+to point at and a layer added by hand can collide with one the engine assembles.
+
 Then write the paper in `index.md`. Its `abstract` part is not decoration: it is lifted into
 the website, onto the PDF's cover page, and into the Zenodo deposit, so keep it self-contained.
 

@@ -94,9 +94,8 @@ project:
 (pdf-logo)=
 ## The image on the PDF's first page
 
-`project.options.logo` is the one the seeded comments call "the typst PDF watermark", which
-undersells and mis-describes it. Concretely: the engine's PDF template places this image at the
-**top of the first page, in the left margin, at about a quarter of the text width**. It is a
+`project.options.logo` is the image the engine's PDF template places at the **top of the first
+page, in the left margin, at about a quarter of the text width**. It is a
 publisher's mark on page one, not a tint behind the text, and it appears on that page only.
 This is the one field a fresh `brand.yml` sets, pointing at `brand/logo.svg`. Using the same
 file in the site header takes a second entry, `site.options.logo`.

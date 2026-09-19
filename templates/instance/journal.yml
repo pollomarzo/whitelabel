@@ -1,59 +1,31 @@
-# INSTANCE-CONFIG manifest: the tenant's journal identity. Data only, no
-# engine logic. `oak bootstrap journal` stamps this; additive-only, so an older
-# pinned engine ignores keys it doesn't know. MUST stay in a PUBLIC repo:
-# Stage-1 fork-PR builds clone it with no token.
+# Your journal's settings, read by every paper build.
+# https://scholar.nexus/oaktree-sapling/guide/journal-yml
 name: CHANGE-ME Journal
 # url: https://example.org
 
 tier: paper
 
-# id policy. `id_sentinel` is an id `oak validate` rejects outright, on top of the paper
-# template's own placeholder, which it always rejects. `id_pattern` is an anchored regex every
-# real paper id must match: customize to your journal's convention. Drop `id_pattern` and any
-# shape is accepted; every paper's checks then say so.
+# https://scholar.nexus/oaktree-sapling/guide/journal-yml#id-pattern
 id_sentinel: CHANGE-ME-template-placeholder
 id_pattern: "^[a-z0-9]+-\\d{4}-[a-z0-9-]+$"
 
-# Your journal's typst PDF template. Omit it to use the engine's default template (the
-# usual case; the engine template is already brandable by parameter: watermark, colors).
-#
-# Accepts myst's three template forms, and the difference between two of them is the one
-# thing worth reading twice:
-#
-#   ./typst-template     a PATH, relative to THIS directory (instance-config root)
-#   ../shared/typst      a PATH, relative to this directory
-#   /srv/typst-template  a PATH, absolute
-#   https://…/x.zip      a URL (prefer a tag/release URL; a branch URL floats and warns)
-#   lapreprint-typst     a NAME, looked up against myst's template registry
-#
-# ONLY `./` and `../` mean "a directory in my instance-config". A bare `typst-template`
-# with no `./` is a template NAME, even if a directory of that name sits right next to
-# this file: one string always means one thing, whatever happens to be on disk. If you
-# meant the directory, write `./typst-template`. (`oak validate` warns when a bare value
-# shadows a real directory here, which is the one case you'd guess wrong.)
-#
-# A paper may override this with its own `exports[].template`; that is allowed and
-# applied, and `oak validate` flags it on the PR so the divergence from journal identity
-# is reviewed rather than silent.
+# engine PDF template override
+# https://scholar.nexus/oaktree-sapling/guide/journal-yml#typst-template
 # typst_template: ./typst-template
 
 preview:
-  # 'artifact' degrades to a build-artifact link. Switch to 'cloudflare' + set
-  # cf_project_name once the paper repos carry the CLOUDFLARE_* secrets.
   provider: artifact
   branch_pattern: paper-{repo}-{pr}
 
-# Optional per-tenant Zenodo config; a fresh journal has neither.
 zenodo: {}
   # community: your-zenodo-community
   # description_blurb: >-
   #   Created as part of the CHANGE-ME Journal.
 
-# Journal-controlled editorial checks. The author cannot weaken this set:
-# it lives here in instance-config; `oak validate` runs it and the PR check gates on it.
+# editorial checks a paper must pass in CI. https://scholar.nexus/oaktree-sapling/guide/checks
 checks:
-  - id: authors-exist
-  - id: authors-have-orcid
-  - id: authors-have-credit-roles
-  - id: abstract-exists
-  - id: keywords-defined
+- id: authors-exist
+- id: authors-have-orcid
+- id: authors-have-credit-roles
+- id: abstract-exists
+- id: keywords-defined

@@ -71,6 +71,10 @@ project:
 `venue` is the journal name printed on the paper and its PDF, and bootstrap does **not**
 substitute `--name` here: a fresh edition file says `CHANGE-ME Journal`.
 
+`license` is asserted to readers and to Zenodo, and the paper template seeds a matching
+`LICENSE` file. Changing it here does not rewrite those: `LICENSE` is author content, which
+`oak upgrade` never touches, so each paper repository needs the file replaced by hand.
+
 To add an edition, copy the file and name it after the new id. Two things not to do:
 
 - **Do not add `extends:`.** The engine assembles the list of configuration layers a paper build
@@ -130,3 +134,59 @@ also what redeploys the gallery.
 The registry stays a list of pointers: each card's title, keywords and thumbnail are fetched
 from the paper's own repository when the site builds, so nothing here needs updating when a
 paper's title changes.
+
+(file-pages-index)=
+## pages/index.md
+
+Your landing page. The engine stamps it once, with your journal's name as the heading, and
+never touches it again. Rewrite it.
+
+The one piece of machinery on it is the `paper-cards` directive:
+
+```markdown
+:::{paper-cards}
+:::
+```
+
+which lists every paper in `registry/papers.yml`, in file order. That is the right shape for a
+journal with a single edition.
+
+### Splitting the gallery by edition
+
+Once you have a second edition, give each one its own page rather than growing this one. Add
+`pages/editions/<edition>.md` with its own title and introduction, filter the directive to that
+edition:
+
+```markdown
+:::{paper-cards}
+:edition: 2026
+:::
+```
+
+and add the file to `toc:` in `myst.yml`.
+
+An edition's display title and blurb belong on that page, and there is nowhere else to put
+them: `editions/<edition>.yml` is a MyST configuration layer, so a key MyST does not recognise
+is dropped, and the warning [names the wrong file](#file-editions).
+
+(file-site-workflow)=
+## .github/workflows/site.yml
+
+The workflow that builds the website and deploys it to GitHub Pages. It runs on every push to
+`main`, which is why adding a registry entry is enough to publish: the commit that lists a new
+paper is also the commit that redeploys the gallery. It is a plain MyST build, with no engine
+and no secrets.
+
+Two parts of it are less obvious than they look, and both exist because a MyST build can
+succeed while producing a broken page.
+
+**The subpath.** GitHub serves a project site under `/<repo>/`, and MyST has to be told, or it
+writes asset URLs from the domain root and every stylesheet, script and image 404s. The
+workflow asks `actions/configure-pages` where the site is actually served and passes that to
+MyST as `BASE_URL`, rather than hardcoding a path, which is what keeps a custom domain working
+too.
+
+**The plugin check.** The build step greps its own log for the gallery plugin announcing
+itself, and fails the run if it is absent. MyST treats a plugin it cannot fetch as a warning
+and still exits successfully, so without that grep a bad tag would deploy a paper-less front
+page over a good one. See [the gallery plugin](../guide/pins.md#guide-pins).

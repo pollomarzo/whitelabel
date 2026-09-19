@@ -2,8 +2,8 @@
 
 +++ {"part": "abstract"}
 
-Replace this with your abstract. The `abstract` part is lifted into the site, the merged
-PDF cover page, and the Zenodo deposit description, so keep it self-contained.
+Replace this with your abstract. It is lifted into the site, the PDF cover page and the Zenodo
+deposit.
 
 +++
 
