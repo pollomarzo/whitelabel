@@ -7,8 +7,9 @@
  *
  * ⚑ This is bash, not a GitHub runner: `${{ }}` is already resolved by the time a real step runs,
  * `$GITHUB_OUTPUT` is a real file there, and the shell setup differs. So this covers the SCRIPT
- * logic and will not catch a workflow-level or expression-level fault. Treat a green run here as
- * necessary, not sufficient; the live conformance run is what exercises the real thing.
+ * logic, plus the one expression-level fault checked statically below (`secrets` in an `if:`,
+ * [R172]); a workflow-level fault otherwise passes. Treat a green run here as necessary, not
+ * sufficient; the live conformance run is what exercises the real thing.
  */
 import { describe, it, expect } from 'vitest';
 import { spawnSync } from 'node:child_process';
@@ -249,5 +250,59 @@ describe('no frozen run: script interpolates an expression ([R153])', () => {
 
   it('finds the scripts it claims to check', () => {
     expect(runScripts().length).toBeGreaterThan(5);
+  });
+});
+
+describe('the sandbox-token guard refuses an unset token ([R172])', () => {
+  const script = stepScript(
+    '.github/workflows/prepare.yml',
+    undefined,
+    'Refuse a sandbox run with no sandbox token',
+  );
+
+  it('refuses when the sandbox token is unset', () => {
+    const r = run(script, { SANDBOX_TOKEN: '' });
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('refusing to fall back to the production token');
+  });
+
+  it('allows the run when the sandbox token is set', () => {
+    expect(run(script, { SANDBOX_TOKEN: 'a-token' }).code).toBe(0);
+  });
+});
+
+describe('workflow expressions', () => {
+  /** Every `if:` in the frozen surface, with the step that carries it. */
+  function conditions(): Array<{ where: string; expr: string }> {
+    const files = [
+      ...readdirSync(join(SHIM, '.github/workflows')).map((f) => `.github/workflows/${f}`),
+      '.github/actions/engine/action.yml',
+    ];
+    const out: Array<{ where: string; expr: string }> = [];
+    for (const file of files) {
+      const doc = parseDocument(readFileSync(join(SHIM, file), 'utf8')).toJS() as {
+        runs?: { steps: Array<Record<string, string>> };
+        jobs?: Record<string, { if?: string; steps: Array<Record<string, string>> }>;
+      };
+      for (const [name, job] of Object.entries(doc.jobs ?? {}))
+        if (job.if) out.push({ where: `${file}: job ${name}`, expr: job.if });
+      const steps = doc.runs
+        ? doc.runs.steps
+        : Object.values(doc.jobs ?? {}).flatMap((j) => j.steps ?? []);
+      for (const s of steps)
+        if (s.if) out.push({ where: `${file}: ${s.id ?? s.name ?? '(unnamed)'}`, expr: s.if });
+    }
+    return out;
+  }
+
+  it('no `if:` reads the secrets context', () => {
+    // `secrets` is out of scope in an `if:`, and the whole workflow then fails to parse, so the
+    // file is dead rather than the step ([R172]). Read the secret in `env:` and test it in `run:`.
+    const offenders = conditions().filter((c) => /\bsecrets\./.test(c.expr));
+    expect(offenders.map((c) => c.where)).toEqual([]);
+  });
+
+  it('finds the conditions it claims to check', () => {
+    expect(conditions().length).toBeGreaterThan(3);
   });
 });
