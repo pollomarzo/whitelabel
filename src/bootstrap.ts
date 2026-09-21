@@ -1214,7 +1214,7 @@ export async function cmdBootstrapJournal(
       return partial(repo, { tier: input.tier }, actions, contentRunbook, contentFailed, log);
   } else {
     actions.repo = 'exists';
-    // Instance-config repos must be public ([R32], dec. 16); enforce on a re-run too.
+    // Instance-config repos must be public ([R32], [R189]); enforce on a re-run too.
     step('visibility', () => {
       if (prov.repoVisibility(repo) === 'private') {
         prov.setRepoPublic(repo);

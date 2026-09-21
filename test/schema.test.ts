@@ -93,7 +93,7 @@ describe('fixtures parse against the schemas', () => {
   });
 });
 
-describe('JournalConfig additive-only (dec. 24)', () => {
+describe('JournalConfig additive-only ([R197])', () => {
   it('ignores an unknown top-level key instead of rejecting', () => {
     const j = JournalConfig.parse({ name: 'X', future_field: 42 });
     expect(j.name).toBe('X');

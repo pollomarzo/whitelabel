@@ -2,7 +2,7 @@ version: 1
 
 # Fixture brand (design §5). The journal's visual identity, logo, colors, nav, footer.
 # Materialized as REAL files (logo.svg/favicon.svg beside this) because typst/theme load
-# brand assets by path, not URL ([R38], dec. 19). Moved here from the website's nexus.yml.
+# brand assets by path, not URL ([R38], [R192]). Moved here from the website's nexus.yml.
 #
 # Asset paths are BRAND-RELATIVE (`./logo.svg`). compose() absolutizes them to
 # `<instanceRoot>/brand/<x>` so they resolve through the extends chain; myst would

@@ -79,7 +79,7 @@ every Zenodo deposit (`template.zip`), so DOI'd PDFs stay reproducible whatever 
 
 `oak bootstrap journal` stamps this template in one of two shapes:
 
-- **`--external`** → a standalone, **public** ([R32], dec. 16) instance-config repo that many
+- **`--external`** → a standalone, **public** ([R32], [R189]) instance-config repo that many
   paper repos clone at build time. This template plus the journal site (`templates/site/`)
   *is* the whole repo, no shim.
 - **`--co-located`** → this scaffold is stamped into the **same** repo as the frozen paper

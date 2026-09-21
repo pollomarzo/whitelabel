@@ -8,7 +8,7 @@
  *  - We NEVER model the myst config shape. myst is the config oracle (loadConfig).
  *  - Engine-owned instance files are parsed ADDITIVE-ONLY (unknown keys ignored, never
  *    rejected) so a newer instance-config field can't break a paper pinned to an older
- *    engine ([R42], dec. 24). `.loose()` (zod v4) = passthrough of unknown keys.
+ *    engine ([R42], [R197]). `.loose()` (zod v4) = passthrough of unknown keys.
  *
  * These schemas are the single source of truth reused by `oak validate`, by compose,
  * and exported to JSON Schema for author-editor autocomplete (see `toJsonSchemas`).
@@ -40,7 +40,7 @@ export const OaktreeSaplingOptions = z
     /** Engine ref: a released tag (`vX.Y.Z`), the engine default branch, a SHA, or
      *  a `refs/pull/N/merge` (the last two gated to non-fork/allowlist, see ref.ts). */
     version: z.string().min(1),
-    /** Per-paper edition coordinate (dec. 22): selects `editions/<edition>.yml`.
+    /** Per-paper edition coordinate ([R195]): selects `editions/<edition>.yml`.
      *  Required in the repo=paper (n=1) path we build first; a repo=journal build
      *  reads the version from `journal.yml` but still carries `edition` per paper. */
     edition: EDITION_ID,
@@ -160,7 +160,7 @@ export const RegistryEntry = z
      * Where the paper is PUBLISHED, when it isn't where we'd guess. The gallery
      * (`plugins/gallery.mjs`) otherwise derives `https://<owner>.github.io/<name>` from
      * `location.repo`; set this for a custom domain or non-Pages hosting. Optional and
-     * additive (dec. 24): the registry stays a thin pointer list ([S4]), so display
+     * additive ([R197]): the registry stays a thin pointer list ([S4]), so display
      * metadata (title, keywords) is still fetched per paper, never cached here.
      */
     site_url: z.string().optional(),
@@ -173,7 +173,7 @@ export const Registry = z.array(RegistryEntry);
 export type Registry = z.infer<typeof Registry>;
 
 /* --------------------------------------------------------------------------
- * 4. pins.yml: the trust boundary (design §6a, dec. 21, [R37])
+ * 4. pins.yml: the trust boundary (design §6a, [R194], [R37])
  * Read by BOTH the CI shim (yq) and local `oak`, so they can't drift.
  * ------------------------------------------------------------------------ */
 
@@ -188,7 +188,7 @@ export const Pins = z
 export type Pins = z.infer<typeof Pins>;
 
 /* --------------------------------------------------------------------------
- * 5. Paper-id validation (design dec. 20, two checks, different locality)
+ * 5. Paper-id validation (design [R193], two checks, different locality)
  * ------------------------------------------------------------------------ */
 
 export type IdCheckResult =
@@ -231,7 +231,7 @@ export function checkIdShape(
 /**
  * Check B: registry uniqueness. Needs `registry/papers.yml`, so it hard-fails in
  * CI and any local build (instance present) and soft-warns in a bare local validate
- * with no instance (dec. 20). `self` is the paper's own registry slug, excluded so a
+ * with no instance ([R193]). `self` is the paper's own registry slug, excluded so a
  * paper doesn't collide with its own entry.
  */
 export function checkIdUniqueness(

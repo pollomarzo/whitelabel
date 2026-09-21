@@ -30,7 +30,7 @@ export const THEME_VERSION = 'v0.2.0';
  */
 export const DOCS_BASE = 'https://scholar.nexus/oaktree-sapling';
 
-/** Typst template zip attached to each engine release (design dec. 2, §7). */
+/** Typst template zip attached to each engine release (design [R175], §7). */
 export function typstTemplateUrl(engineRepo: string, engineVersion: string): string {
   return `https://github.com/${engineRepo}/releases/download/${engineVersion}/typst-template.zip`;
 }
