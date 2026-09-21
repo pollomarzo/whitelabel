@@ -38,13 +38,13 @@ Entries are marked `[R#]` and cited from source comments, so an id keeps resolvi
 
 ## 1. The frozen shim set (paper repo `.github/`)
 
-The YAML below is the shim as first specified. The shipped files are `templates/paper/.github/`, and they have moved since: actions are pinned by full commit SHA ([R75]) rather than by the mutable tags shown here, and `prepare.yml` takes no `--version` ([R65], [R98]). Read the snippets as the argument, not as something to copy.
+The YAML below is the shim as first specified. The shipped files are `templates/paper/.github/`, and they have moved since: actions are pinned by full commit SHA ([R75]) rather than by the mutable tags shown here, and `prepare.yml` takes no `--version` ([R65]). The file list below is stale too: `check.yml`, `check-post.yml` and `version-bump.yml` are stamped and frozen as well, since `upgrade` re-copies everything under `.github/` plus `CODEOWNERS`. Read the snippets as the argument, not as something to copy.
 
 design §6a speaks of "a frozen ci.yml" — in practice the shim is **five frozen files**:
 one local **composite action** (`.github/actions/engine/action.yml`) that owns the pins and
 the resolve-ref → checkout-engine → dispatch dance, plus **four near-declarative workflow
 files**, because GitHub events (`workflow_run`, tag push, `workflow_dispatch`) must each
-have their own workflow file **[R2]**. All five are generic, stamped by copier, never
+have their own workflow file. All five are generic, stamped by copier, never
 edited after creation, and CODEOWNERS-gated.
 
 The workflow files keep only what GitHub forces to be static — triggers, permissions,
@@ -482,10 +482,6 @@ so a sentinel-id paper on the new pipeline can still mis-match it.
   its INSTANCE-CONFIG. Decision here: repo pinned in the gated shim (trust: editions can
   name plugins = code), ref floats on the instance default branch (it's living data),
   edition name in `options`.
-(r2)=
-- **[R2] "Frozen ci.yml" is five files** — workflow_run/tag/dispatch triggers can't share
-  one file; the shim is a *set* (one composite action + four workflows, per [R17]), all
-  frozen.
 (r3)=
 - **[R3] DOI write-back contradiction** — §12 says "via the engine fragment, not by editing
   myst.yml"; §13 and the working prepare flow commit `project.doi` via PR. Keep the PR: the
@@ -529,18 +525,10 @@ so a sentinel-id paper on the new pipeline can still mis-match it.
   correctness bug waiting to fire, and it will recur every time an author skips editing
   `id:`. Fixes: validate rejects the sentinel/duplicate ids, bootstrap stamps a fresh id,
   the colliding id fixed before id-first lookup ships (§4, §6).
-(r13)=
-- **[R13] Job-scoped permissions** — the original ci.yml sketch granted `pages: write` +
-  `id-token: write` workflow-wide, so the untrusted build job held them on branch PRs.
-  Workflow default is `contents: read`; deploy perms live on the deploy job only.
 (r14)=
 - **[R14] yq read hardened** — quoted key form (`["oaktree-sapling"]`; unquoted hyphenated
   keys are yq-version-sensitive) plus an explicit missing-key guard, so a paper without
   the `options` block fails with a clear error instead of a baffling checkout failure.
-(r15)=
-- **[R15] Stage-2 concurrency across forks** — keying on `head_branch` alone collides when
-  two different forks PR from identically-named branches (canceling each other's
-  previews); key on head repo + branch.
 (r16)=
 - **[R16] notify-newversion belongs in Stage 2** — its sticky comment + label need
   `pull-requests: write`, which fork-PR runs never get; folding it into Stage-1 ci.yml
@@ -707,21 +695,6 @@ so a sentinel-id paper on the new pipeline can still mis-match it.
 ---
 
 ## Ratified deltas (2026-07-09, round 2)
-
-(r41)=
-- **[R41] Engine-ref trust narrowed (refines [R7]/[R9]).** [R9] rested on "`actions/checkout`
-  with a pinned `repository:` guarantees the ref resolves inside the engine repo" — true, but
-  for a *public* engine that accepts PRs, "inside the repo" includes `refs/pull/N/merge` of any
-  **unmerged** PR, i.e. arbitrary contributor code. A fork paper-PR could set
-  `options.oaktree-sapling.version: refs/pull/<malicious-engine-pr>/merge` and Stage 1 would run
-  it. Blast radius is bounded (Stage 1 is secretless → Actions-minutes abuse + a poisoned
-  artifact Stage 2 deploys to a preview subdomain whose *content* the attacker already controls),
-  but running arbitrary *code* in CI is a strictly worse floor than rendering arbitrary
-  *content*. Rule for the port: the floating author path (`oak validate` + the shim) accepts only
-  refs that are **ancestors of a released engine tag or on the engine default branch**; raw SHAs
-  and PR-merge-refs are gated to **same-repo (non-fork) PRs or a maintainer allowlist** for
-  dogfooding. Ancestry is a cheap CI-side check (`gh api` / `git merge-base --is-ancestor`) in
-  `oak validate`. Design [R196].
 
 (r42)=
 - **[R42] Instance/engine compat is narrow — `journal.yml` + registry only (trims an
@@ -2452,78 +2425,6 @@ Item 4's piecewise review begins. Piece P1 is the frozen surface: `templates/pap
 design §6/§6a/§8, and the ledger entries those files cite. Findings below; the four security
 ones merged as PR #39, the four correctness ones as PR #40.
 
-(r90)=
-- **[R90] The H2 guard did not close H2, and a comment said it did.** The single most important
-  finding of P1, and the reason the review method insists a guard be tested against the bug it
-  guards.
-  - The untrusted-surface review plan records H2 as **LANDED 2026-08-01** with "the class is
-    closed at the template either way". The guard it added validated `head-sha` and `pr-number`
-    with `printf '%s' "$v" | grep -qE '^…$'`. **`grep -q` is line-oriented**: it exits 0 if ANY
-    line matches, so a two-line value passed. Reproduced locally 2026-08-30:
-    `printf 'deadbeef\npr=1 x; echo PWNED'` satisfies `^[0-9a-f]{7,40}$`.
-  - `echo "sha=$sha" >> "$GITHUB_OUTPUT"` then wrote both lines. The injected `pr=` never met the
-    digits check, and `format('--pr {0}', …)` splices it unquoted into `args:`, which
-    `action.yml` splices unquoted into `run: .engine/ci/run.sh ${{ inputs.args }}` — a bash line
-    in the job holding `GH_TOKEN` with `checks: write` + `pull-requests: write`.
-  - The comment above the guard asserted that "no newline (GITHUB_OUTPUT injection) or shell
-    metacharacter can ride through". A confident comment on a wrong guard is worse than no
-    comment: it is the reason nobody re-read it for a month.
-  - **Rule taken:** a guard added in response to a finding gets a demonstration that it rejects
-    the finding's own input, recorded with it. That plan's §H2 LANDED note is amended rather
-    than deleted, since the mistake is the lesson.
-
-(r91)=
-- **[R91] Stage 2 takes its facts from its own event, not from Stage 1's artifact.** The general
-  rule P1 extracted; [R90] was one instance of breaking it.
-  - On `pull_request`, GitHub runs the **PR's own copy** of the Stage-1 workflow file, so a fork
-    supplies the bytes in the artifact. Stage 2 is trusted and holds tokens. Any value it acts on
-    must come from `workflow_run.*` (GitHub-set) or be checked against something that does.
-  - The head sha was in the artifact and did not need to be: `workflow_run.head_sha` is the same
-    value. Removed from `check.yml`'s stash and from `check-post.yml`'s read. Besides the
-    injection, this closed a **forged-verdict-on-another-PR** path: `--sha` was the Check Run
-    target, `--verified-head` was passed alongside it and used ONLY for the frozen-shim advisory
-    ([R83], `cli.ts:829`), never compared to `--sha`. So a fork could aim a passing "Journal
-    checks" Check Run at an unrelated PR's head. This is H1 with a cheaper primitive: no need to
-    repoint the engine, just write a different sha.
-  - The PR number cannot follow the rule (`workflow_run.pull_requests` is empty for forks, [R26]),
-    so it keeps two checks: shape against the **whole** string, and ownership — the API is asked
-    which commit that PR heads at, and it must be this run's commit.
-  - **Left open:** Stage 1 still *authors the report content* Stage 2 posts, so a fork can write a
-    passing verdict. That is H1's remaining half. It is a design question (the verdict is computed
-    in the untrusted half by construction), not a patch, and it means the Check Run should not be
-    the only thing between a PR and `main`.
-
-(r92)=
-- **[R92] CODEOWNERS gates code sources, and `paper-environment.yml` is one.** `action.yml` runs
-  `setup-micromamba` with `environment-file: paper-environment.yml` for **every verb**, including
-  `deposit prepare`, `release` and `upgrade`, none of which need Python. Installing a conda
-  package runs its hooks, in the job holding `ZENODO_TOKEN` and a write `GH_TOKEN`. The file sat
-  at the repo root, ungated, while CODEOWNERS' own comment claimed to gate everything that could
-  "redirect a token-bearing run to unreviewed code". Now gated.
-  - **Not fixed, deliberately:** the micromamba step still runs for verbs that cannot need it.
-    Narrowing it is the better fix and risks breaking a paper that depends on the environment
-    existing; it wants its own change. Also note a gated file that is not a *frozen* file gets no
-    `frozenPathsTouched` advisory ([R83]), so an editor sees the review request but no banner.
-
-(r93)=
-- **[R93] `ref.ts` is unwired, and `action.yml` claimed otherwise.** `classifyRef`/`decideRef`
-  implement [R196] / [R41]'s ref-class policy, are unit-tested, and **have no callers** anywhere
-  in `src/`. `action.yml` stated the policy was "enforced by `oak validate` inside the engine".
-  It is not, and it could not be where it stands: `oak validate` is engine code at the ref being
-  judged, and no token-bearing workflow invokes it at all. The only real constraint is
-  `run.sh`'s `dist/cli.cjs` check ([R57]) — a runnable engine ⟺ a release — which is a file test,
-  not a ref-class test. Comment corrected to say what is actually true. Wiring the policy in
-  front of the checkout means it cannot be engine code; that is the open design question.
-
-(r94)=
-- **[R94] Concurrency keys need the head repo, in both stages.** Stage 2 keyed on
-  `head_repository.full_name` + `head_branch` with a comment explaining why; Stage 1 keyed on
-  `github.head_ref` alone. Two forks on a branch named `main` cancelled each other, and the PR
-  group `ci-main` also collided with the **push-to-main** group, so opening a fork PR from `main`
-  cancelled an in-flight Pages deploy. A cancelled Stage 1 uploads no artifact, so Stage 2's
-  `conclusion == 'success'` guard fails and the PR waits on a merge gate that can never arrive.
-  Fixed in `ci.yml` and `check.yml`; §1b's snippet carries the same defect and is amended with it.
-
 (r95)=
 - **[R95] `a && b || c` returns `c` when the secret `b` is unset.** `prepare.yml` selected the
   Zenodo token with `inputs.sandbox && secrets.ZENODO_TOKEN_SANDBOX || secrets.ZENODO_TOKEN`. An
@@ -2540,33 +2441,6 @@ ones merged as PR #39, the four correctness ones as PR #40.
   reserved from CI lost the `zenodo.community` and `description_blurb` that [R19] moved out of
   the hardcoded Python. Silently, with no warning, corrected only later if `oak release` (which
   does get `--instance`) overwrote the metadata. `deposit` added to the list.
-
-(r97)=
-- **[R97] `[R14]`'s "fail loudly" covers both values feeding the checkout.** `action.yml` guarded
-  the engine *ref* with an explicit empty/null check and read `engine_repo` four lines below with
-  a bare `yq '.engine_repo'`. `yq` prints the literal `null` for a missing key, so a mis-rendered
-  or hand-edited `pins.yml` produced `repository: null` and exactly the "baffling downstream
-  checkout error" the guard above it exists to prevent. Now guarded.
-
-(r98)=
-- **[R98] The record's §1 enumeration is three files stale, and nothing noticed.** §1 says the
-  shim is "five frozen files" and lists the action, `ci.yml`, `preview-deploy.yml`, `prepare.yml`,
-  `publish.yml`. Eight are stamped: `check.yml`, `check-post.yml` and `version-bump.yml` are also
-  frozen, since `upgrade.ts:78` re-copies everything under `.github/` plus `CODEOWNERS`.
-  `version-bump.yml` runs on a `schedule` with `contents: write` + `pull-requests: write` and
-  appears in no design record at all. §1d additionally specifies a required `version` input that
-  `prepare.yml` does not have and `cmdDeposit` does not read — there the **code** is right (the
-  version is the tag, and enters at `oak release`), so §1d is amended, not the shim.
-  - The enumeration is what a reviewer and the upgrade author check against, so being wrong here
-    costs exactly the fleet-wide re-copy P1 is reviewed first to avoid.
-
-(r99)=
-- **[R99] Nothing tests the frozen workflows, which is how [R90] survived.** The whole 518-line
-  frozen surface has no behavioural test: `template.test.ts` asserts the stamped file *set* and
-  the `.gitignore` rename, and nothing asserts what any workflow *does*. 346 tests were green
-  across the month H2 was believed closed. Not fixed here — the useful shape is probably a shell
-  test over the guard steps plus a live probe, and it wants its own change — but recorded, because
-  "green CI" was doing no work at all on the highest-blast-radius files in the repo.
 
 **Documentation change taken with these:** the frozen workflows stopped carrying their own
 rationale in comment blocks. `docs/design/paper-ci.md` (the first page under `design/`, where the
@@ -2731,7 +2605,7 @@ everything else, so its failures are false greens everywhere, which is what the 
 - **[R112] The cut could break "a runnable engine ⟺ a release" from two directions.**
   - `git add -f dist/cli.cjs bin/typst` writes the DEVELOPER's index and is undone four lines
     later with nothing in between to survive an interrupt. Left staged, the next ordinary commit
-    puts them on a branch, and since the shim's guard is a file-existence test ([R93]), that
+    puts them on a branch, and since the shim's guard is a file-existence test ([R57]), that
     branch is then a runnable engine ref. Now trapped on any exit.
   - The tag was pushed before `gh release create`. A transient `gh` failure left a runnable tag
     with no Release *and* spent the version, since the clobber guard refuses a re-cut and a real
@@ -2822,7 +2696,7 @@ no amount of reading had. Fixes in PR #44.
   - **[R28]** the `deposit/` reserved-name collision, a *validate* error in the record, implemented
     only in `zenodo.ts` at release time ([R101]).
   - **[R41] / [R196]** the engine ref-class policy: `classifyRef`/`decideRef` have one importer,
-    their own test ([R93]). [R196] still sits in design §11's SETTLED table as if enforced.
+    their own test.
   - **[R46]b** "validate asserts every registry entry resolves to a real repo with a DOI". The
     registry is loaded and used only for id-uniqueness; `doi` does not appear in `validate.ts`.
   - **[R189]** "bootstrap/validate enforce public". `bootstrap.ts` does; `validate.ts` has no
@@ -2872,7 +2746,7 @@ queued below and is the largest backlog in the review.
     before protect-main exists; in an org with inherited secrets an `on: push` workflow reaches
     them. Fixed by deleting before restoring.
   - **`buildReviewTree` is a pure MODEL of this invariant with no callers** — the third dead model
-    function in this review, after `ref.ts` ([R93]) and [R28]'s collision check. Nothing kept the
+    function in this review, after `ref.ts` and [R28]'s collision check. Nothing kept the
     shipped path honest to the model, and the fixture gave main a SUPERSET of the author's
     editor-controlled paths, so deleting the filter left the whole suite green.
 
@@ -3477,35 +3351,6 @@ naming the file and line; a tree with no reachable ledger exits 0).
   a function that names the right one. Under [R133] this is the message an editor now actually
   sees, so it was fixed with it.
 
-(r136)=
-- **[R136] The preview path read the PR number from the untrusted artifact with no shape check,
-  while its sibling had been hardened.** P1's fix put both a shape check (`^[0-9]{1,10}$`) and an
-  API ownership check (the PR's head sha must equal `workflow_run.head_sha`) into the frozen
-  `check-post.yml`. `preview-deploy.yml` has neither, and `oak deploy-preview` reads `.pr-number`
-  out of the downloaded `paper-build` artifact verbatim. That artifact is produced by Stage 1,
-  which runs fork content, so a fork author controls the file byte for byte. Stage 2 holds
-  `GH_TOKEN`, `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`.
-
-  `takePrNumber` returned the trimmed contents, and `gh.ts`'s `sticky` interpolates them into
-  `repos/${repo}/issues/${prNumber}/comments`, an argv element rather than a shell string, so this
-  is path injection into the API URL rather than command execution.
-
-  Certain impact: the bot posts its sticky preview comment on any issue or PR number in the base
-  repo that the fork author names, carrying the repo's own identity and a link to content the
-  author controls. Whether a `..` segment reaches a different endpoint under the base token was
-  NOT tested and is not claimed; the shape check closes it either way.
-
-  `takePrNumber` and a new `assertPrNumber` now refuse anything that is not one to ten digits, so
-  both `deploy-preview` and `notify` are covered. A malformed value THROWS rather than no-ops:
-  absence is a push build, but a present-and-malformed file is a corrupt or hostile artifact and
-  Stage 2 going red on it is correct.
-
-  ⚑ **Residual, deliberately not closed here.** The ownership check (this PR number is the PR that
-  produced this artifact) is the stronger guard and is still absent on this path. It needs
-  `workflow_run.head_sha` passed into the CLI, which is a frozen-file change and therefore a
-  second fleet-wide re-copy on top of [R133]'s. Deferred rather than dropped: a preview comment
-  gates nothing, which is why `check-post.yml` earned the stronger guard first.
-
 ## Ratified deltas (2026-09-01, round 9: the frozen changes, taken together)
 
 The user's call: make every frozen-file change the review has identified now, in one PR, so the
@@ -3562,27 +3407,6 @@ expression-level fault. Necessary, not sufficient; the live conformance run is w
 real thing.
 
 ## Ratified deltas (2026-09-01, round 10: `cli.ts`'s remaining verbs)
-
-(r137)=
-- **[R137] `oak check-post` met the untrusted artifact with `JSON.parse` and a destructure.**
-  `cli.ts` did `JSON.parse(readFileSync(reportPath))` with no guard, and `checks.ts` then
-  destructures `report.checkRun` without checking it exists. Stage 1 is fork-controlled (a
-  `pull_request` run uses the HEAD's workflow files, so an author's own `check.yml` writes that
-  artifact), which makes the report untrusted input by construction. Two ways to a stack trace:
-  bytes that are not JSON, and valid JSON with no `checkRun`, for example `{}`.
-
-  Stage 1's `jq -e '.checkRun.conclusion'` guard does not help, because it runs in that same
-  untrusted half. This is the [R136] shape again: untrusted input answered with a stack instead
-  of a sentence. Not an escalation (an author can only deny themselves a verdict, and the merge
-  gate then shows none), but the operator is told "engine crash" for a fault the engine did not
-  have. Both paths now return 1 with a sentence naming the file and what is wrong with it.
-
-  ⚑ **Verified while here, and it holds:** the forgery case (a fork editing `check.yml` to write
-  `conclusion: success`) is defended by [R83]'s frozen-shim advisory, and `check-post.yml` really
-  does pass `--base` and `--verified-head`, so the advisory is live rather than dormant. The
-  advisory is skipped when either is absent, which the record calls back-compat; that path is not
-  reachable from the shipped shim. Checked because "enforced elsewhere" has been false six times
-  in this review; this is the first time it was true.
 
 (r138)=
 - **[R138] Every verb's usage line promises `--repo <owner/name>` and nothing enforced it.** In
@@ -3790,31 +3614,6 @@ is not optional.
 
 That sentence is [R113]'s work: the harness distinguished "the check is late" from "the check is
 absent" and refused to wait out a verdict that was never coming.
-
-(r146)=
-- **[R146] P1 changed the Stage-1 → Stage-2 artifact contract, and an upgrade PR runs the two
-  halves at DIFFERENT versions.** `check.yml` (Stage 1) runs from the PR head; `check-post.yml`
-  (Stage 2) always runs from the base, by design ([R91]). So on the very PR that installs a new
-  shim, the new Stage 1 meets the old Stage 2. P1 stopped writing `head-sha` into the artifact;
-  every already-deployed `check-post.yml` still does `cat journal-checks/head-sha` and exits 1.
-
-  Every paper repo's `oak upgrade --files-only` PR would have failed its own journal checks, and an
-  editor looking at a red required check would reasonably not merge it. The fix would have been
-  unable to install itself, across the whole fleet.
-
-  Fixed by writing `head-sha` again, unread. The security property lives in Stage 2 not READING it
-  (`check-post.yml` takes the sha from `workflow_run.head_sha`), which is untouched; writing it
-  costs nothing and keeps the previous Stage 2 working. The comment says to drop the write once no
-  repo runs a shim older than v0.0.3.
-
-  ⚑ The general rule, worth carrying: **the frozen shim's artifact is a versioned interface between
-  two halves that upgrade at different times.** Removing a field from it is a breaking change to a
-  contract whose other end is whatever the fleet last installed. Additions are safe; removals need
-  a release of tolerance first. Nothing in the record said this before, which is why P1 did it.
-
-  ⚑ Also noted, not a defect: `check.yml`'s upload `path:` still listed `head-sha` while nothing
-  wrote it. Harmless (`upload-artifact` skips missing paths, and `if-no-files-found: error` fires
-  only when all are missing) and now true again.
 
 **This is the value of the release-then-certify order.** Reading found nothing here across a full
 piecewise review of the frozen surface; a single live run found it in four minutes, before the
@@ -4138,63 +3937,6 @@ threat actor (an author who notices CI runs their code, plus a logged token). Th
 mostly closed by Pass A ([R136], [R41], [R137], [R141]); re-derived from the code, two holes were
 still open. Frozen-file changes, so batched into one PR and one fleet `oak upgrade --files-only`.
 
-(r153)=
-- **[R153] H2 was closed for the artifact values and left open for the one that matters: `args`.**
-  Pass A removed `head-sha`/`pr-number` from the shell path ([R90]/[R91]) by taking them from the
-  event, but the composite action's dispatch step still spliced `${{ inputs.args }}` straight into
-  a bash `run:`. That is the [R103] class ("an argv array stops the shell, not the callee's parser;
-  a spliced string stops nothing") sitting in the highest-value job in the system.
-  - `publish.yml` passes `release --tag ${{ github.ref_name }}`, and `git check-ref-format` permits
-    `$( )`, backticks and `;` in a tag name. Demonstrated against real git:
-    `git tag 'v1.0.0$(id)'` is accepted. Demonstrated against the shipped script by
-    `test/frozen-guards.test.ts`: a dispatch of `release --tag v1.0.0$(touch${IFS}pwned)` creates
-    the file against the unfixed step and does not against the fixed one; backtick and `;` variants
-    likewise. That job holds the production `ZENODO_TOKEN` and a write `GH_TOKEN`.
-  - **Bounded, and stated precisely rather than inflated.** The `v*` push that triggers
-    `publish.yml` is gated by the `editors-only-v-tags` ruleset on a provisioned repo, so this is
-    not a fork-author escalation: the tag-pusher is an editor. It is an author-INFLUENCED value
-    (an author proposes the version an editor tags) reaching a shell splice in a token-bearing job,
-    which is exactly the class Pass A hardened everywhere else. Not run end to end through a live
-    `publish.yml` (that needs an editor v-tag push and would deposit to Zenodo); the mechanism is
-    proven at the git level and at the shipped-script level, and that is what is claimed.
-  - **Fixed by moving the value to `env:` and word-splitting it unquoted** (`ARGS`, `set -f` so
-    splitting does not also glob). The verb and its flags still split, which the shim relies on;
-    a metacharacter no longer starts a command. The same `run:`-splice pattern in `ci.yml`
-    (`.pr-number`) and `check.yml` (`head-sha`, `pr-number`, `validate.outcome`) carries only
-    GitHub-set values (an integer, a hex sha, an enum) that are shell-inert today, but they are
-    the same anti-pattern, so all were converted to `env:` reads and a lint now keeps the class
-    dead across the whole frozen surface.
-  - `test/frozen-guards.test.ts` grew a `dispatch` group (five cases, each injection half proved
-    against the unfixed step) and a lint over every frozen `run:` asserting none contains `${{`.
-    This is the [R99]/[R90] lesson applied as a gate rather than a comment: a value that reaches a
-    script must arrive through `env:`, checked mechanically so it cannot drift back.
-
-(r155)=
-- **[R155] The composite action wrote a fork-controlled value to `$GITHUB_OUTPUT` unchecked, and
-  its ref-class guard was line-oriented, both the [R90] shape.** The `ref` step does
-  `ref=$(yq '.project.options["oaktree-sapling"].version' myst.yml)` then
-  `echo "ref=$ref" >> "$GITHUB_OUTPUT"`. On a PR, `myst.yml` is fork-controlled, and a block-scalar
-  `version: |` carrying a newline makes `$ref` multi-line. Demonstrated at the shell level:
-  `ref=$'v0.0.3\ninjected=PWNED'` writes a SECOND `name=value` line into `$GITHUB_OUTPUT`, and the
-  `refclass` guard (`printf '%s' "$REF" | grep -Eq '...'`) is line-oriented, so a forbidden class
-  on one line beside a benign line neither matches on the benign line nor blocks. This is exactly
-  [R90]'s "grep -q is line-oriented" and [R91]'s "any value it acts on must be checked", one step
-  earlier in the same file.
-  - **No privilege escalation demonstrated, and that is stated rather than glossed.** The consumed
-    security-relevant outputs (`engine` repo, `instance`) live on the SEPARATE `pins` step, not
-    injectable from `ref`. `refclass` and the `checkout` both read the same resolved
-    `steps.ref.outputs.ref`, so output injection cannot make the guard and the checkout diverge
-    (last-write-wins gives both the same value; a forbidden ref that reaches the checkout also
-    reaches the guard and is refused). So this is a bypassable-guard / output-injection class
-    defect, closed as defense-in-depth on a frozen file already open in this PR, not a proven RCE.
-  - **Fixed** with a positive charset guard on `$ref` before the echo: `case "$ref" in
-    *[!A-Za-z0-9._/-]*) exit 1` refuses a newline, a space and every shell metacharacter, which no
-    real git ref carries (`v1.2.3`, `refs/pull/N/merge`, a 40-hex sha, `main`, `v0.0.0-dev.N` all
-    pass). The `refclass` grep is left as is: it now only ever sees a single-line, charset-clean
-    value. `test/frozen-guards.test.ts` grew a `ref`-step group (stubbing `yq` on PATH and pointing
-    `$GITHUB_OUTPUT` at a real file), each half proved against the unfixed step: the injection line
-    never appears, and metacharacter versions are refused.
-
 ⚑ **Fleet action owed on merge:** `oak upgrade --files-only` (with Pass A's still-undeployed
 [R133]/[R41]/[R136]/[R137] batch, per the standing hold). Enumerate the fleet at execution time.
 
@@ -4203,38 +3945,6 @@ still open. Frozen-file changes, so batched into one PR and one fleet `oak upgra
 H6 in the plan treated a fork preview as "arbitrary HTML on a cross-site origin, low". Re-running
 it found more: the fork controls the artifact BYTE for byte, and Cloudflare Pages reads control
 files at the deploy root that turn a static upload into an ORIGIN.
-
-(r154)=
-- **[R154] A fork can execute code and set open redirects on the tenant's preview origin.** Proved
-  live, Pass B: fixture fork PR #58 (`pollobbella` -> `pollomarzo/fixture-paper-repo`) added a step
-  to its own `ci.yml` writing `_worker.js` into the build output. The preview served
-  `PASSB-WORKER-EXECUTED <path>` with the attacker's header for EVERY path, i.e. the fork's Worker
-  ran on `oaktree-sapling-test.pages.dev` (the tenant's real Pages project). `_redirects`/`_headers`
-  reach the same origin, giving an open redirect and response-header control under the journal's
-  Pages domain.
-  - Worse than [R83]'s H3 leak (which turned symlinks into STATIC files): this is active code on
-    the preview origin, which is same-site to every other preview in the project. Still cross-site
-    to a `github.io` journal, so the [R136]/H6 boundary to the journal itself holds; the exposure
-    is the preview origin and everything sharing it.
-  - **Fixed in the engine (Stage 2, trusted), not the frozen shim.** `cmdDeployPreview` now calls
-    `stripPagesControlFiles(siteDir)` right after `takePrNumber`, before any deploy path (including
-    the artifact-link degrade), removing `_worker.js`, `functions/`, `_routes.json`, `_redirects`,
-    `_headers`, `_middleware.js` from the deploy root. Deliberately engine-side: `ci.yml` is
-    fork-controlled, so a Stage-1 strip is a guard a fork deletes in the same commit (the symlink
-    note already says this); the strip that counts runs in base context behind the pinned release.
-    A paper preview is static MyST output, so none of these files is legitimate.
-  - Each half proved against unfixed code: neutering `stripPagesControlFiles` fails the unit tests;
-    removing the `cmdDeployPreview` call fails an integration test that snoops the dir the fake
-    deployer is handed. The shipped bundle was run against a planted `_worker.js` + `_redirects`
-    and both were removed before the deploy step.
-  - **NON-frozen**, so it ships with the next version bump, not a `--files-only` re-copy.
-  - ⚑ **Residual:** conformance's `preview-fork` phase asserts a 200, not that a planted control
-    file was stripped, so it would not catch a regression of this. A C-case that plants `_worker.js`
-    on the fork branch and asserts the served origin does NOT execute it is the durable guard;
-    deferred as its own item, matching the other conformance-assertion gaps ([R123]/[R113]f).
-  - Live proof of the FIX end to end (deploy the stripped dir to Cloudflare, confirm no Worker
-    executes) is owed at the first dev cut that carries this, since CF tokens live only in GH
-    secrets; the unit + integration + shipped-bundle proofs cover the strip itself.
 
 ## Pass B status (2026-09-02): the untrusted-PR surface, re-derived
 
@@ -4561,50 +4271,6 @@ migration onto the engine has not started, so the rollout's "twelve paper repos 
 first" premise has no current subject. `fixture-paper-repo` is on `v0.0.4` as a side effect of the
 cert's own `oak upgrade --both`; the other six test repos are left as-is per the user's call. The
 real fleet repin waits on the real-paper migration (frontier).
-
-(r172)=
-## [R172] `prepare.yml` uses `secrets` in a step `if:`, DOI reservation is dead (2026-09-08)
-
-Found while standing up a sample journal (`pollomarzo/sapling-review` +
-`pollomarzo/sapling-2026-timescales`, external tier, pinned `v0.0.4`) and driving the Zenodo path.
-
-**Bug.** `templates/paper/.github/workflows/prepare.yml:29` gates the sandbox-token guard with
-`if: ${{ inputs.sandbox && secrets.ZENODO_TOKEN_SANDBOX == '' }}`. GitHub Actions does not expose
-the `secrets` context in a step-level `if:`, so the whole workflow fails to parse.
-
-**Evidence.** `gh workflow run prepare.yml -f sandbox=true` returns `HTTP 422 ... Unrecognized
-named-value: 'secrets'` (position 19, `prepare.yml:29`). `workflow_dispatch` is the only trigger,
-so the file is entirely dead: the editor-dispatched DOI RESERVATION cannot run on any paper. Present
-in `v0.0.4` (certified) and on `main`. Scoped: the only `if:`-with-`secrets` in `templates/`.
-
-**Why conformance missed it.** The 4-path cert drives push-main, preview (same-repo + fork), and
-deposit-at-tag; it never dispatches `prepare.yml` (manual, editor-only), so a parse error there is
-invisible to the harness.
-
-**Fix (not yet applied to the engine).** Move the secret into the step `env:` and test it in `run:`,
-leaving `if:` to read only `inputs.sandbox`:
-
-    - name: Refuse a sandbox run with no sandbox token
-      if: ${{ inputs.sandbox }}
-      env:
-        SANDBOX_TOKEN: ${{ secrets.ZENODO_TOKEN_SANDBOX }}
-      run: |
-        if [ -z "$SANDBOX_TOKEN" ]; then
-          echo "::error::sandbox run requested but ZENODO_TOKEN_SANDBOX is not set; refusing to fall back to the production token"
-          exit 1
-        fi
-
-Frozen-file change, so it rides the next release + `oak upgrade --files-only`, not a bare version
-bump. A parse guard in `check.yml`, or a conformance path that dispatches `prepare.yml`, would have
-caught it. **Demo unblock:** the sample paper's `prepare.yml` is patched locally to get a demo
-sandbox DOI; that divergence is temporary and superseded when the engine fix ships.
-
-**Applied (2026-09-19).** Fixed as prescribed above, with both halves proved against the unfixed
-file. `frozen-guards.test.ts` gained a static check that no `if:` in the frozen shim reads
-`secrets` (the parse fault, which no bash-level test can reach, and which that file's header
-previously disclaimed) and a behavioural pair driving the guard script with the token set and
-unset. Suite 515 to 519. Frozen-file change, so it reaches papers only through the next release
-plus `oak upgrade --files-only`, and the sample paper's local patch is superseded then. Closes #90.
 
 (r173)=
 ## [R173] Seeded files carry a pointer, not an explanation (2026-09-19)

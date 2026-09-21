@@ -543,9 +543,6 @@ build-count-rebuild cycle that goes with it.
 (r195)=
 - **[R195] Multi-edition monorepo is free.** `edition` is a *per-paper* coordinate, so one co-located repo can hold many papers across many editions; compose selects `editions/<edition>.yml` per paper, one engine version per repo, project=paper intact. Not a distinct build effort — rides the deferred n>1 `assemble()` + an index grouped by edition; it is the *fullest* form of repo=journal and the target shape when that tier is built (single-edition = "all papers declare the same edition," not a simpler path). (ratified 2026-07-09) (§9)
 
-(r196)=
-- **[R196] Engine-ref trust = repo + ref-class, not repo alone.** The floating author path (`options.oaktree-sapling.version`) accepts only refs that are ancestors of a released engine tag / on the engine default branch; raw SHAs and `refs/pull/N/merge` stay allowed for dogfooding **only** on same-repo (non-fork) PRs or a maintainer allowlist. Closes the "any unmerged PR to a *public* engine is trusted code" hole in [R9]. **Enforced in the composite action, pre-checkout ([R41]).** `ref.ts` models the same policy and deliberately has no callers: the check has to run before the engine is checked out, so the engine cannot be the thing that runs it. (ratified 2026-07-09) (§6a)
-
 (r197)=
 - **[R197] `journal.yml` + registry are additive-only.** Instance-config floats ([R194]), but these two *engine-owned* files are read by a *pinned* engine's `schema.ts`/plugins (edition/brand YAML is MyST's compat domain, not ours — `compose()` only wires the `extends:` chain). Keep them additive and have zod ignore unknown keys, so a field rename can't silently break papers still on an older engine. (ratified 2026-07-09) (§3, §12)
 
