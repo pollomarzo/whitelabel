@@ -1,6 +1,6 @@
 # Style
 
-This is relative to code. Every string `oak` prints is `message-style.md`'s.
+This is relative to code. Every string `oak` prints is `message-style.md`'s, and prose is `WRITING.md`'s.
 
 ## Module headers
 

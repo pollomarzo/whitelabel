@@ -57,7 +57,7 @@ npm test
 npm run typecheck
 ```
 
-`NOTES.md` has the module map and the build internals. `RELEASING.md` explains how releases are cut and why the built bundle is committed at the tag.
+`NOTES.md` has the module map and the build internals. `RELEASING.md` explains how releases are cut and why the built bundle is committed at the tag. `STYLE.md` and `WRITING.md` are the conventions a change is reviewed against, for code and for prose.
 
 ## License
 
