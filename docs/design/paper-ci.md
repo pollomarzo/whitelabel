@@ -29,30 +29,32 @@ Stage 1 computes and uploads. Stage 2 downloads and posts. The build and the tok
 (design-paper-ci-stage2-inputs)=
 ## What Stage 2 is allowed to believe
 
-This is the rule that is easiest to get wrong, and it has been got wrong here before.
-
 Stage 2 runs in the base context, but the artifact it downloads was written by Stage 1, and **on a pull request GitHub runs the pull request's own copy of the Stage 1 workflow file**. A fork can therefore edit what goes into that artifact. The artifact is untrusted input to a trusted job.
 
 So Stage 2 takes every value it acts on from its own `workflow_run` event, which GitHub populates and nobody else can write. Concretely, the head commit comes from `workflow_run.head_sha`, not from the artifact, even though Stage 1 could easily have written it there.
 
-One value cannot follow that rule. `workflow_run.pull_requests` is empty when the pull request came from a fork, so the pull request number has to travel in the artifact. It gets two checks before it is used:
+One value cannot follow that rule. `workflow_run.pull_requests` is empty when the pull request came from a fork, so the pull request number has to travel in the artifact. It is checked before it is used:
 
-- **Shape.** It must be digits, matched against the whole string. A previous version of this check used `grep -q`, which matches any *line*, so a two-line file passed and the second line was injected into the step's outputs.
+- **Shape.** Digits, anchored to the whole string. A line-oriented match passes a multi-line value, and the extra line lands in `$GITHUB_OUTPUT` as a second `name=value` pair.
 - **Ownership.** The API is asked which commit that pull request heads at, and the answer must be the commit this run is about. A well-formed number belonging to somebody else's pull request would otherwise redirect the comment onto it.
 
-The report content itself is a separate question. Stage 2 posts the verdict Stage 1 computed, and Stage 1 is the untrusted half, so a fork can currently author a passing report. That is a known gap rather than a solved problem, and it is why the check verdict should not be the only thing standing between a pull request and the main branch.
+The report content is a separate question, and the design does not solve it. Stage 2 posts the verdict Stage 1 computed, and Stage 1 is the untrusted half, so a fork can author a passing report. The check verdict is therefore not an authorisation decision, and it must not be the only thing standing between a pull request and the main branch.
 
 (design-paper-ci-engine-ref)=
 ## Which engine code runs
 
-The composite action at `.github/actions/engine` checks the engine out and runs it. Two coordinates decide what that means:
+The composite action at `.github/actions/engine` checks the engine out and runs it. The coordinates that decide what that means:
 
 - `pins.yml` names the engine repository. It is data, but it selects *code*, so it is gated (below).
 - The paper's own `myst.yml` names the version, under `project.options.oaktree-sapling.version`. It is deliberately not gated, so an author can move their paper to a newer engine in an ordinary pull request.
 
 Because the repository is pinned and only the version floats, the version can only ever resolve to something inside the engine repository. That is weaker than it sounds: a public repository that accepts pull requests will also resolve `refs/pull/N/merge` for any unmerged one.
 
-What actually constrains it today is that a runnable engine only exists at a release. `dist/cli.cjs` is committed onto release tags and onto nothing else, so a version pointing at a branch tip fails immediately with a message saying so. This is the only enforcement there is. A narrower rule was designed, restricting raw commits and pull-request refs to same-repository pull requests, and it is not wired up.
+What constrains it: `dist/cli.cjs` is committed onto release tags and onto nothing else, so a runnable engine only exists at a release and a version pointing at a branch tip fails immediately with a message saying so. And on a pull request from a fork, the composite action's `refclass` step refuses a ref that is a bare 40-character commit or a `refs/pull/N/merge`, before the engine is checked out. Those two classes are for dogfooding from inside the repository; release tags, dev tags and branches pass.
+
+The check runs in the workflow rather than in the engine, because it has to decide what engine to fetch before there is an engine to run. `src/ref.ts` holds the same policy as a pure model with a test, and is deliberately not wired to anything. It is the one place in this codebase where duplicating a model is correct, so do not "fix" it by making the action call it.
+
+It fails open: the guard reads `github.event.pull_request.head.repo.fork`, and on any event without a pull request that value is empty and the step exits 0. That is intended, because a push or a `workflow_run` builds a ref the base repository controls. It does mean a green run is not by itself evidence that the guard fired.
 
 (design-paper-ci-codeowners)=
 ## What CODEOWNERS gates, and why those files

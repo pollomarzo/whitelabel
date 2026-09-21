@@ -6,13 +6,13 @@
  * PRs, "resolves inside the engine repo" (the [R9] guarantee from a pinned
  * `actions/checkout repository:`) also matches `refs/pull/N/merge` of any UNMERGED PR,
  * i.e. arbitrary contributor code. So the trust boundary is repo + ref-CLASS, not
- * the repo alone (dec. 23, [R41]).
+ * the repo alone ([R196], [R41]).
  *
  * This module is the *pure, syntactic* half of the policy: classify a ref and decide
  * whether its class is allowed in a given trigger context.
  *
- * **Nothing calls it, and dec. 23 is unenforced** ([R118]). The enforcement point is the
- * composite action, before the checkout, not the engine judging its own ref.
+ * **Nothing calls it, deliberately** ([R41]): the enforcement point is the composite action's
+ * `refclass` step, before the checkout, because the engine cannot judge the ref that selects it.
  */
 
 export type RefClass = 'tag' | 'sha' | 'pr-merge' | 'branch';
@@ -44,7 +44,7 @@ export interface RefDecision {
 }
 
 /**
- * The floating-author path (design §6a, dec. 23):
+ * The floating-author path (design §6a, [R196]):
  *  - `tag` / `branch` (engine default branch): always allowed *syntactically*, but must
  *    still pass the CI-side ancestry check (ancestor of a released tag / on default branch).
  *  - `sha` / `pr-merge`: allowed ONLY on non-fork PRs or a maintainer allowlist

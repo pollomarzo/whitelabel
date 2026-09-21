@@ -1,7 +1,7 @@
 /**
  * myst.ts: the mystmd edge. The ONE module that imports the (bundled) myst-cli, so the
  * rest of the engine stays testable without the toolchain. Programmatic invocation
- * (design §0/§7a, [R51]): `new Session()` → `loadConfig` / `build`, no shell-out.
+ * (design §7a, [R51]): `new Session()` → `loadConfig` / `build`, no shell-out.
  *
  * The spike (whitelabel/bundling-test) proved `loadConfig`, `build`, and typst export all
  * run from a single esbuild CJS bundle on Node 24. `build()` reads the project from the
