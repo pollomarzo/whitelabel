@@ -10,13 +10,13 @@ minimal starter `myst.yml`/`index.md`/`bib.bib` the author replaces. The journal
 | File | Role |
 |---|---|
 | `.github/actions/engine/action.yml` | the ONE place logic touches: resolve ref → checkout ENGINE@ref → dispatch a verb (§1a) |
-| `.github/actions/engine/pins.yml` | the trust boundary: `engine_repo` + `instance_repo`; only the *ref* floats (dec. 21, [R37]) |
+| `.github/actions/engine/pins.yml` | the trust boundary: `engine_repo` + `instance_repo`; only the *ref* floats ([R194], [R37]) |
 | `.github/workflows/ci.yml` | Stage 1 build (no secrets, fork-safe) + Pages deploy on push ([R13]) |
 | `.github/workflows/check.yml` / `check-post.yml` | two-stage journal checks: untrusted compute → base-context post (slice 4b) |
 | `.github/workflows/preview-deploy.yml` | Stage 2 preview deploy in base context (workflow_run) + new-version reminder ([R16]) |
 | `.github/workflows/prepare.yml` | editor dispatches DOI reservation ([R4], [R29]) |
 | `.github/workflows/publish.yml` | tag push populates the Zenodo draft ([R24]) |
-| `.github/workflows/version-bump.yml` | scheduled logic-ref bump: `oak upgrade --version-only` opens the one-line PR (§6b, dec. 17) |
+| `.github/workflows/version-bump.yml` | scheduled logic-ref bump: `oak upgrade --version-only` opens the one-line PR (§6b, [R190]) |
 | `CODEOWNERS` | gates `.github/` + itself to the editors |
 | `myst.yml` / `index.md` / `bib.bib` | starter paper content (the author replaces the placeholders) |
 

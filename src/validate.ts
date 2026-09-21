@@ -693,7 +693,7 @@ export async function runValidate(
   // build` so the two cannot drift: that drift is exactly what [R71] was about.
   //
   // Degrading is deliberate, not a fallback of last resort: a bare local `oak validate` or
-  // `--no-instance` has nothing to compose (dec. 20 soft-warn precedent). And we GUARD the
+  // `--no-instance` has nothing to compose ([R193] soft-warn precedent). And we GUARD the
   // materialization for the same reason the Layer-B call is guarded, validate is a REPORTER,
   // and a gate that crashes tells the author less than a gate that says what it could not do.
   let project: { id?: string; exports?: Array<Record<string, unknown>>; thumbnail?: string };

@@ -34,6 +34,10 @@ jobs:
       # First: the cheapest failure to fix, and `npm run format` fixes it.
       - run: npm run format:check
 
+      # No build needed: it reads the docs' `(r#)=` and `(design-N)=` targets off disk, so it
+      # catches a citation that stopped resolving before anything slower runs.
+      - run: npm run check:refs
+
       # Not covered by the release canary: vitest transpiles TS through esbuild, which strips
       # types WITHOUT checking them, so a type error passes `npm test` and reaches a tag.
       - run: npm run typecheck

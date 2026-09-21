@@ -60,6 +60,8 @@ project:
     - title: Design
       children:
         - file: design/paper-ci.md
+        - file: design/brief.md
+        - file: design/record.md
 
 site:
   template: book-theme
