@@ -30,9 +30,9 @@ The reference for writing the manuscript itself is not written yet.
 :::
 
 :::{card} Understand how it works
-Why the system is shaped the way it is.
+[How it works](design/index.md): the two-repository shape, what the engine wraps, and how a paper's configuration is assembled.
 
-Not written yet.
+[Paper CI](design/paper-ci.md): why a paper repository's workflows look the way they do.
 :::
 
 ::::
