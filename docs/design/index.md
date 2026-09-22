@@ -2,15 +2,15 @@
 
 # How it works
 
-This section answers why the system is shaped the way it is. It is for somebody changing the engine, forking it, or trying to understand a decision they disagree with. If you only want to run a journal or publish a paper, start from [Run a journal](../start/journal.md) or [Write a paper](../start/paper.md); the guides go into each setting one at a time[^guides], and nothing here is required reading.
+This section answers why the system is shaped the way it is. It is for somebody changing the engine, forking it, or trying to understand a decision they disagree with. If you only want to run a journal or publish a paper, start from [Run a journal](../start/journal.md) or [Write a paper](../start/paper.md); from there the guides take each setting one at a time, beginning with [journal.yml](../guide/journal-yml.md). Nothing here is required reading.
 
-Start with this page. It covers the three things the rest of the section assumes you already know.
+Otherwise, start with this page.
 
 ## There is no central website
 
 A journal is not one repository. It is one **journal repository** holding the settings every paper reads, and one repository **per paper**.
 
-The journal repository holds the journal-level configuration[^journal-config] and no manuscripts. Each paper repository holds one manuscript and knows almost nothing about the journal: it builds itself, checking out the engine, building the paper into a website and a PDF, and depositing it to Zenodo when a version is published.
+The journal repository holds the journal-level configuration, such as the branding and the editorial checks, and no manuscripts. [Files](../reference/files.md) takes them one at a time. Each paper repository holds one manuscript and knows almost nothing about the journal: it builds itself, checking out the engine, building the paper into a website and a PDF, and depositing it to Zenodo when a version is published.
 
 So adding a paper means adding a repository. Nothing is assembled in one place, no service runs between them, and a paper that has been published keeps building after the journal moves on. The cost is that a change to how papers build has to reach every paper repository, which is what `oak upgrade` is for.
 
@@ -49,10 +49,6 @@ Each page takes one part of the system and explains why it is built that way. Wh
 
 [The design brief](brief.md) and [the decision record](record.md) are the working notes the section is being written from. They are long, they are dated, and they are gradually being folded into pages like the one above. They will be deleted when they are empty.
 
-[^guides]: [journal.yml](../guide/journal-yml.md) is every setting and what changing it does; [branding](../guide/branding.md) is the logo, the colours and the mark on the PDF; [editorial checks](../guide/checks.md) is what a submission is held to; [pinned versions](../guide/pins.md) is what nothing upgrades for you; [interactive figures](../guide/interactive-figure.md) is for a paper that needs one.
-
-[^journal-config]: The journal's name, its branding, the editorial checks a submission has to pass, the editions papers are grouped into, and the registry of what has been published. [Files](../reference/files.md) takes them one at a time.
-
-[^around]: Where the journal's settings live, which version of the engine to run, what the editorial checks are, how a preview gets deployed, how a DOI gets reserved, and how an author's pull request gets built without handing it a token.
-
 [^cleanup]: It is not deleted when the build ends. MyST's HTML build finishes by calling `process.exit(0)`, so anything registered to run at the end of the process never runs on a successful build. Deleting the file by hand is always safe.
+
+[^around]: Where the journal's settings live, for one, and which version of the engine to run. Then the editorial checks, deploying a preview, reserving a DOI, and building an author's pull request without handing it a token.
