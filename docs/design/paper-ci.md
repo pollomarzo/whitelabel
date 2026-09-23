@@ -2,9 +2,7 @@
 
 # How a paper repository's CI is built
 
-Every paper repository carries a small set of workflow files that the engine stamps in and `oak upgrade` keeps in sync. They are short, and they are shaped by one problem: a paper repository accepts pull requests from people who are not the editors, and building a paper means running their content.
-
-This page is the reasoning. The files themselves stay brief and point here.
+Every paper repository carries a small set of workflow files that oaktree-sapling stamps in and `oak upgrade` keeps in sync. They are short, and they are shaped by one problem: a paper repository accepts pull requests from people who are not the editors, and building a paper means running their content.
 
 (design-paper-ci-two-stages)=
 
@@ -110,7 +108,7 @@ It fails open: the guard reads `github.event.pull_request.head.repo.fork`, and o
 
 (r97)=
 
-Both coordinates fail loudly when absent, not only the ref. `yq` prints the literal `null` for a missing key, so an unguarded read of a mis-rendered `pins.yml` hands `repository: null` to the checkout and the run dies somewhere downstream with a message naming neither the file nor the key.
+Both coordinates fail when absent. `yq` prints the literal `null` for a missing key, so an unguarded read of a mis-rendered `pins.yml` hands `repository: null` to the checkout and the run dies somewhere downstream with a message naming neither the file nor the key.
 
 (design-paper-ci-codeowners)=
 
@@ -124,9 +122,9 @@ Both coordinates fail loudly when absent, not only the ref. `yq` prints the lite
 - `CODEOWNERS` itself, so the gate cannot remove itself.
 - `paper-environment.yml`, the optional conda environment. It is ordinary-looking configuration, but installing a package runs its hooks, and the environment is set up in the same job as the tokens.
 
-The paper's own content is not gated. Neither is `myst.yml`, which is the point: authors change their paper without an editor in the loop, and the gate exists only around the things that decide what code runs.
+Authors change their paper without an editor in the loop, so neither the content nor `myst.yml` is gated. The gate exists only around the things that decide what code runs.
 
-Note that CODEOWNERS gates nothing on its own. It requires a branch protection rule or ruleset that demands review from code owners; without one it is documentation.
+CODEOWNERS takes effect only behind a branch protection rule or ruleset that demands review from code owners. Without one it is documentation.
 
 (design-paper-ci-concurrency)=
 
