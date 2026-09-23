@@ -2,7 +2,11 @@
 
 # How a paper repository's CI is built
 
-Every paper repository carries a small set of workflow files that oaktree-sapling stamps in and `oak upgrade` keeps in sync. They are short, and they are shaped by one problem: a paper repository accepts pull requests from people who are not the editors, and building a paper means running their content.
+Every paper repository carries a small set of workflow files included by oaktree-sapling on initialization[^sync]. They are short because they hold no logic: each resolves a version, checks the engine out at it, and hands over. A paper moves to a newer engine by changing a version rather than by editing a workflow, which is why these files are identical across every paper and why they are called frozen below.
+
+The rest of their shape comes from one problem: a paper repository accepts pull requests from people who are not the editors, and building a paper means running their content.
+
+[^sync]: For syncing info, see `oak upgrade`.
 
 (design-paper-ci-two-stages)=
 
