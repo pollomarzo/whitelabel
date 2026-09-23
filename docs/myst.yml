@@ -59,6 +59,7 @@ project:
         - file: reference/cli.md
     - title: Design
       children:
+        - file: design/index.md
         - file: design/paper-ci.md
         - file: design/brief.md
         - file: design/record.md

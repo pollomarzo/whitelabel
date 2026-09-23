@@ -1,6 +1,6 @@
 # The paper-repo template (frozen shim + starter content)
 
-This is what `oak bootstrap paper` stamps a paper repo with (design §1, [R2]). The `.github/`
+This is what `oak bootstrap paper` stamps a paper repo with (design §1). The `.github/`
 set is **frozen and generic** (never edited after creation, CODEOWNERS-gated) because all
 *logic* lives in the engine behind `project.options.oaktree-sapling.version`, improvable by a
 one-line version bump instead of a scaffold round across N repos ([R17]). Alongside it sits a
