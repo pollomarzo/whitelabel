@@ -2,7 +2,7 @@
 
 # How it works
 
-This section answers why the system is shaped the way it is. It is for somebody changing the engine, forking it, or trying to understand a decision they disagree with. If you only want to run a journal or publish a paper, start from [Run a journal](../start/journal.md) or [Write a paper](../start/paper.md); from there the guides take each setting one at a time, beginning with [journal.yml](../guide/journal-yml.md).
+This section answers why oaktree-sapling is shaped the way it is. It is for somebody changing it, forking it, or trying to understand a decision they disagree with. If you only want to run a journal or publish a paper, start from [Run a journal](../start/journal.md) or [Write a paper](../start/paper.md); from there the guides take each setting one at a time, beginning with [journal.yml](../guide/journal-yml.md).
 
 Nothing here is required reading; if you want to know more, start with this page.
 
@@ -41,7 +41,7 @@ The assembled result is written to **`myst.oak.yml`**, next to the paper's `myst
 
 ## The pages here
 
-Each page takes one part (slice?) of the system and explains why it is built that way. What each part _does_ belongs in [Reference](../reference/files.md); this section is for the reasoning.
+Each page takes one part (slice?) of oaktree-sapling and explains why it is built that way. What each part _does_ belongs in [Reference](../reference/files.md); this section is for the reasoning.
 
 [How a paper repository's CI is built](paper-ci.md) is the first of them: why every job is split in two, what a job holding a token is allowed to believe, and what `CODEOWNERS` gates.
 
