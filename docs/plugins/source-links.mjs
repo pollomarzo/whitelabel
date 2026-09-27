@@ -10,7 +10,7 @@
  * canonical move, alongside `engine_repo` in the paper template's `pins.yml`.
  */
 const REPO = 'pollomarzo/whitelabel';
-const REF = 'v0.0.4';
+const REF = 'v0.0.5';
 
 const SCHEME = 'src:';
 

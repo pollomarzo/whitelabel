@@ -66,7 +66,7 @@ svg{font-family:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif}
         <rect x="325" y="255" width="160" height="40" rx="6" class="box"/>
         <text x="405" y="280" text-anchor="middle" class="t-mono">paper-environment.yml</text>
         <line x1="405" y1="255" x2="405" y2="203" class="l k dash" marker-end="url(#k2)"/>
-        <text x="411" y="234" class="t-k">installed if present</text>
+        <text x="411" y="234" class="t-k">build jobs only</text>
 
         <!-- local oak -->
         <rect x="540" y="62" width="110" height="32" rx="6" class="box q"/>

@@ -31,12 +31,12 @@ Reads a report that `validate` has already written and posts the outcome as a fi
 (deposit)=
 ## deposit
 
-`oak deposit <prepare|publish|status>` drives the Zenodo deposit. `prepare` reserves the DOI and opens the pull request that writes it into `myst.yml`, best-effort. `publish` uploads the built PDF and bundle; `status` reports the deposit's state. `--sandbox` uses the sandbox token and never reaches for the production one.
+`oak deposit <prepare|publish|status>` drives the Zenodo deposit. `prepare` reserves the concept DOI, reusing an unsubmitted draft if one exists, and opens the pull request that writes `project.doi`, `project.github` and `project.date` into `myst.yml`, best-effort. A production `prepare` may replace a committed sandbox DOI, never the reverse. `publish` uploads the built PDF and bundle; `status` reports the deposit's state. `--sandbox` uses the sandbox token and never reaches for the production one.
 
 (release)=
 ## release
 
-`oak release --tag vX` builds the paper in a child process, publishes its Zenodo deposit, attaches the bundle to that tag's GitHub Release, and finishes by posting a commit comment on success or opening a failure issue otherwise. `--no-build` skips the build and deposits the `_build` already in the paper directory; the publish workflow uses it so the paper's code runs in a job that holds no token.
+`oak release --tag vX` builds the paper in a child process, publishes its Zenodo deposit, attaches the bundle to that tag's GitHub Release, and finishes by posting a commit comment on success or opening a failure issue otherwise. `--no-build` skips the build and deposits the `_build` already in the paper directory; the publish workflow uses it so the paper's code runs in a job that holds no token. The DOI's prefix picks the sandbox or production token. The deposit stays a draft: the public DOI exists once an editor clicks Publish on Zenodo.
 
 (notify)=
 ## notify
@@ -46,12 +46,12 @@ Reads a report that `validate` has already written and posts the outcome as a fi
 (bootstrap)=
 ## bootstrap
 
-`oak bootstrap <paper|journal>` onboards a new repo from the engine's templates at a resolved engine version. `journal` needs exactly one of `--external` or `--co-located` to say where the journal website lives.
+`oak bootstrap <paper|journal>` onboards a new repo from the engine's templates at a resolved engine version. `journal` needs exactly one of `--external` or `--co-located` to say where the journal website lives. `--owner` names who reviews changes to the gated files and approves a Zenodo publish run; an organisation passes a team, such as `@your-org/editors`.
 
 (upgrade)=
 ## upgrade
 
-Re-renders a paper's templated files at the target engine version and compares them against a local `--paper` directory or a cloned `--repo`. `--version-only`, `--files-only` and `--both` pick what it reconciles. It opens an upgrade pull request with the differences, and does nothing when the paper is already up to date.
+Re-renders a paper's templated files at the target engine version and compares them against a local `--paper` directory or a cloned `--repo`. `--version-only`, `--files-only` and `--both` pick what it reconciles. It opens an upgrade pull request with the differences, and does nothing when the paper is already up to date. The weekly `version-bump.yml` runs `--version-only`, and an editor merges its pull request once the preview build looks right.
 
 (conformance)=
 ## conformance
