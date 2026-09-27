@@ -522,8 +522,7 @@ export const ZENODO_PREPARE_ENV = 'zenodo-prepare';
 /** The environment of the preview deploy: `main` only, no reviewer. */
 export const PREVIEW_ENV = 'preview';
 
-/** Every secret lives in environments, never at repository level, where a workflow on any
- *  branch reads it. A name set on several environments holds the same value in each. */
+/** Secrets live in environments only: a repository secret reaches every branch. */
 export const SECRET_MAP: Array<{ key: keyof SecretInputs; name: string; envs: string[] }> = [
   { key: 'zenodoToken', name: 'ZENODO_TOKEN', envs: [ZENODO_ENV, ZENODO_PREPARE_ENV] },
   {
@@ -862,9 +861,7 @@ function applyProvisioning(
     log(msg.bootstrap.logZenodoNoReviewer);
     runbook.push(msg.bootstrap.runbookZenodoReviewer(repo, ZENODO_ENV));
   });
-  // A launcher naming a missing environment makes GitHub create it admitting every branch, and
-  // no policy can be added until that is switched off. The PUT carries the whole environment,
-  // so the reviewers ride along ([R127]).
+  // GitHub auto-creates a named environment open to all branches; the PUT keeps reviewers ([R127]).
   const restrict = (env: string) => {
     if (!prov.environmentExists(repo, env)) prov.upsertEnvironment(repo, env, []);
     else if (!prov.customBranchPolicies(repo, env))
@@ -906,11 +903,8 @@ function applyProvisioning(
   return { runbook, failed };
 }
 
-/**
- * Set the provided secrets on their environments, collect a runbook for the ones still unset,
- * then delete each repository-level copy whose environments all hold it ([R25] floor). A copy
- * whose environments do not is kept and named: deleting it would lose a value nobody can read.
- */
+/** Set secrets on their environments, then delete repository copies all their environments
+ *  hold; any other copy is kept, as its value cannot be read back ([R25] floor). */
 function applySecrets(
   repo: string,
   secrets: SecretInputs,
