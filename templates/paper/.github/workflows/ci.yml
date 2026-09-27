@@ -28,6 +28,7 @@ jobs:
       - uses: ./.github/actions/engine
         with:
           args: build
+          paper-env: true
       # upload-artifact stores a symlink's TARGET as a regular file, putting a runner-readable
       # file on the public preview. Note this file is the PR's own copy, so whoever plants the
       # symlink can delete this step in the same commit: a guard against accident, not intent.

@@ -452,7 +452,7 @@ function findExportedPdf(paperRoot: string): string | null {
   return hit ? join(dir, String(hit)) : null;
 }
 
-/** `oak release --tag vX`: build + deposit publish + attach the bundle to the tag Release,
+/** `oak release --tag vX [--no-build]`: build + deposit publish + attach the bundle to the tag Release,
  *  post a commit comment / failure issue via gh (§1e). Env is derived from the committed DOI.
  *  Observable behaviour: DOCS.release. */
 async function cmdRelease(argv: string[]): Promise<number> {
@@ -468,8 +468,10 @@ async function cmdRelease(argv: string[]): Promise<number> {
   // success, which in-process would kill `release` before its deposit half runs. The child
   // isolates that exit; the parent then reads the same tree's _build/exports (PDF) and
   // _build/site/content (abstract) for the deposit. `oak build` ignores the extra release flags.
+  // `--no-build` deposits a build made elsewhere: CI builds in a job holding no token.
   const paperRoot = resolve(flag(argv, 'paper') ?? '.');
-  execFileSync(process.execPath, [process.argv[1]!, 'build', ...argv], { stdio: 'inherit' });
+  if (!has(argv, 'no-build'))
+    execFileSync(process.execPath, [process.argv[1]!, 'build', ...argv], { stdio: 'inherit' });
   const mystPath = mystPathOf(argv);
 
   const doi = parseDocument(readFileSync(mystPath, 'utf8')).getIn(['project', 'doi']);

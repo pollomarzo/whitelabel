@@ -227,6 +227,8 @@ interface FakeState {
   actionsCanApprovePrs?: boolean;
   environments?: Set<string>; // "repo/env"
   reviewers?: EnvironmentReviewer[]; // what the zenodo-publish env already has
+  openEnvironments?: Set<string>; // "repo/env" that exist but admit every branch
+  secrets?: Set<string>; // "repo/env/name", or "repo/name" at repository level
 }
 
 function fakeProv(state: FakeState = {}) {
@@ -244,6 +246,7 @@ function fakeProv(state: FakeState = {}) {
     createBranchPolicy: [],
     createLabel: [],
     setSecret: [],
+    deleteRepoSecret: [],
     setRepoPublic: [],
   };
   const rec = (k: string, ...args: unknown[]) => calls[k]!.push(args.length === 1 ? args[0] : args);
@@ -272,15 +275,30 @@ function fakeProv(state: FakeState = {}) {
     allowActionsApprovePrs: (r) => rec('allowActionsApprovePrs', r),
     environmentExists: (r, n) => state.environments?.has(`${r}/${n}`) ?? false,
     environmentReviewers: () => state.reviewers ?? [],
-    upsertEnvironment: (r, n, v) => rec('upsertEnvironment', { r, n, v }),
+    upsertEnvironment: (r, n, v) => {
+      rec('upsertEnvironment', { r, n, v });
+      (state.environments ??= new Set()).add(`${r}/${n}`);
+      state.openEnvironments?.delete(`${r}/${n}`);
+    },
+    customBranchPolicies: (r, e) => !state.openEnvironments?.has(`${r}/${e}`),
     branchPolicyExists: (r, e, n) => state.policies?.has(`${r}/${e}/${n}`) ?? false,
     createBranchPolicy: (r, e, n, t) => rec('createBranchPolicy', { r, e, n, t }),
     createLabel: (r, n) => rec('createLabel', { r, n }),
-    setSecret: (r, n) => rec('setSecret', { r, n }),
+    setSecret: (r, e, n) => rec('setSecret', { r, e, n }),
+    secretNames: (r, e) =>
+      [...(state.secrets ?? [])]
+        .filter((k) => k.startsWith(e ? `${r}/${e}/` : `${r}/`) && (e || k.split('/').length === 3))
+        .map((k) => k.split('/').at(-1)!),
+    deleteRepoSecret: (r, n) => rec('deleteRepoSecret', { r, n }),
     repoVisibility: () => state.visibility ?? 'public',
     setRepoPublic: (r) => rec('setRepoPublic', r),
   };
   return { prov, calls };
+}
+
+/** The PUTs on `zenodo-publish` alone, the environment carrying the reviewer gate. */
+function zenodoPuts(calls: Record<string, unknown[]>) {
+  return (calls.upsertEnvironment as Array<{ n: string }>).filter((c) => c.n === 'zenodo-publish');
 }
 
 function deps(prov: Provisioner): BootstrapDeps {
@@ -495,7 +513,12 @@ describe('cmdBootstrapPaper', () => {
       branches: new Set(['me/paper/main']),
       rulesets: new Set(['me/paper/protect-main', 'me/paper/editors-only-v-tags']),
       pages: new Set(['me/paper']),
-      policies: new Set(['me/paper/zenodo-publish/v*']),
+      environments: new Set(['me/paper/zenodo-prepare', 'me/paper/preview']),
+      policies: new Set([
+        'me/paper/zenodo-publish/v*',
+        'me/paper/zenodo-prepare/main',
+        'me/paper/preview/main',
+      ]),
     });
     const out = await cmdBootstrapPaper(paperInput(), deps(prov));
     expect(calls.createRepo).toHaveLength(0);
@@ -509,7 +532,10 @@ describe('cmdBootstrapPaper', () => {
   it('sets provided secrets and prints a runbook for the missing ones', async () => {
     const { prov, calls } = fakeProv();
     const out = await cmdBootstrapPaper(paperInput({ secrets: { zenodoToken: 'zt' } }), deps(prov));
-    expect(calls.setSecret).toHaveLength(1);
+    expect(calls.setSecret).toEqual([
+      { r: 'me/paper', e: 'zenodo-publish', n: 'ZENODO_TOKEN' },
+      { r: 'me/paper', e: 'zenodo-prepare', n: 'ZENODO_TOKEN' },
+    ]);
     expect(out.result.secrets_set).toEqual(['ZENODO_TOKEN']);
     const runbook = (out.result.runbook as string[]).join('\n');
     expect(runbook).toContain('ZENODO_TOKEN_SANDBOX');
@@ -534,7 +560,7 @@ describe('cmdBootstrapPaper', () => {
       paperInput({ repo: 'org/paper', owner: '@org/editors' }),
       deps(org.prov),
     );
-    expect(org.calls.upsertEnvironment).toEqual([
+    expect(zenodoPuts(org.calls)).toEqual([
       { r: 'org/paper', n: 'zenodo-publish', v: [{ type: 'Team', id: 4242 }] },
     ]);
     expect((orgOut.result.actions as Record<string, string>).zenodo_reviewers).toBe(
@@ -543,7 +569,7 @@ describe('cmdBootstrapPaper', () => {
 
     const personal = fakeProv({ ownerType: 'User' });
     await cmdBootstrapPaper(paperInput(), deps(personal.prov));
-    expect(personal.calls.upsertEnvironment).toEqual([
+    expect(zenodoPuts(personal.calls)).toEqual([
       { r: 'me/paper', n: 'zenodo-publish', v: [{ type: 'User', id: 77 }] },
     ]);
   });
@@ -554,7 +580,7 @@ describe('cmdBootstrapPaper', () => {
       paperInput({ repo: 'org/paper', owner: '@org' }),
       deps(prov),
     );
-    expect(calls.upsertEnvironment).toEqual([{ r: 'org/paper', n: 'zenodo-publish', v: [] }]);
+    expect(zenodoPuts(calls)).toEqual([{ r: 'org/paper', n: 'zenodo-publish', v: [] }]);
     expect((out.result.actions as Record<string, string>).zenodo_reviewers).toBe('none');
     expect((out.result.runbook as string[]).join('\n')).toContain('settings/environments');
   });
@@ -565,8 +591,91 @@ describe('cmdBootstrapPaper', () => {
       reviewers: [{ type: 'User', id: 12 }],
     });
     const out = await cmdBootstrapPaper(paperInput(), deps(prov));
-    expect(calls.upsertEnvironment).toHaveLength(0);
+    expect(zenodoPuts(calls)).toHaveLength(0);
     expect((out.result.actions as Record<string, string>).zenodo_reviewers).toBe('already set');
+  });
+
+  it('sets every secret on its environments and none at repository level', async () => {
+    const { prov, calls } = fakeProv();
+    const out = await cmdBootstrapPaper(
+      paperInput({
+        secrets: { zenodoToken: 'zt', zenodoTokenSandbox: 'zs', cfToken: 'ct', cfAccount: 'ca' },
+      }),
+      deps(prov),
+    );
+    expect(
+      (calls.setSecret as Array<{ e: string; n: string }>).map((c) => `${c.e}/${c.n}`),
+    ).toEqual([
+      'zenodo-publish/ZENODO_TOKEN',
+      'zenodo-prepare/ZENODO_TOKEN',
+      'zenodo-publish/ZENODO_TOKEN_SANDBOX',
+      'zenodo-prepare/ZENODO_TOKEN_SANDBOX',
+      'preview/CLOUDFLARE_API_TOKEN',
+      'preview/CLOUDFLARE_ACCOUNT_ID',
+    ]);
+    expect((out.result.runbook as string[]).join('\n')).not.toContain('settings/environments :');
+  });
+
+  it('creates zenodo-prepare and preview admitting main only', async () => {
+    const { prov, calls } = fakeProv();
+    await cmdBootstrapPaper(paperInput(), deps(prov));
+    expect(calls.upsertEnvironment).toContainEqual({ r: 'me/paper', n: 'zenodo-prepare', v: [] });
+    expect(calls.upsertEnvironment).toContainEqual({ r: 'me/paper', n: 'preview', v: [] });
+    expect(calls.createBranchPolicy).toContainEqual({
+      r: 'me/paper',
+      e: 'zenodo-prepare',
+      n: 'main',
+      t: 'branch',
+    });
+    expect(calls.createBranchPolicy).toContainEqual({
+      r: 'me/paper',
+      e: 'preview',
+      n: 'main',
+      t: 'branch',
+    });
+  });
+
+  it('restricts an environment GitHub auto-created, keeping its reviewers', async () => {
+    // An upgraded launcher can name `preview` before bootstrap re-runs; GitHub then creates it
+    // admitting every branch, and a branch policy cannot be added until that is switched off.
+    const { prov, calls } = fakeProv({
+      environments: new Set(['me/paper/preview', 'me/paper/zenodo-publish']),
+      openEnvironments: new Set(['me/paper/preview', 'me/paper/zenodo-publish']),
+      reviewers: [{ type: 'User', id: 12 }],
+    });
+    await cmdBootstrapPaper(paperInput(), deps(prov));
+    for (const n of ['preview', 'zenodo-publish'])
+      expect(calls.upsertEnvironment).toContainEqual({
+        r: 'me/paper',
+        n,
+        v: [{ type: 'User', id: 12 }],
+      });
+    expect(calls.createBranchPolicy).toContainEqual({
+      r: 'me/paper',
+      e: 'preview',
+      n: 'main',
+      t: 'branch',
+    });
+  });
+
+  it('deletes a repository-level secret once its environments all hold it', async () => {
+    const { prov, calls } = fakeProv({
+      secrets: new Set([
+        'me/paper/ZENODO_TOKEN',
+        'me/paper/CLOUDFLARE_API_TOKEN',
+        'me/paper/CLOUDFLARE_ACCOUNT_ID',
+        'me/paper/preview/CLOUDFLARE_ACCOUNT_ID', // set on an earlier run
+      ]),
+    });
+    const out = await cmdBootstrapPaper(paperInput({ secrets: { zenodoToken: 'zt' } }), deps(prov));
+    expect(calls.deleteRepoSecret).toEqual([
+      { r: 'me/paper', n: 'ZENODO_TOKEN' },
+      { r: 'me/paper', n: 'CLOUDFLARE_ACCOUNT_ID' },
+    ]);
+    // No value given and no environment copy: deleting it would lose the only one.
+    const runbook = (out.result.runbook as string[]).join('\n');
+    expect(runbook).toContain('CLOUDFLARE_API_TOKEN is still a repository secret');
+    expect(runbook).not.toContain('CLOUDFLARE_ACCOUNT_ID is still');
   });
 
   it('provisions exactly the labels its consumers ask for ([R127], [R128])', async () => {
@@ -1003,26 +1112,30 @@ describe('a failing provisioning step ([R125])', () => {
   it('a secret gh refuses lands in the by-hand list; the others are still set', async () => {
     const { prov } = fakeProv();
     const setCalls: string[] = [];
-    prov.setSecret = (_r, name) => {
-      setCalls.push(name);
-      if (name === 'ZENODO_TOKEN')
+    prov.setSecret = (_r, env, name) => {
+      setCalls.push(`${env}/${name}`);
+      if (name === 'ZENODO_TOKEN' && env === 'zenodo-prepare')
         throw new Error('gh secret set failed (exit 1): resource not accessible');
     };
     const out = await cmdBootstrapPaper(
       paperInput({ secrets: { zenodoToken: 'zt', cfToken: 'ct' } }),
       deps(prov),
     );
-    expect(setCalls).toEqual(['ZENODO_TOKEN', 'CLOUDFLARE_API_TOKEN']); // the loop carried on
+    expect(setCalls).toEqual([
+      'zenodo-publish/ZENODO_TOKEN',
+      'zenodo-prepare/ZENODO_TOKEN',
+      'preview/CLOUDFLARE_API_TOKEN',
+    ]); // the loop carried on
     expect(out.result.secrets_set).toEqual(['CLOUDFLARE_API_TOKEN']);
     // The BY-HAND list itself, parsed: the step-failure line names the secret too, and
     // ZENODO_TOKEN is a substring of ZENODO_TOKEN_SANDBOX, so both looser assertions pass
     // with the refused secret missing from this list.
     const byHand = (out.result.runbook as string[]).find((l) =>
-      l.includes('settings/secrets/actions'),
+      l.includes('settings/environments :'),
     );
-    const byHandNames = byHand!.split(' : ')[1]!.split('.')[0]!.split(', ');
-    expect(byHandNames).toContain('ZENODO_TOKEN');
-    expect(byHandNames).not.toContain('CLOUDFLARE_API_TOKEN');
+    const byHandEntries = byHand!.split(' : ')[1]!.split('. ')[0]!.split('; ');
+    expect(byHandEntries).toContain('ZENODO_TOKEN (zenodo-prepare)'); // only where it failed
+    expect(byHandEntries.map((e) => e.split(' ')[0])).not.toContain('CLOUDFLARE_API_TOKEN');
     expect(out.result.status).toBe('incomplete');
   });
 
@@ -1086,7 +1199,7 @@ describe('a failing provisioning step ([R125])', () => {
       paperInput({ repo: 'org/paper', owner: '@org' }),
       deps(prov),
     );
-    expect(calls.upsertEnvironment).toHaveLength(0);
+    expect(zenodoPuts(calls)).toHaveLength(0);
     expect((out.result.actions as Record<string, string>).zenodo_reviewers).toBe('none');
     expect((out.result.runbook as string[]).join('\n')).toContain('settings/environments');
     expect(out.result.status).toBe('ok'); // no reviewer is a runbook item, not a failure

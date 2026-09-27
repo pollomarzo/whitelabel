@@ -94,7 +94,7 @@ export interface ConformanceGh {
   /** Delete `refs/heads/<prefix>*` on the FORK (fork token), idempotency for stale cert
    *  branches a crashed run left behind. Returns the swept branch names. */
   sweepForkBranches(forkRepo: string, forkToken: string, prefix: string): string[];
-  /** Open a CROSS-fork PR: on the fork (fork token) branch off its default branch and bump the
+  /** Open a CROSS-fork PR: on the fork (fork token) branch off the base repo's main and bump the
    *  engine pin to `tag` (the non-empty diff, and the faithful build-under-V), then `gh pr create`
    *  on the BASE repo (primary token) with `--head <forkOwner>:<branch>`. Returns the base-repo PR
    *  number and the fork branch's post-commit head sha. */

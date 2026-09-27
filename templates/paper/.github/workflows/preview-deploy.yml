@@ -25,6 +25,7 @@ jobs:
     if: >-
       ${{ github.event.workflow_run.event == 'pull_request' &&
           github.event.workflow_run.conclusion == 'success' }}
+    environment: preview # holds the Cloudflare secrets; admits main only, provisioned by bootstrap
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1; BASE default branch ⇒ engine ref AND action code from base
