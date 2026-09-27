@@ -47,7 +47,7 @@ own `myst.yml` (myst's `options` passthrough) rather than smeared across files.
 | **ENGINE** (`oaktree-sapling`) | platform (you) | all logic: workflows, base configs, gallery plugin, zenodo script, bootstrap, copier template, typst template (generic parts) | one tagged repo, shared by every journal |
 | **INSTANCE-CONFIG** | tenant | edition definitions, brand assets, paper registry — **data only** | always exists; the journal's identity |
 | **WEBSITE** | tenant | gallery page + pages/; a *consumer* of INSTANCE-CONFIG + ENGINE | **optional** |
-| **PAPER repo** | tenant (authors push) | content + `myst.yml` (`options.oaktree-sapling.version`) + a frozen CI shim | many; thin |
+| **PAPER repo** | tenant (authors push) | content + `myst.yml` (`options.oaktree-sapling.version`) + frozen CI launchers | many; thin |
 
 ---
 
@@ -82,7 +82,7 @@ migrated; §5 says where each went.
           │  WEBSITE   (OPTIONAL)          │    │  PAPER repos  (×N · thin)   │
           │   pages/ + gallery page        │    │   content + myst.yml        │
           │   reads INSTANCE-CONFIG +      │    │   options.oaktree-sapling.version  │
-          │   ENGINE plugin/theme          │    │   frozen ci.yml shim → cli  │
+          │   ENGINE plugin/theme          │    │   frozen launchers → cli    │
           └────────────────────────────────┘    └─────────────────────────────┘
 ```
 
@@ -118,13 +118,13 @@ project:
     oaktree-sapling:
       version: v0.3.0                       # ← the only knob (yq raw pre-build; loadConfig after)
       edition: micropublications-2026
-# engine source URL is pinned in the gated ci.yml shim (§6a), never here
+# engine source URL is pinned in the gated CI launchers (§6a), never here
 ```
 
 **Generalization (n>1).** "In the paper's own `myst.yml`" is the **repo=paper specialization**
 of a more general rule: *the version lives in the build-unit's manifest.* When the build unit
 is one paper, that manifest **is** the paper's `myst.yml` (above). When one repo holds many
-papers (repo=edition/journal, §9), the CI shim checks out **one** engine per build and one
+papers (repo=edition/journal, §9), the CI launchers check out **one** engine per build and one
 assembled site = one engine, so the version becomes **repo-level** — it moves to the co-located
 `journal.yml`. Per-paper `myst.yml` still carries `edition` (papers may span editions, [R195])
 but not a divergent `version`. §6's single-field rule is the n=1 slice of this.
@@ -133,8 +133,8 @@ but not a divergent `version`. §6's single-field rule is the n=1 slice of this.
 ### 6a. Workflow inversion (dodges the static `uses:` constraint)
 
 GitHub Actions `uses:` for a reusable workflow **must be a literal** — no expressions. So
-instead of *calling* a versioned workflow, the paper's workflow is a **frozen shim** that
-checks out the engine at the version named in `journal.yml` and runs it:
+instead of *calling* a versioned workflow, the paper's workflows are **frozen launchers** that
+check out the engine at the version named in `journal.yml` and run it:
 
 ```
   push / PR on a paper repo
@@ -166,7 +166,7 @@ confirmed against the `mystmd` source). It's **data, not a workflow**, so it isn
 CODEOWNERS-gated and the upgrade bot bumps it in a one-line PR (YAML-aware write, never
 `sed`).
 
-**Security boundary.** The shim executes engine code at a ref read from `myst.yml`, so that
+**Security boundary.** The launchers execute engine code at a ref read from `myst.yml`, so that
 value's trust level matters. Pin the engine *source* (org/repo) in the CODEOWNERS-gated
 `ci.yml` — so only the **ref** (`options.oaktree-sapling.version`) floats. Validate that
 the ref resolves inside the pinned repo — but "inside a *public* repo that accepts PRs"
@@ -179,7 +179,7 @@ dogfooding path open *and* closes both the "point the engine at my fork" hole an
 "point at anyone's unmerged engine PR" hole. (Blast radius is bounded either way — Stage 1 is
 secretless — but running arbitrary *code* in CI is a strictly worse floor than rendering
 arbitrary *content*, which fork PRs can already do.) Secrets (e.g. Zenodo token, preview token)
-are passed as env vars from the workflow to the engine CLI; the shim controls which secrets
+are passed as env vars from the workflow to the engine CLI; the launchers control which secrets
 are injected. Never expose the Zenodo draft token to PR-triggered engine execution (deposit
 runs post-merge / behind a required-reviewer environment).
 
@@ -191,7 +191,7 @@ asymmetry a tenant would have to debug:
 
 ```
   STAGE 1 · on: pull_request              NO secrets · read-only token
-    shim → checkout ENGINE@ref (PR myst.yml, validated above)
+    launchers → checkout ENGINE@ref (PR myst.yml, validated above)
          → engine build (untrusted content + repo-pinned ref)
          → upload artifact: _build/html + .pr-number
            └ PR# stashed: workflow_run.pull_requests is EMPTY for forks
@@ -205,12 +205,12 @@ asymmetry a tenant would have to debug:
 ```
 
 **Two trust boundaries, composed — not stacked.** `workflow_run` guarantees the *workflow
-file* comes from the base default branch; the shim then runs `engine/ci/run.sh` at a ref read
+file* comes from the base default branch; the launchers then run `engine/ci/run.sh` at a ref read
 from `myst.yml`. Stage 2 must therefore take its engine ref and deploy logic from the **base
 branch's** `myst.yml` (never the PR head's), and do nothing to the artifact but upload the
 pre-built static files. Re-running `engine build` on fork content with the token present would
-reopen the injection hole through the shim's back door and defeat the split. Stage 1 is
-unchanged from the shim above — untrusted ref + untrusted content, zero secrets, inert output.
+reopen the injection hole through the launchers' back door and defeat the split. Stage 1 is
+unchanged from the launchers above — untrusted ref + untrusted content, zero secrets, inert output.
 
 **Motivation is functional, not security** — contrast the deposit split (§8): the scoped
 preview token is low blast-radius, so we don't split to protect it; we split because fork PRs
@@ -221,7 +221,7 @@ once merged to the engine default branch** (harmless — it ships with the tag);
 must be **stashed in the artifact** because `workflow_run.pull_requests` is empty for forks;
 and the cross-run fetch needs **run-id + token** (`actions/download-artifact`), with a
 **concurrency** key on the head branch so a new push cancels a stale preview. Because this
-lives in ENGINE (§5, §12) and the shim is frozen, every tenant inherits a working fork-PR
+lives in ENGINE (§5, §12) and the launchers are frozen, every tenant inherits a working fork-PR
 preview with zero per-tenant CI wiring — the white-label leverage point.
 
 (design-6b)=
@@ -282,7 +282,7 @@ version, pinned by the engine tag; pinning-by-dependency, not source vendoring).
 `pyyaml` served the deposit script (now `zenodo.ts`); `jupyter-book` was redundant;
 `tectonic`/`latexmk` are unused (all exports are typst). Platform baseline = **node (on
 the runner) + the typst binary** (single static executable, version pinned in the engine).
-**micromamba survives only as the opt-in per-paper execution hook**: the shim sets it up
+**micromamba survives only as the opt-in per-paper execution hook**: the launchers set it up
 iff the paper ships `paper-environment.yml` (papers that execute code bring their own
 scientific stack); no file → no Python anywhere. This closes the conda-vs-uv question —
 neither, in the platform path. *Bundling risk (slice-1 spike):* esbuild may choke on
@@ -508,7 +508,7 @@ build-count-rebuild cycle that goes with it.
 - **[R183] Three principles: open · free · easy.** "easy" must not cost a central server. (§1, §14)
 
 (r184)=
-- **[R184] Engine substrate: TypeScript CLI + JS MyST plugins.** ; bash only for the shim. (§12)
+- **[R184] Engine substrate: TypeScript CLI + JS MyST plugins.** ; bash only for the launchers. (§12)
 
 (r185)=
 - **[R185] mystmd is the config oracle.** `loadConfig`; no sidecar; `options` passthrough for engine coordinates. (§6, §12)
@@ -538,7 +538,7 @@ build-count-rebuild cycle that goes with it.
 - **[R193] id validation is two checks with different locality.** (A) sentinel + id-pattern (id ≠ the template placeholder; matches id-pattern-regex) is a pure function of the paper's own `myst.yml`, hard-fails everywhere with no instance-config — this is the check that actually catches the sentinel-id class; (B) registry-uniqueness needs `registry/papers.yml`, so it hard-fails in CI (fresh registry clone, authoritative) and in any local *build* (instance already present for compose), and soft-warns only in a bare local `oak validate` with no instance. Rides the [R192] resolver. (ratified 2026-07-09) (§10, §12)
 
 (r194)=
-- **[R194] Pins live in `.github/actions/engine/pins.yml`.** `engine_repo` + `instance_repo` move out of the composite action's `env:` into a plain gated data file that **both** the CI shim (`yq`) and local `oak` read, so CI and local share one source of truth (no parallel local config can drift). Covered by the existing broad `.github/` CODEOWNERS gate → no new gated path; `instance_repo` is `.`/omitted when instance-config is co-located (repo=journal). Known wart, accepted: local `oak` reading a value out of `.github/` is slightly odd — tolerated because a second config store is worse (it can silently disagree with CI). Refines [R1]/[R17]. (ratified 2026-07-09) (§12, impl §1a)
+- **[R194] Pins live in `.github/actions/engine/pins.yml`.** `engine_repo` + `instance_repo` move out of the composite action's `env:` into a plain gated data file that **both** the CI launchers (`yq`) and local `oak` read, so CI and local share one source of truth (no parallel local config can drift). Covered by the existing broad `.github/` CODEOWNERS gate → no new gated path; `instance_repo` is `.`/omitted when instance-config is co-located (repo=journal). Known wart, accepted: local `oak` reading a value out of `.github/` is slightly odd — tolerated because a second config store is worse (it can silently disagree with CI). Refines [R1]/[R17]. (ratified 2026-07-09) (§12, impl §1a)
 
 (r195)=
 - **[R195] Multi-edition monorepo is free.** `edition` is a *per-paper* coordinate, so one co-located repo can hold many papers across many editions; compose selects `editions/<edition>.yml` per paper, one engine version per repo, project=paper intact. Not a distinct build effort — rides the deferred n>1 `assemble()` + an index grouped by edition; it is the *fullest* form of repo=journal and the target shape when that tier is built (single-edition = "all papers declare the same edition," not a simpler path). (ratified 2026-07-09) (§9)
@@ -559,7 +559,7 @@ build-count-rebuild cycle that goes with it.
 - **[R201] `compose()` must absolutize instance-relative brand-asset paths.** Relative `./logo.svg` in an extended `brand.yml` resolves against the *paper*, not the brand dir, so it fails to load (real ISP used absolute URLs); [R192]/[R38]'s "brand assets as local files by path" (needed for the typst watermark) requires compose to rewrite them to `<instanceRoot>/brand/…`. Interim fixtures use URLs. (found in live run) (§3 (impl), [R62])
 
 (r202)=
-- **[R202] `bootstrap`/`upgrade` substrate = hand-rolled TS + render-and-compare; no scaffolding tool, no stored marker.** Settles the deferred "Copier vs cruft" + "upgrade bot placement" rows. `oak bootstrap paper|journal` and `oak upgrade` are plain TypeScript over the `yaml` Document API (no Copier/cruft, no Python, no `.copier-answers.yml`); the frozen shim's only rendered files are `pins.yml` (engine_repo/instance_repo) + `CODEOWNERS` (owner), and the starter `myst.yml` (engine coordinate) — everything else byte-copied. Upgrade needs **no `template_version` marker**: the frozen files are reconstructable from the repo's own `pins.yml` + `CODEOWNERS`, so it renders the target and does a **2-way** diff (reset-to-template; frozen files are policy-never-edited, so any divergence resets and a hand-edit still shows in the review diff) — not the 3-way merge §6b sketched. Every mutation is a PR (bootstrap seeds/ingests + provisions idempotently; upgrade's resync PR is `/.github/`-gated; the version-only bump is ungated data). Ingest restores the **entire** editor-side `.github/` from `main` (incl. `pins.yml`), not just workflows+CODEOWNERS as the old ISP script did. **Supersedes** the older §14/impl "create must seed `.copier-answers.yml`" and §6b "Copier 3-way-merge update" references. (ratified 2026-07-19) (§6b, §11, §14)
+- **[R202] `bootstrap`/`upgrade` substrate = hand-rolled TS + render-and-compare; no scaffolding tool, no stored marker.** Settles the deferred "Copier vs cruft" + "upgrade bot placement" rows. `oak bootstrap paper|journal` and `oak upgrade` are plain TypeScript over the `yaml` Document API (no Copier/cruft, no Python, no `.copier-answers.yml`); the frozen launchers' only rendered files are `pins.yml` (engine_repo/instance_repo) + `CODEOWNERS` (owner), and the starter `myst.yml` (engine coordinate) — everything else byte-copied. Upgrade needs **no `template_version` marker**: the frozen files are reconstructable from the repo's own `pins.yml` + `CODEOWNERS`, so it renders the target and does a **2-way** diff (reset-to-template; frozen files are policy-never-edited, so any divergence resets and a hand-edit still shows in the review diff) — not the 3-way merge §6b sketched. Every mutation is a PR (bootstrap seeds/ingests + provisions idempotently; upgrade's resync PR is `/.github/`-gated; the version-only bump is ungated data). Ingest restores the **entire** editor-side `.github/` from `main` (incl. `pins.yml`), not just workflows+CODEOWNERS as the old ISP script did. **Supersedes** the older §14/impl "create must seed `.copier-answers.yml`" and §6b "Copier 3-way-merge update" references. (ratified 2026-07-19) (§6b, §11, §14)
 
 (r203)=
 - **[R203] The id gate is merge-time, not build-time.** Layer A splits into `structural` (index.md/myst.yml present, no stray myst.yml) which blocks the build, and `identity` (id present/shape/uniqueness) which does **not**. A placeholder/invalid id no longer stops `oak build`, so a freshly-bootstrapped repo **renders a preview** the author can see; the id stays enforced at **merge** via the failing `Journal checks` Check Run (already reported by `oak validate` — the verdict is unchanged, only the *gate* moved). `oak validate` also stops short-circuiting Layer B on an id error (only structural errors skip it), so the author gets the full fix-list at once. Load-bearing coupling: `oak bootstrap` now wires `"Journal checks"` as a required check on `protect-main` (default-on, `--no-require-checks` opts out) so the relocated gate is actually enforced; solo-admin bypass remains the personal-tier caveat. Refines dec 20 / [R21]. (ratified 2026-07-20) (§10, §12, impl [R21])
@@ -589,7 +589,7 @@ build-count-rebuild cycle that goes with it.
 (design-12)=
 ## 12. Implementation
 
-**Substrate (decided): a TypeScript CLI + JS MyST plugins; bash only for the frozen shim.**
+**Substrate (decided): a TypeScript CLI + JS MyST plugins; bash only for the frozen launchers.**
 The parts that *must* be JS (the plugins) are already JS, mystmd is node, node is already on
 the runner — so one toolchain, one test suite, and one `journal.yml` schema shared across the
 CLI, the validator, and author editor tooling. mystmd is a bundled engine dependency invoked
@@ -607,8 +607,8 @@ Principles:
   coordinate — `options.oaktree-sapling.version` (+ `.edition`) — rides in myst's sanctioned `options`
   passthrough at `project.options.*` (untyped `Record<string,any>`, stored verbatim, zero
   validation warnings — confirmed in `myst-frontmatter/src/site/validators.ts`). Read it via
-  `loadConfig(...).project.options` after the engine is present, and via raw `yq` in the shim
-  *before* it is. The engine source URL is pinned in the gated shim (§6a); the per-paper `id:`
+  `loadConfig(...).project.options` after the engine is present, and via raw `yq` in the launchers
+  *before* it is. The engine source URL is pinned in the gated launchers (§6a); the per-paper `id:`
   is myst-native (`project.id`). zod validates only our `options` keys, not the myst config.
 - **One read from the document — deposit metadata.** Zenodo needs title/authors/reserved DOI;
   take these from myst's *resolved* frontmatter (loader) or a myst-emitted metadata artifact,
@@ -623,7 +623,7 @@ Principles:
 - **Bundle per tag.** `dist/cli.js` is released with each engine tag → reproducible,
   network-free runner step, without a checked-in `node_modules`.
 - **Engine PR testing.** The fixture paper (§12 step 0) is the primary test harness. For
-  dogfooding against a real paper, the shim allows `options.oaktree-sapling.version` to be a commit SHA or
+  dogfooding against a real paper, the launchers allow `options.oaktree-sapling.version` to be a commit SHA or
   PR merge ref (`refs/pull/42/merge`) — all validated to resolve within the pinned engine
   repo. The trust boundary is the repo, not the ref type.
 - **One tool, two entry points.** Same CLI runs in CI (`build`/`deposit`) and locally for
@@ -647,7 +647,7 @@ engine build. Local `oak build` is the **power path** (fast iteration) and runs 
 
 | Edge | CI | Local |
 |---|---|---|
-| engine version | shim reads `options.oaktree-sapling.version` → checkout engine@ref | installed `oak` honors the pin (warn on mismatch, or re-exec `npx oaktree-sapling@<pin>`) |
+| engine version | launchers read `options.oaktree-sapling.version` → checkout engine@ref | installed `oak` honors the pin (warn on mismatch, or re-exec `npx oaktree-sapling@<pin>`) |
 | instance-config | `run.sh` clones `instance_repo@default-branch` (from `pins.yml`) | reads the **same** `pins.yml`; clone-to-cache (`~/.cache/oak/…`) or co-located root |
 | `BASE_URL` | `/<repo>` (Pages subpath) | `""` (served at root) — `compose(env)` already takes this |
 
@@ -750,7 +750,7 @@ around the token step.
 Syntheses (why this fits the rest of the design):
 
 - **Version-by-reference is *why* template/fork is safe here.** A copy is normally the
-  copy-rot anti-pattern (§1), but our template is *thin* (shim + starter `myst.yml`), all
+  copy-rot anti-pattern (§1), but our template is *thin* (launchers + starter `myst.yml`), all
   substance referenced by `options.oaktree-sapling.version`, updates via the bump + Copier (§6b). Easy-create
   doesn't reintroduce can't-update.
 - **Onboarding *produces a PR*, never a silent mutation** — same reviewable-from-start
