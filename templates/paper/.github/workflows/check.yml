@@ -33,6 +33,7 @@ jobs:
         uses: ./.github/actions/engine
         with:
           args: validate --report report.json
+          paper-env: true
 
       # Reached only when the engine died before writing anything, since even a usage error
       # produces a report. Points at the step holding the real message.

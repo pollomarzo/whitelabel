@@ -1,29 +1,57 @@
 name: Publish Zenodo deposit
 
-# Tag push populates the Zenodo draft. `oak release` builds, deposits, attaches the debug bundle
-# to the tag's GitHub Release, and posts the commit comment or failure issue. The required-reviewer
-# environment is the human gate before any token-bearing run, and the public DOI is still minted by
-# a human clicking Publish on Zenodo. Both tokens are passed; the CLI selects by DOI prefix.
+# Tag push populates the Zenodo draft. The build job runs the paper's code and holds no secret;
+# the publish job deposits its output, attaches the debug bundle to the tag's GitHub Release, and
+# posts the commit comment or failure issue. The required-reviewer environment is the human gate
+# before the token-bearing job, and the public DOI is still minted by a human clicking Publish on
+# Zenodo. Both tokens are passed; the CLI selects by DOI prefix.
+# https://scholar.nexus/oaktree-sapling/design/paper-ci
 
 on:
   push:
     tags: ["v*"]
 
 permissions:
-  contents: write # attach the Release bundle + commit comment
-  issues: write # open the editor-action issue on failure
+  contents: read
 
 jobs:
+  build: # NO secrets: the paper's plugins and environment run here, never beside the token
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/engine
+        with:
+          args: build
+          paper-env: true
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-build
+          path: |
+            myst.oak.yml
+            _build/exports
+            _build/site/content
+            _build/templates
+          if-no-files-found: error
+
   publish:
-    environment: zenodo-publish # required-reviewer gate, provisioned by bootstrap
+    needs: build
+    environment: zenodo-publish # required-reviewer gate + v* policy, provisioned by bootstrap
+    permissions:
+      contents: write # attach the Release bundle + commit comment
+      issues: write # open the editor-action issue on failure
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0 # git archive + PR discovery need history
+          persist-credentials: false # nothing here pushes
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-build
+          path: .
       - uses: ./.github/actions/engine
         with:
-          args: release --tag ${{ github.ref_name }}
+          args: release --tag ${{ github.ref_name }} --no-build
         env:
           GH_TOKEN: ${{ github.token }}
           ZENODO_TOKEN: ${{ secrets.ZENODO_TOKEN }}

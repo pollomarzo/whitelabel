@@ -36,7 +36,7 @@ Reads a report that `validate` has already written and posts the outcome as a fi
 (release)=
 ## release
 
-`oak release --tag vX` builds the paper in a child process, publishes its Zenodo deposit, attaches the bundle to that tag's GitHub Release, and finishes by posting a commit comment on success or opening a failure issue otherwise.
+`oak release --tag vX` builds the paper in a child process, publishes its Zenodo deposit, attaches the bundle to that tag's GitHub Release, and finishes by posting a commit comment on success or opening a failure issue otherwise. `--no-build` skips the build and deposits the `_build` already in the paper directory; the publish workflow uses it so the paper's code runs in a job that holds no token.
 
 (notify)=
 ## notify

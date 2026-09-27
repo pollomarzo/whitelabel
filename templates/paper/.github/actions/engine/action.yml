@@ -8,6 +8,9 @@ inputs:
   args:
     description: "verb + args for the engine (e.g. 'build', 'release --tag v1.0.0')"
     required: true
+  paper-env:
+    description: "install paper-environment.yml; only for a job holding no secret"
+    default: "false"
 
 runs:
   using: composite
@@ -67,10 +70,11 @@ runs:
         ref: ${{ steps.ref.outputs.ref }}
         path: .engine
 
-    # --- OPT-IN per-paper execution env only: micromamba iff the paper
-    # ships paper-environment.yml. No file → no Python anywhere.
+    # --- OPT-IN per-paper execution env only: micromamba iff the job asks and the paper
+    # ships paper-environment.yml. No file → no Python anywhere. Installing runs package
+    # scripts, so a job holding a secret never asks.
     - uses: mamba-org/setup-micromamba@ce51e99f4bb8a82ab7158c4dc59ef4634c59c4f9 # v3.1.0
-      if: ${{ hashFiles('paper-environment.yml') != '' }}
+      if: ${{ inputs.paper-env == 'true' && hashFiles('paper-environment.yml') != '' }}
       with:
         environment-file: paper-environment.yml
         cache-environment: true
