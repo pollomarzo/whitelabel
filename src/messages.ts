@@ -47,7 +47,7 @@
  *   engine/templates/site/.github/workflows/site.yml website job + its failure annotation
  *   engine/plugins/gallery.mjs ..................... paper-cards directive's own messages
  *   engine/templates/typst/*.typ ................... PDF's fixed wording (headers, footers)
- *   engine/ci/run.sh ............................... shim's own echoes
+ *   engine/ci/run.sh ............................... the launchers' own echoes
  *
  * Two TS surfaces are deliberately left in place, both read only in a CI log by someone who
  * already knows the system:
@@ -583,7 +583,7 @@ export const build = {
     resolvedVersion: string,
     resolvedEdition: string,
   ): string =>
-    `options.oaktree-sapling mismatch: shim read {version:${version}, edition:${edition}} ` +
+    `options.oaktree-sapling mismatch: the CI workflow read {version:${version}, edition:${edition}} ` +
     `but resolved config has {version:${resolvedVersion}, edition:${resolvedEdition}}. ` +
     `An extended config is likely overriding project.options.`,
 
@@ -781,7 +781,7 @@ export const pr = {
     `### ${pass ? '✅' : '❌'} ${pass ? 'Journal checks passed' : 'Journal checks failed'}: ${title}`,
   checksFooter: `[What these checks are](${docsUrl(DOCS.checks)}) · _Updated on every push to this PR._`,
   checkRunTitle: (passed: number, failed: number): string => `${passed} passed, ${failed} failed`,
-  checkRunTitleShimTouched: (title: string): string => `⚠️ CI shim modified: ${title}`,
+  checkRunTitleShimTouched: (title: string): string => `⚠️ CI workflows modified: ${title}`,
   unknownCheckId: (id: string): string =>
     `unknown check id "${id}"; the ids the journal can ask for, and how to change the set: ` +
     `${docsUrl(DOCS.checksChanging)}`,

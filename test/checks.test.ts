@@ -318,7 +318,7 @@ describe('cmdCheckPost frozen-shim advisory', () => {
     expect(out.checkRunPosted).toBe(true);
     // advisory only: the conclusion is NOT downgraded (must not gate; legit upgrades edit the shim)
     expect(runs[0]!.run.conclusion).toBe(report().checkRun.conclusion);
-    expect(runs[0]!.run.title).toContain('CI shim modified');
+    expect(runs[0]!.run.title).toContain('CI workflows modified');
     expect(runs[0]!.run.summary).toContain('changes the files that run the checks');
     expect(stickies[0]!.body).toContain('changes the files that run the checks');
     expect(stickies[0]!.body).toContain('`.github/workflows/check.yml`');

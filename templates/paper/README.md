@@ -1,4 +1,4 @@
-# The paper-repo template (frozen shim + starter content)
+# The paper-repo template (frozen launchers + starter content)
 
 This is what `oak bootstrap paper` stamps a paper repo with (design §1). The `.github/`
 set is **frozen and generic** (never edited after creation, CODEOWNERS-gated) because all
