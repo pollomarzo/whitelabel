@@ -35,6 +35,9 @@ project:
   id: oaktree-sapling-docs
   title: Oaktree Sapling
   description: Documentation for the oaktree-sapling journal engine.
+  # `[text](src:path#L1-L9)` links to engine source at a pinned ref; see the plugin.
+  plugins:
+    - plugins/source-links.mjs
   error_rules:
     - rule: reference-target-resolves
       severity: error

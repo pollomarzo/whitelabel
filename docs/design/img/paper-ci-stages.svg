@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 290" role="img" aria-label="Two flows start from a pull request or a push. Stage 1 builds or validates with a read-only token and passes an artifact to Stage 2, which runs from the base branch with tokens and posts the preview or the check result. Tag, dispatch and schedule workflows run once, after merge.">
+<style>
+svg{--bg:#f6f7f5;--panel:#ffffff;--ink:#1c2320;--muted:#5b6762;--blue:#2f6fd6;--green:#23875a;--grey:#80878a;--gate:#b27417;--blue-soft:rgba(47,111,214,.10);--green-soft:rgba(35,135,90,.10);--grey-soft:rgba(128,135,138,.10);--band:rgba(28,35,32,.035);--gate-soft:rgba(178,116,23,.06)}
+@media (prefers-color-scheme: dark){svg{--panel:#1b201e;--ink:#e3e8e5;--muted:#9aa5a0;--blue:#72a4f7;--green:#5cc28c;--grey:#9ba3a6;--gate:#e2a64a;--blue-soft:rgba(114,164,247,.12);--green-soft:rgba(92,194,140,.12);--grey-soft:rgba(155,163,166,.12);--band:rgba(227,232,229,.04);--gate-soft:rgba(226,166,74,.07)}}
+svg{height:auto;color:var(--ink);font-family:"IBM Plex Sans",system-ui,sans-serif}
+.box{fill:var(--panel);stroke:currentColor;stroke-width:1.2}
+.box.b{stroke:var(--blue);fill:var(--blue-soft)}
+.box.g{stroke:var(--green);fill:var(--green-soft)}
+.box.n{stroke:var(--grey);fill:var(--grey-soft)}
+.box.q{stroke:var(--muted);stroke-dasharray:3 3}
+.box.act{stroke-width:2}
+.band{fill:var(--band)}
+.gate{fill:var(--gate-soft);stroke:var(--gate);stroke-width:1.5;stroke-dasharray:6 4}
+svg text{fill:currentColor;font-size:13px}
+.t-mono{font-family:"IBM Plex Mono",monospace;font-size:12.5px}
+.t-verb{font-family:"IBM Plex Mono",monospace;font-size:11px;fill:var(--muted)}
+.t-sm{font-size:11px;fill:var(--muted)}
+.t-hd{font-size:11px;fill:var(--muted);letter-spacing:.05em;text-transform:uppercase}
+.t-gate{font-size:11px;fill:var(--gate);font-weight:500}
+.t-b{fill:var(--blue);font-size:11px;font-family:"IBM Plex Mono",monospace}
+.t-g{fill:var(--green);font-size:11px;font-family:"IBM Plex Mono",monospace}
+.t-k{fill:var(--muted);font-size:11px;font-family:"IBM Plex Mono",monospace}
+.l{fill:none;stroke-width:2}
+.l.b{stroke:var(--blue)} .l.g{stroke:var(--green)} .l.n{stroke:var(--grey)}
+.l.k{stroke:currentColor;stroke-width:1.4}
+.l.dash{stroke-dasharray:4 3}
+.m-b{fill:var(--blue)} .m-g{fill:var(--green)} .m-n{fill:var(--grey)} .m-k{fill:currentColor}
+svg{font-family:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif}
+.t-mono,.t-verb,.t-b,.t-g,.t-k{font-family:"IBM Plex Mono",ui-monospace,"SFMono-Regular",Menlo,monospace}
+</style>
+        <defs>
+          <marker id="ab" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="m-b"/></marker>
+          <marker id="ag" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="m-g"/></marker>
+          <marker id="an" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="m-n"/></marker>
+        </defs>
+
+        <rect x="180" y="26" width="185" height="182" rx="8" class="band"/>
+        <rect x="430" y="26" width="185" height="182" rx="8" class="band"/>
+        <text x="20" y="16" class="t-hd">trigger</text>
+        <text x="190" y="16" class="t-hd">stage 1 · read-only</text>
+        <text x="440" y="16" class="t-hd">stage 2 · holds tokens</text>
+        <text x="690" y="16" class="t-hd">result</text>
+        <text x="190" y="200" class="t-sm">pull_request · runs author content</text>
+        <text x="440" y="200" class="t-sm">workflow_run · base branch</text>
+
+        <!-- preview -->
+        <rect x="20" y="40" width="140" height="46" rx="6" class="box q"/>
+        <text x="90" y="67" text-anchor="middle">pull request, push</text>
+        <rect x="195" y="40" width="155" height="46" rx="6" class="box b"/>
+        <text x="272" y="60" text-anchor="middle" class="t-mono">ci.yml</text>
+        <text x="272" y="76" text-anchor="middle" class="t-verb">oak build</text>
+        <text x="272" y="102" text-anchor="middle" class="t-sm">on push: also deploys Pages</text>
+        <rect x="445" y="40" width="155" height="46" rx="6" class="box b"/>
+        <text x="522" y="60" text-anchor="middle" class="t-mono">preview-deploy.yml</text>
+        <text x="522" y="76" text-anchor="middle" class="t-verb">oak deploy-preview</text>
+        <rect x="690" y="40" width="170" height="46" rx="6" class="box q"/>
+        <text x="775" y="67" text-anchor="middle">preview + link comment</text>
+        <line x1="160" y1="63" x2="193" y2="63" class="l b" marker-end="url(#ab)"/>
+        <line x1="350" y1="63" x2="443" y2="63" class="l b" marker-end="url(#ab)"/>
+        <text x="397" y="56" text-anchor="middle" class="t-b">site</text>
+        <line x1="600" y1="63" x2="688" y2="63" class="l b" marker-end="url(#ab)"/>
+
+        <!-- checks -->
+        <rect x="20" y="130" width="140" height="46" rx="6" class="box q"/>
+        <text x="90" y="157" text-anchor="middle">pull request, push</text>
+        <rect x="195" y="130" width="155" height="46" rx="6" class="box g"/>
+        <text x="272" y="150" text-anchor="middle" class="t-mono">check.yml</text>
+        <text x="272" y="166" text-anchor="middle" class="t-verb">oak validate</text>
+        <rect x="445" y="130" width="155" height="46" rx="6" class="box g"/>
+        <text x="522" y="150" text-anchor="middle" class="t-mono">check-post.yml</text>
+        <text x="522" y="166" text-anchor="middle" class="t-verb">oak check-post</text>
+        <rect x="690" y="130" width="170" height="46" rx="6" class="box q"/>
+        <text x="775" y="157" text-anchor="middle">check run + comment</text>
+        <line x1="160" y1="153" x2="193" y2="153" class="l g" marker-end="url(#ag)"/>
+        <line x1="350" y1="153" x2="443" y2="153" class="l g" marker-end="url(#ag)"/>
+        <text x="397" y="146" text-anchor="middle" class="t-g">report</text>
+        <line x1="600" y1="153" x2="688" y2="153" class="l g" marker-end="url(#ag)"/>
+
+        <!-- after merge -->
+        <text x="20" y="232" class="t-hd">after merge · one stage, holds tokens</text>
+        <rect x="20" y="242" width="140" height="40" rx="6" class="box q"/>
+        <text x="90" y="266" text-anchor="middle">tag, dispatch, weekly</text>
+        <rect x="195" y="242" width="405" height="40" rx="6" class="box n"/>
+        <text x="215" y="258" class="t-mono">publish · prepare · version-bump</text>
+        <text x="215" y="274" class="t-verb">oak release · deposit · upgrade</text>
+        <line x1="160" y1="262" x2="193" y2="262" class="l n" marker-end="url(#an)"/>
+        <rect x="690" y="242" width="170" height="40" rx="6" class="box q"/>
+        <text x="775" y="266" text-anchor="middle">release, deposit, bump PR</text>
+        <line x1="600" y1="262" x2="688" y2="262" class="l n" marker-end="url(#an)"/>
+      </svg>
