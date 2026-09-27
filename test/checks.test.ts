@@ -281,17 +281,19 @@ describe('cmdCheckPost (Stage-2 orchestration, fake seams)', () => {
 });
 
 describe('frozenPathsTouched (frozen-shim detector)', () => {
-  it('matches .github/** and CODEOWNERS, ignores paper content', () => {
+  it('matches .github/**, CODEOWNERS and paper-environment.yml, ignores paper content', () => {
     const changed = [
       'index.md',
       '.github/workflows/check.yml',
       'CODEOWNERS',
       'data/x.csv',
+      'paper-environment.yml',
       '.github/actions/engine/pins.yml',
     ];
     expect(frozenPathsTouched(changed)).toEqual([
       '.github/workflows/check.yml',
       'CODEOWNERS',
+      'paper-environment.yml',
       '.github/actions/engine/pins.yml',
     ]);
   });
