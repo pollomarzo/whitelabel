@@ -90,6 +90,17 @@ No "no longer", "used to", "replaces", "instead of". `STYLE.md` bans these in co
 
 A conclusion outlives the constraint it rested on and quietly becomes false. When a fact moves, grep for it before assuming one edit covers it, because it is usually written down in more than one place.
 
+### Say it literally
+
+No metaphor and no periphrasis: say what the thing does, in the words a reader would use for it.
+
+```
+Bad:   "a file reachable only by workflow_dispatch can sit dead"
+Good:  "the rejection shows only when someone runs it"
+```
+
+The same goes for coined terms. A private word that stands for a concept, then recurs across the page, makes every later sentence depend on having read the one that coined it. Main concepts earn a term when it is defined once, near the top, where the reader will look for it ("launchers" in `docs/design/paper-ci.md`). Everything else is said in full each time.
+
 ### Do not imply a decision that has not been made
 
 Where a choice is still open the text says so. A definite article is a claim.
@@ -99,7 +110,8 @@ Where a choice is still open the text says so. A definite article is a claim.
 Staging area. Nothing here is in force, and nothing here should be raised in review. A candidate is promoted when there are edits behind it, not when it sounds right.
 
 - `[unverified]` **A heading states the subject, not a claim.** "There is no central website" became "Repository layout", and "The engine does not render anything" became "Processing MyST markdown". A heading that argues has to be re-read once the section has made the argument properly.
-- `[unverified]` **Name the thing, not the role.** "the engine", "the system" and "the tool" read as unambiguous from inside the repository and as nothing in particular from outside it. Write `oaktree-sapling`.
+- **Name what a reference points to.** "Two values a fork controls go through it" drew "which values?", and "these two things" drew "unclear why you're saying these". Name the values, not their count.
+- **State a rule as a rule.** "A guard is only known to close a finding once its input has been run through it" is neither an instruction nor a fact. Write the rule: "A guard that answers a finding is tested with that finding's own input."
 - `[unverified]` **Do not signpost what the page is about to do.** "It covers the three things the rest of the section assumes you already know" was cut whole, and the sections covered them anyway.
 
 ## Design pages
