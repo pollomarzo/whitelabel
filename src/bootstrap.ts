@@ -862,7 +862,17 @@ function applyProvisioning(
     log(msg.bootstrap.logZenodoNoReviewer);
     runbook.push(msg.bootstrap.runbookZenodoReviewer(repo, ZENODO_ENV));
   });
+  // A launcher naming a missing environment makes GitHub create it admitting every branch, and
+  // no policy can be added until that is switched off. The PUT carries the whole environment,
+  // so the reviewers ride along ([R127]).
+  const restrict = (env: string) => {
+    if (!prov.environmentExists(repo, env)) prov.upsertEnvironment(repo, env, []);
+    else if (!prov.customBranchPolicies(repo, env))
+      prov.upsertEnvironment(repo, env, prov.environmentReviewers(repo, env));
+  };
+
   step('zenodo_env', () => {
+    restrict(ZENODO_ENV);
     if (prov.branchPolicyExists(repo, ZENODO_ENV, 'v*')) {
       actions.zenodo_env = 'v* policy already exists';
       log(msg.bootstrap.logZenodoEnvExists);
@@ -875,13 +885,7 @@ function applyProvisioning(
 
   for (const env of MAIN_ONLY_ENVS) {
     step(`env_${env}`, () => {
-      if (!prov.environmentExists(repo, env)) {
-        prov.upsertEnvironment(repo, env, []);
-      } else if (!prov.customBranchPolicies(repo, env)) {
-        // A launcher naming a missing environment makes GitHub create it admitting every branch.
-        // The PUT carries the whole environment, so the reviewers ride along ([R127]).
-        prov.upsertEnvironment(repo, env, prov.environmentReviewers(repo, env));
-      }
+      restrict(env);
       if (prov.branchPolicyExists(repo, env, 'main')) {
         actions[`env_${env}`] = 'main policy already exists';
         log(msg.bootstrap.logMainEnvExists(env));

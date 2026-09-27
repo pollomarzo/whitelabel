@@ -275,7 +275,11 @@ function fakeProv(state: FakeState = {}) {
     allowActionsApprovePrs: (r) => rec('allowActionsApprovePrs', r),
     environmentExists: (r, n) => state.environments?.has(`${r}/${n}`) ?? false,
     environmentReviewers: () => state.reviewers ?? [],
-    upsertEnvironment: (r, n, v) => rec('upsertEnvironment', { r, n, v }),
+    upsertEnvironment: (r, n, v) => {
+      rec('upsertEnvironment', { r, n, v });
+      (state.environments ??= new Set()).add(`${r}/${n}`);
+      state.openEnvironments?.delete(`${r}/${n}`);
+    },
     customBranchPolicies: (r, e) => !state.openEnvironments?.has(`${r}/${e}`),
     branchPolicyExists: (r, e, n) => state.policies?.has(`${r}/${e}/${n}`) ?? false,
     createBranchPolicy: (r, e, n, t) => rec('createBranchPolicy', { r, e, n, t }),
@@ -635,16 +639,17 @@ describe('cmdBootstrapPaper', () => {
     // An upgraded launcher can name `preview` before bootstrap re-runs; GitHub then creates it
     // admitting every branch, and a branch policy cannot be added until that is switched off.
     const { prov, calls } = fakeProv({
-      environments: new Set(['me/paper/preview']),
-      openEnvironments: new Set(['me/paper/preview']),
+      environments: new Set(['me/paper/preview', 'me/paper/zenodo-publish']),
+      openEnvironments: new Set(['me/paper/preview', 'me/paper/zenodo-publish']),
       reviewers: [{ type: 'User', id: 12 }],
     });
     await cmdBootstrapPaper(paperInput(), deps(prov));
-    expect(calls.upsertEnvironment).toContainEqual({
-      r: 'me/paper',
-      n: 'preview',
-      v: [{ type: 'User', id: 12 }],
-    });
+    for (const n of ['preview', 'zenodo-publish'])
+      expect(calls.upsertEnvironment).toContainEqual({
+        r: 'me/paper',
+        n,
+        v: [{ type: 'User', id: 12 }],
+      });
     expect(calls.createBranchPolicy).toContainEqual({
       r: 'me/paper',
       e: 'preview',
