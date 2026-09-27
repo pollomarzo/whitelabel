@@ -522,7 +522,7 @@ export const ZENODO_PREPARE_ENV = 'zenodo-prepare';
 /** The environment of the preview deploy: `main` only, no reviewer. */
 export const PREVIEW_ENV = 'preview';
 
-/** Secrets live in environments only: a repository secret reaches every branch. */
+/** Secrets live in environments only: a repository secret reaches every branch ([R207]). */
 export const SECRET_MAP: Array<{ key: keyof SecretInputs; name: string; envs: string[] }> = [
   { key: 'zenodoToken', name: 'ZENODO_TOKEN', envs: [ZENODO_ENV, ZENODO_PREPARE_ENV] },
   {

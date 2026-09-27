@@ -1,6 +1,5 @@
-# Editors gate every file that decides what CODE a job runs. The paper's content and myst.yml are
-# deliberately not gated: https://scholar.nexus/oaktree-sapling/design/paper-ci
-# The owner is replaced at bootstrap; an org tenant uses a team like @your-org/editors.
+# Editors review the launchers, the pins and the environment; content and myst.yml stay with the author.
+# https://scholar.nexus/oaktree-sapling/design/paper-ci#design-paper-ci-codeowners
 /.github/                @pollomarzo
 /CODEOWNERS              @pollomarzo
 /paper-environment.yml   @pollomarzo

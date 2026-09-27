@@ -1,11 +1,7 @@
 name: Publish Zenodo deposit
 
-# Tag push populates the Zenodo draft. The build job runs the paper's code and holds no secret;
-# the publish job deposits its output, attaches the debug bundle to the tag's GitHub Release, and
-# posts the commit comment or failure issue. The required-reviewer environment is the human gate
-# before the token-bearing job, and the public DOI is still minted by a human clicking Publish on
-# Zenodo. Both tokens are passed; the CLI selects by DOI prefix.
-# https://scholar.nexus/oaktree-sapling/design/paper-ci
+# A v* tag fills the Zenodo draft; a human clicks Publish on Zenodo. Token picked by DOI prefix.
+# https://scholar.nexus/oaktree-sapling/reference/cli#release
 
 on:
   push:
@@ -15,7 +11,7 @@ permissions:
   contents: read
 
 jobs:
-  build: # NO secrets: the paper's plugins and environment run here, never beside the token
+  build: # no secrets: the paper's code runs here, never beside the token
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -35,7 +31,7 @@ jobs:
 
   publish:
     needs: build
-    environment: zenodo-publish # required-reviewer gate + v* policy, provisioned by bootstrap
+    environment: zenodo-publish # required reviewer; v* tags only
     permissions:
       contents: write # attach the Release bundle + commit comment
       issues: write # open the editor-action issue on failure

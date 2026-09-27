@@ -1,9 +1,7 @@
 name: Prepare Zenodo deposit
 
-# Editor-dispatched DOI reservation: reserves or reuses a draft and opens the one-file myst.yml
-# PR writing project.doi/github/date. `--sandbox` is an explicit human choice, and a prod prepare
-# may replace a committed sandbox DOI. No `version` input: prepare only reserves the CONCEPT DOI,
-# and the version enters the deposit at publish time.
+# Editor-dispatched: reserves the concept DOI, opens the myst.yml PR. The version enters at publish.
+# https://scholar.nexus/oaktree-sapling/reference/cli#deposit
 
 on:
   workflow_dispatch:
@@ -19,13 +17,12 @@ permissions:
 
 jobs:
   prepare:
-    environment: zenodo-prepare # holds the Zenodo tokens; admits main only, provisioned by bootstrap
+    environment: zenodo-prepare # Zenodo tokens; main only
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      # The two environments are separate on purpose. Both secrets reach the CLI under their own
-      # names below, so this is the better message, not the only guard.
+      # The CLI would refuse anyway; this prints a helpful message.
       - name: Refuse a sandbox run with no sandbox token
         if: ${{ inputs.sandbox }}
         env:

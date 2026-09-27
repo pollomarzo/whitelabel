@@ -1,8 +1,6 @@
 name: engine
 description: >-
-  Resolve the engine ref from myst.yml, check out the pinned ENGINE repo at that ref,
-  and dispatch a verb to it. The ONE place the pins live. Frozen +
-  CODEOWNERS-gated; all *logic* lives behind the engine version, improvable by a bump.
+  Check out the engine repository pins.yml names, at the version myst.yml names, and run a verb.
 
 inputs:
   args:
@@ -15,9 +13,7 @@ inputs:
 runs:
   using: composite
   steps:
-    # --- resolve the engine ref from the paper's own myst.yml (raw, pre-extends) ------
-    # Quoted key form: an unquoted hyphenated key is yq-version sensitive. The explicit guard
-    # makes a missing options block fail here, not as a baffling checkout error.
+    # The paper's own myst.yml, before extends. Key quoted: yq versions disagree on a bare hyphen.
     - id: ref
       shell: bash
       run: |
@@ -26,8 +22,7 @@ runs:
           echo "::error::project.options.oaktree-sapling.version missing from myst.yml"
           exit 1
         fi
-        # fork-controlled on a PR: reject anything outside a plain ref charset before echoing,
-        # or a newline would inject a second $GITHUB_OUTPUT line.
+        # fork-controlled: a newline would forge a second $GITHUB_OUTPUT line
         case "$ref" in
           *[!A-Za-z0-9._/-]*)
             echo "::error::engine ref '$ref' has characters a git ref cannot; pin a plain version in myst.yml"
@@ -35,7 +30,6 @@ runs:
         esac
         echo "ref=$ref" >> "$GITHUB_OUTPUT"
 
-    # --- pins.yml = the single source of truth, read by CI *and* local oak --
     - id: pins
       shell: bash
       run: |
@@ -48,9 +42,8 @@ runs:
         echo "engine=$engine" >> "$GITHUB_OUTPUT"
         echo "instance=$(yq '.instance_repo // "."' "$pins")" >> "$GITHUB_OUTPUT"
 
-    # --- the repo is pinned but the ref FLOATS, and a public engine resolves refs/pull/N/merge
-    # too. From a fork PR, refuse the classes that are not a published line of the engine.
-    # https://scholar.nexus/oaktree-sapling/design/paper-ci
+    # A fork PR may not pin a raw commit or refs/pull/N/merge.
+    # https://scholar.nexus/oaktree-sapling/design/paper-ci#design-paper-ci-engine-ref
     - id: refclass
       shell: bash
       env:
@@ -63,24 +56,20 @@ runs:
           exit 1
         fi
 
-    # --- check out ENGINE@ref. The repository is pinned and the ref is now class-checked above.
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         repository: ${{ steps.pins.outputs.engine }}
         ref: ${{ steps.ref.outputs.ref }}
         path: .engine
 
-    # --- OPT-IN per-paper execution env only: micromamba iff the job asks and the paper
-    # ships paper-environment.yml. No file → no Python anywhere. Installing runs package
-    # scripts, so a job holding a secret never asks.
+    # Installing runs package scripts: never set paper-env in a job that holds a secret.
     - uses: mamba-org/setup-micromamba@ce51e99f4bb8a82ab7158c4dc59ef4634c59c4f9 # v3.1.0
       if: ${{ inputs.paper-env == 'true' && hashFiles('paper-environment.yml') != '' }}
       with:
         environment-file: paper-environment.yml
         cache-environment: true
 
-    # --- dispatch. INSTANCE_REPO from pins.yml ('.' when co-located). args via env, never
-    # spliced: git allows $( ) in the v* tag it carries. Unquoted + set -f: word-split, no glob.
+    # $ARGS via env, never spliced: a v* tag may hold $( ). Unquoted to word-split; set -f stops globs.
     - id: dispatch
       shell: bash
       env:

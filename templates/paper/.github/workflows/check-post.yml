@@ -1,10 +1,7 @@
 name: Journal checks post
 
-# Stage 2 of the journal checks: post only, base context, holding the write token fork PRs never
-# get. Posts Stage 1's report as a Check Run plus a sticky comment; never re-runs validate, never
-# rebuilds paper content. The artifact is written by the untrusted half, so read the trust rules
-# before changing what this job takes from it:
-# https://scholar.nexus/oaktree-sapling/design/paper-ci
+# Stage 2 of the journal checks: posts Stage 1's report from the base context, never rebuilding.
+# https://scholar.nexus/oaktree-sapling/design/paper-ci#design-paper-ci-stage2-inputs
 
 on:
   workflow_run:
@@ -12,13 +9,13 @@ on:
     types: [completed]
 
 permissions:
-  contents: read # checkout the base default branch (engine ref + action code)
+  contents: read
   actions: read # download the cross-run artifact
   checks: write # post the "Journal checks" Check Run
   pull-requests: write # upsert the sticky checks comment
 
 concurrency:
-  # Key on head repo + branch so two forks PRing from `main` don't cancel each other.
+  # Head repo in the key: forks share branch names.
   group: check-post-${{ github.event.workflow_run.head_repository.full_name }}-${{ github.event.workflow_run.head_branch }}
   cancel-in-progress: true
 
@@ -27,7 +24,7 @@ jobs:
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1; BASE default branch ⇒ engine ref AND action code from base
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1; base branch, never the PR head
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: journal-checks
@@ -35,10 +32,7 @@ jobs:
           run-id: ${{ github.event.workflow_run.id }}
           github-token: ${{ github.token }}
 
-      # The ONE value this job cannot read from its own event (workflow_run.pull_requests is
-      # empty for forks), so it comes from the untrusted artifact and needs both checks below.
-      # Do not add a second such value without reading why:
-      # https://scholar.nexus/oaktree-sapling/design/paper-ci
+      # Artifact is fork-controlled: only read pr-number, and check it; everything else from the event.
       - id: meta
         env:
           GH_TOKEN: ${{ github.token }}
@@ -58,8 +52,7 @@ jobs:
           fi
           echo "pr=$pr" >> "$GITHUB_OUTPUT"
 
-      # Posts the precomputed report. Best-effort inside the engine: a post failure degrades to
-      # a `::warning::` rather than failing this job.
+      # Best-effort: https://scholar.nexus/oaktree-sapling/reference/cli#check-post
       - uses: ./.github/actions/engine
         with:
           args: >-
