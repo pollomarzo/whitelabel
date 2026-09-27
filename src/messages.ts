@@ -163,7 +163,8 @@ export const usage = (): string =>
   `                    journal website instead.\n` +
   `\n` +
   `Run by the workflows (rarely typed by hand)\n` +
-  `  oak check-post --report <path> --repo <owner/repo> --sha <headsha> [--pr <n>]\n` +
+  `  oak check-post --report <path> --repo <owner/repo> --sha <headsha> --base <branch>\n` +
+  `                 --verified-head <headsha> [--pr <n>]\n` +
   `  oak deploy-preview <site> [--instance <dir>] [--repo <owner/repo>]\n` +
   `  oak notify new-version [--pr <n> | --site <dir>] [--repo <owner/repo>]\n` +
   `  oak deposit prepare --repo <owner/repo> [--site-url <url>] [--sandbox] [--instance <dir>]\n` +
@@ -878,7 +879,8 @@ export const workflow = {
 
   // check-post
   checkPostArgs:
-    'oak check-post: --report <path>, --repo <owner/repo> and --sha <headsha> are required',
+    'oak check-post: --report <path>, --repo <owner/repo>, --sha <headsha>, --base <branch> ' +
+    'and --verified-head <headsha> are required',
   checkPostNoReport: (path: string): string => `oak check-post: report file not found: ${path}`,
   checkPostCheckRunFailed: (message: string): string =>
     `check-post: Check Run not posted (${message})`,
