@@ -1135,10 +1135,7 @@ export const realConformanceGh: ConformanceGh = {
     return branches;
   },
   openForkPr(baseRepo, forkRepo, forkToken, branch, tag, marker) {
-    // On the FORK (fork token): branch off the BASE main, then bump the engine pin to V so the
-    // fork PR builds under V: that pin change is also the non-empty content diff. All via the
-    // Contents API (no clone → no git-credential dependency for the fork token). The fork's own
-    // default branch drifts, and a PR that conflicts with base triggers no workflow at all.
+    // Off base main, not the fork's: a PR conflicting with base triggers no workflow.
     const forkOwner = forkRepo.split('/')[0];
     const headSha = gh(['api', `repos/${baseRepo}/git/ref/heads/main`, '--jq', '.object.sha']);
     ghAs(forkToken, [
