@@ -169,7 +169,7 @@ export const usage = (): string =>
   `  oak deposit prepare --repo <owner/repo> [--site-url <url>] [--sandbox] [--instance <dir>]\n` +
   `  oak deposit publish --pdf <path> --tag <vX.Y.Z> [--site-url <url>] [--sandbox] [--instance <dir>]\n` +
   `  oak deposit status  [--sandbox] [--instance <dir>]\n` +
-  `  oak release --tag <vX.Y.Z> [--paper <dir>] [--instance <dir>] [--site-url <url>]\n` +
+  `  oak release --tag <vX.Y.Z> [--no-build] [--paper <dir>] [--instance <dir>] [--site-url <url>]\n` +
   `  oak conformance reset   --repo <owner/name>\n` +
   `  oak conformance certify --repo <owner/name> --tag <vX.Y.Z> [--fork-repo <owner/name>]\n` +
   `\n` +
@@ -350,10 +350,12 @@ export const bootstrap = {
 
   planProvisioning:
     '  ○ repo settings: branch + tag rules, GitHub Pages, the reviewer-gated zenodo-publish ' +
-    'environment, permission for Actions to open pull requests, issue labels (safe to re-run)',
+    'environment and the main-only zenodo-prepare and preview ones, permission for Actions ' +
+    'to open pull requests, issue labels (safe to re-run)',
   planProvisioningCoLocated:
     '  ○ repo settings: branch + tag rules, GitHub Pages, the reviewer-gated zenodo-publish ' +
-    'environment, permission for Actions to open pull requests, issue labels',
+    'environment and the main-only zenodo-prepare and preview ones, permission for Actions ' +
+    'to open pull requests, issue labels',
   planSecrets: (names: string): string =>
     `  ○ secrets: ${names || 'none given; you get a list of what to set by hand'}`,
   planPages: (siteUrl: string): string =>
@@ -403,7 +405,13 @@ export const bootstrap = {
     "  ✓ the 'zenodo-publish' environment already restricts its secrets to v* tags",
   logZenodoEnvCreated:
     "  ✓ created the 'zenodo-publish' environment: only v* tags may use its secrets",
-  logSecretSet: (name: string): string => `  ✓ secret ${name} set`,
+  logMainEnvExists: (env: string): string =>
+    `  ✓ the '${env}' environment already restricts its secrets to main`,
+  logMainEnvCreated: (env: string): string =>
+    `  ✓ created the '${env}' environment: only main may use its secrets`,
+  logSecretSet: (name: string, env: string): string => `  ✓ secret ${name} set on '${env}'`,
+  logRepoSecretDeleted: (name: string): string =>
+    `  ✓ deleted the repository secret ${name}; its environments hold it now`,
   logSiteAdded: (siteUrl: string): string => `  ✓ journal website added: ${siteUrl}`,
   logStepFailed: (step: string, why: string): string => `  ✗ ${step} failed: ${why}`,
   logPartial: (steps: string): string =>
@@ -419,7 +427,7 @@ export const bootstrap = {
 
   // ── the runbook (what to do once the command has finished) ─────────────────────────────
   runbookSecrets: (repo: string, missing: string): string =>
-    `Set the remaining Actions secrets on https://github.com/${repo}/settings/secrets/actions : ` +
+    `Set the remaining secrets on their environments at https://github.com/${repo}/settings/environments : ` +
     missing +
     '. Until they are set, publishing to Zenodo (ZENODO_TOKEN*) and live pull-request ' +
     'previews (CLOUDFLARE_*) are skipped; everything else works, and a preview falls back ' +
@@ -430,6 +438,10 @@ export const bootstrap = {
     `organisation rather than one of its teams, and an organisation cannot be a reviewer. ` +
     `Publishing runs a job holding your Zenodo token, so add your editors team as a required ` +
     `reviewer of the '${env}' environment: https://github.com/${repo}/settings/environments`,
+
+  runbookRepoSecrets: (repo: string, names: string): string =>
+    `${names} is still a repository secret on ${repo}, which a workflow on any branch can read. ` +
+    `Re-run with its value: it lands on its environments and the re-run deletes this copy.`,
 
   runbookStepFailed: (repo: string, step: string, why: string): string =>
     `The '${step}' step failed (${why}); ${repo} keeps everything else this run set. Fix the ` +
@@ -894,7 +906,7 @@ export const workflow = {
     '--zenodo-token-sandbox, --cf-token, --cf-account) set nothing here; this repo holds ' +
     "the journal's settings and runs no publishing, so it takes no secrets. The tokens are " +
     'set per paper repo: `oak bootstrap paper` accepts the same flags, or set them in the ' +
-    "paper repo's Actions secrets settings.",
+    "paper repo's environment settings.",
   conformanceResetArgs: 'oak conformance reset: --repo <owner/name> is required',
   conformanceCertifyArgs:
     'oak conformance certify: --repo <owner/name> and --tag <vX.Y.Z> are required',

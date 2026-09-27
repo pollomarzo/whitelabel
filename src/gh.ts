@@ -12,9 +12,9 @@
 import * as msg from './messages.js';
 import { UserError } from './messages.js';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { cpSync, mkdtempSync } from 'node:fs';
+import { cpSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { parseDocument } from 'yaml';
 import type { GitContext } from './zenodo.js';
 import { LABEL_ZENODO_FAILED, type GhPr, type PagesDeployer } from './preview.js';
@@ -432,6 +432,9 @@ export const realPagesDeployer: PagesDeployer = {
   async deploy(opts) {
     // stderr inherited, not captured: a captured child's stderr joins the error message, which
     // preview.ts posts publicly, and wrangler's names the account id ([R104]).
+    // An empty cwd: from the paper root, its `.npmrc` or `node_modules/wrangler` would pick
+    // which wrangler runs with the token.
+    const cwd = mkdtempSync(join(tmpdir(), 'oak-wrangler-'));
     let out: string;
     try {
       out = execFileSync(
@@ -441,11 +444,12 @@ export const realPagesDeployer: PagesDeployer = {
           `wrangler@${WRANGLER_VERSION}`,
           'pages',
           'deploy',
-          opts.dir,
+          resolve(opts.dir),
           `--project-name=${opts.projectName}`,
           `--branch=${opts.branch}`,
         ],
         {
+          cwd,
           encoding: 'utf8',
           stdio: ['ignore', 'pipe', 'inherit'],
           env: {
@@ -457,6 +461,8 @@ export const realPagesDeployer: PagesDeployer = {
       );
     } catch {
       throw new Error(msg.workflow.wranglerFailed);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
     }
     const m = /https?:\/\/[^\s]*\.pages\.dev[^\s]*/.exec(out);
     if (!m) throw new Error(msg.workflow.wranglerNoUrl);
@@ -696,6 +702,16 @@ export const realProvisioner: Provisioner = {
       }),
     });
   },
+  customBranchPolicies(repo, env) {
+    return (
+      gh([
+        'api',
+        `repos/${repo}/environments/${env}`,
+        '--jq',
+        '.deployment_branch_policy.custom_branch_policies // false',
+      ]) === 'true'
+    );
+  },
   branchPolicyExists(repo, env, name) {
     try {
       return (
@@ -730,9 +746,21 @@ export const realProvisioner: Provisioner = {
     // and the step runner records it rather than losing it ([R127]).
     gh(args);
   },
-  setSecret(repo, name, value) {
+  setSecret(repo, env, name, value) {
     // stdin, never `--body`: argv is world-readable in /proc ([R104]).
-    gh(['secret', 'set', name, '--repo', repo], { input: value });
+    gh(['secret', 'set', name, '--repo', repo, '--env', env], { input: value });
+  },
+  secretNames(repo, env) {
+    const args = ['secret', 'list', '--repo', repo, '--json', 'name', '--jq', '.[].name'];
+    if (env) args.push('--env', env);
+    try {
+      return gh(args).split('\n').filter(Boolean);
+    } catch {
+      return [];
+    }
+  },
+  deleteRepoSecret(repo, name) {
+    gh(['secret', 'delete', name, '--repo', repo]);
   },
   repoVisibility(repo) {
     return gh(['api', `repos/${repo}`, '--jq', '.visibility']) === 'private' ? 'private' : 'public';

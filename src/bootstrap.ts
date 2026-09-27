@@ -418,10 +418,16 @@ export interface Provisioner {
   /** `name`'s required reviewers, so a re-run never clears one added by hand ([R123]/[R127]). */
   environmentReviewers(repo: string, name: string): EnvironmentReviewer[];
   upsertEnvironment(repo: string, name: string, reviewers: EnvironmentReviewer[]): void;
+  /** Whether `env` admits only the refs its deployment policies name (GitHub's auto-created
+   *  environment admits every branch). */
+  customBranchPolicies(repo: string, env: string): boolean;
   branchPolicyExists(repo: string, env: string, name: string): boolean;
   createBranchPolicy(repo: string, env: string, name: string, type: string): void;
   createLabel(repo: string, name: string, opts: { color?: string; description?: string }): void;
-  setSecret(repo: string, name: string, value: string): void;
+  setSecret(repo: string, env: string, name: string, value: string): void;
+  /** Secret names on `env`, or repository-level ones when `env` is omitted; [] if none. */
+  secretNames(repo: string, env?: string): string[];
+  deleteRepoSecret(repo: string, name: string): void;
   /** `owner/repo` visibility (public/private), used to enforce public instance-config. */
   repoVisibility(repo: string): 'public' | 'private';
   setRepoPublic(repo: string): void;
@@ -509,12 +515,28 @@ export interface SecretInputs {
   cfAccount?: string;
 }
 
-const SECRET_MAP: Array<{ key: keyof SecretInputs; name: string }> = [
-  { key: 'zenodoToken', name: 'ZENODO_TOKEN' },
-  { key: 'zenodoTokenSandbox', name: 'ZENODO_TOKEN_SANDBOX' },
-  { key: 'cfToken', name: 'CLOUDFLARE_API_TOKEN' },
-  { key: 'cfAccount', name: 'CLOUDFLARE_ACCOUNT_ID' },
+/** The name of the environment gating the tag-push deposit. */
+export const ZENODO_ENV = 'zenodo-publish';
+/** The environment of the DOI-reservation workflow: `main` only, no reviewer. */
+export const ZENODO_PREPARE_ENV = 'zenodo-prepare';
+/** The environment of the preview deploy: `main` only, no reviewer. */
+export const PREVIEW_ENV = 'preview';
+
+/** Every secret lives in environments, never at repository level, where a workflow on any
+ *  branch reads it. A name set on several environments holds the same value in each. */
+export const SECRET_MAP: Array<{ key: keyof SecretInputs; name: string; envs: string[] }> = [
+  { key: 'zenodoToken', name: 'ZENODO_TOKEN', envs: [ZENODO_ENV, ZENODO_PREPARE_ENV] },
+  {
+    key: 'zenodoTokenSandbox',
+    name: 'ZENODO_TOKEN_SANDBOX',
+    envs: [ZENODO_ENV, ZENODO_PREPARE_ENV],
+  },
+  { key: 'cfToken', name: 'CLOUDFLARE_API_TOKEN', envs: [PREVIEW_ENV] },
+  { key: 'cfAccount', name: 'CLOUDFLARE_ACCOUNT_ID', envs: [PREVIEW_ENV] },
 ];
+
+/** The environments admitting only `main`, beside the reviewer-gated {@link ZENODO_ENV}. */
+const MAIN_ONLY_ENVS = [ZENODO_PREPARE_ENV, PREVIEW_ENV];
 
 /* --------------------------------------------------------------------------
  * Orchestration
@@ -654,9 +676,6 @@ function resolveOwner(
     ownerType === 'Organization' && /^@[^/]+\/.+$/.test(ownerToken) ? ownerToken.slice(1) : null;
   return { ownerToken, team, ownerType };
 }
-
-/** The name of the environment whose secrets carry the Zenodo tokens. */
-export const ZENODO_ENV = 'zenodo-publish';
 
 /**
  * Who must approve a `zenodo-publish` deployment ([R123]). An org tenant names its editors
@@ -854,6 +873,26 @@ function applyProvisioning(
     }
   });
 
+  for (const env of MAIN_ONLY_ENVS) {
+    step(`env_${env}`, () => {
+      if (!prov.environmentExists(repo, env)) {
+        prov.upsertEnvironment(repo, env, []);
+      } else if (!prov.customBranchPolicies(repo, env)) {
+        // A launcher naming a missing environment makes GitHub create it admitting every branch.
+        // The PUT carries the whole environment, so the reviewers ride along ([R127]).
+        prov.upsertEnvironment(repo, env, prov.environmentReviewers(repo, env));
+      }
+      if (prov.branchPolicyExists(repo, env, 'main')) {
+        actions[`env_${env}`] = 'main policy already exists';
+        log(msg.bootstrap.logMainEnvExists(env));
+      } else {
+        prov.createBranchPolicy(repo, env, 'main', 'branch');
+        actions[`env_${env}`] = 'created with main policy';
+        log(msg.bootstrap.logMainEnvCreated(env));
+      }
+    });
+  }
+
   step('labels', () => {
     for (const l of LABELS)
       prov.createLabel(repo, l.name, { color: l.color, description: l.description });
@@ -863,35 +902,65 @@ function applyProvisioning(
   return { runbook, failed };
 }
 
-/** Set the provided secrets; collect a runbook for the ones left unset ([R25] floor). */
+/**
+ * Set the provided secrets on their environments, collect a runbook for the ones still unset,
+ * then delete each repository-level copy whose environments all hold it ([R25] floor). A copy
+ * whose environments do not is kept and named: deleting it would lose a value nobody can read.
+ */
 function applySecrets(
   repo: string,
   secrets: SecretInputs,
   deps: BootstrapDeps,
   actions: Record<string, string>,
 ): { set: string[]; runbook: string[]; failed: StepFailure[] } {
+  const { prov } = deps;
   const set: string[] = [];
-  const missing: string[] = [];
   const runbook: string[] = [];
   const failed: StepFailure[] = [];
   const step = stepRunner(repo, actions, runbook, failed, deps.log);
-  for (const { key, name } of SECRET_MAP) {
+  const held = new Map<string, Set<string>>();
+  const heldOn = (env: string): Set<string> => {
+    if (!held.has(env)) held.set(env, new Set(prov.secretNames(repo, env)));
+    return held.get(env)!;
+  };
+  for (const { key, name, envs } of SECRET_MAP) {
     const value = secrets[key];
-    if (!value) {
-      missing.push(name);
-      continue;
+    if (!value) continue;
+    let all = true;
+    for (const env of envs) {
+      // Per secret and environment: one refusal must not swallow the rest ([R125]).
+      const ok = step(`secret_${env}_${name}`, () => {
+        prov.setSecret(repo, env, name, value);
+        deps.log(msg.bootstrap.logSecretSet(name, env));
+      });
+      if (ok) heldOn(env).add(name);
+      all &&= ok;
     }
-    // Per secret, not per loop: one refusal must not swallow the rest ([R125]).
-    const ok = step(`secret_${name}`, () => {
-      deps.prov.setSecret(repo, name, value);
-      deps.log(msg.bootstrap.logSecretSet(name));
-    });
-    if (ok) set.push(name);
-    else missing.push(name);
+    if (all) set.push(name);
   }
-  if (missing.length) {
-    runbook.push(msg.bootstrap.runbookSecrets(repo, missing.join(', ')));
-  }
+
+  const missing = SECRET_MAP.flatMap(({ name, envs }) => {
+    const lacking = envs.filter((env) => !heldOn(env).has(name));
+    return lacking.length ? [`${name} (${lacking.join(', ')})`] : [];
+  });
+  if (missing.length) runbook.push(msg.bootstrap.runbookSecrets(repo, missing.join('; ')));
+
+  step('repo_secrets', () => {
+    const repoLevel = new Set(prov.secretNames(repo));
+    const removed: string[] = [];
+    const kept: string[] = [];
+    for (const { name, envs } of SECRET_MAP) {
+      if (!repoLevel.has(name)) continue;
+      if (envs.every((env) => heldOn(env).has(name))) {
+        prov.deleteRepoSecret(repo, name);
+        removed.push(name);
+        deps.log(msg.bootstrap.logRepoSecretDeleted(name));
+      } else kept.push(name);
+    }
+    if (kept.length) runbook.push(msg.bootstrap.runbookRepoSecrets(repo, kept.join(', ')));
+    actions.repo_secrets = removed.length ? `deleted ${removed.join(', ')}` : 'none deleted';
+  });
+
   runbook.push(msg.bootstrap.runbookForkApproval);
   return { set, runbook, failed };
 }

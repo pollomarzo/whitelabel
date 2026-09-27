@@ -26,7 +26,7 @@ Unknown keys are ignored rather than rejected, so a newer setting cannot break a
 : Your own PDF template, if the engine's is not enough. See below.
 
 `preview:`
-: How a pull-request preview of a paper is served. `provider: artifact` (the default) attaches the built site to the CI run as a downloadable artifact and comments a link on the pull request. `provider: cloudflare` deploys a live preview URL instead, and needs both `cf_project_name` here and the `CLOUDFLARE_*` secrets on each paper repository. If any of the three is missing, the run quietly falls back to the artifact link rather than failing. `branch_pattern` names the Cloudflare branch alias; `{repo}` and `{pr}` are substituted, and the result is lowercased and truncated to 28 characters.
+: How a pull-request preview of a paper is served. `provider: artifact` (the default) attaches the built site to the CI run as a downloadable artifact and comments a link on the pull request. `provider: cloudflare` deploys a live preview URL instead, and needs both `cf_project_name` here and the `CLOUDFLARE_*` secrets on the `preview` environment of each paper repository. If any of the three is missing, the run quietly falls back to the artifact link rather than failing. `branch_pattern` names the Cloudflare branch alias; `{repo}` and `{pr}` are substituted, and the result is lowercased and truncated to 28 characters.
 
 `zenodo:`
 : `community` submits every deposit to that Zenodo community; `description_blurb` is a paragraph appended to every deposit's description. A fresh journal has neither, and deposits work without them.

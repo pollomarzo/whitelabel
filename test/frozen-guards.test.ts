@@ -25,6 +25,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseDocument } from 'yaml';
 import { readdirSync } from 'node:fs';
+import { SECRET_MAP } from '../src/bootstrap.js';
 
 const SHIM = 'templates/paper';
 
@@ -304,5 +305,58 @@ describe('workflow expressions', () => {
 
   it('finds the conditions it claims to check', () => {
     expect(conditions().length).toBeGreaterThan(3);
+  });
+});
+
+describe('every secret a job reads comes from an environment', () => {
+  interface Job {
+    environment?: string | { name: string };
+    steps?: Array<{ uses?: string; with?: Record<string, unknown> }>;
+  }
+  /** Every job in the frozen workflows, with the secrets it reads and its environment. */
+  function jobs(): Array<{ where: string; secrets: string[]; env: string | null; job: Job }> {
+    const out = [];
+    for (const f of readdirSync(join(SHIM, '.github/workflows'))) {
+      const doc = parseDocument(
+        readFileSync(join(SHIM, '.github/workflows', f), 'utf8'),
+      ).toJS() as {
+        jobs: Record<string, Job>;
+      };
+      for (const [name, job] of Object.entries(doc.jobs)) {
+        const secrets = [...JSON.stringify(job).matchAll(/\bsecrets\.(\w+)/g)].map((m) => m[1]!);
+        const env =
+          typeof job.environment === 'string' ? job.environment : (job.environment?.name ?? null);
+        out.push({ where: `${f}: job ${name}`, secrets, env, job });
+      }
+    }
+    return out;
+  }
+
+  it('a job reading a secret declares an environment bootstrap stores that secret on', () => {
+    // A repository secret reaches a workflow on any branch, which an author can push.
+    const wrong = jobs().flatMap((j) =>
+      j.secrets
+        .filter((s) => !SECRET_MAP.find((m) => m.name === s)?.envs.includes(j.env ?? ''))
+        .map((s) => `${j.where} reads ${s} under ${j.env ?? 'no environment'}`),
+    );
+    expect(wrong).toEqual([]);
+  });
+
+  it('a job holding a secret never installs the paper environment', () => {
+    // Installing runs package scripts, which could read the token from the next step.
+    const action = parseDocument(
+      readFileSync(join(SHIM, '.github/actions/engine/action.yml'), 'utf8'),
+    ).toJS() as { runs: { steps: Array<{ uses?: string; if?: string }> } };
+    const setup = action.runs.steps.find((s) => s.uses?.startsWith('mamba-org/setup-micromamba'));
+    expect(setup?.if).toContain("inputs.paper-env == 'true'");
+    const offenders = jobs()
+      .filter((j) => j.secrets.length)
+      .filter((j) => (j.job.steps ?? []).some((s) => String(s.with?.['paper-env']) === 'true'))
+      .map((j) => j.where);
+    expect(offenders).toEqual([]);
+  });
+
+  it('finds the jobs it claims to check', () => {
+    expect(jobs().filter((j) => j.secrets.length).length).toBeGreaterThanOrEqual(3);
   });
 });
