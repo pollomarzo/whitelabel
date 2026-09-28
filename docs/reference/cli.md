@@ -56,4 +56,6 @@ Re-renders a paper's templated files at the target engine version and compares t
 (conformance)=
 ## conformance
 
-`oak conformance <reset|certify>` runs the paper-CI conformance harness. `reset` is an idempotent teardown of a certification run's ephemeral state. `certify` runs the certification, optionally through a fork-PR preview phase first, and `--record` persists the tag-keyed verdict.
+Tests a release of oak on a paper repository kept for testing, by running everything a paper's CI does. `oak conformance certify --repo <owner/name> --tag <version>` moves that repository onto the release, then pushes to `main` and checks the site deploys, opens a pull request and checks its preview, and deposits to the Zenodo sandbox. With `--fork-repo`, it also opens a pull request from a fork and checks that preview. `--record <file>` writes the result as JSON: what passed, and what was skipped. It exits 0 when everything passed, 1 when something failed, and 3 when a third party such as Zenodo did not respond in time.
+
+`oak conformance reset --repo <owner/name>` removes what an earlier run left in the test repository. Running it twice is safe.

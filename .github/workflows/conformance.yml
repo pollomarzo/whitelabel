@@ -1,35 +1,22 @@
-# conformance: release certification of the paper CI (plan-paper-ci-conformance.md).
-#
-# Drives the standing fixtures against an engine version V and asserts every shim path green
-# (build/Pages, journal checks, fork-safe preview, deposit chain). The fork-preview path runs
-# only when a fork is configured below; the verdict's `skipped` names what it did not certify,
-# so a three-path cert cannot read as a four-path one. Deliberately advisory, NOT a
-# required status check, NOT per-commit: a release gate (real runs + workflow_run latency +
-# external round-trips). Two triggers:
-#   • workflow_dispatch: manual, pick a tag (or only-reset).
-#   • workflow_run (POST-CUT HOOK): after `cut-engine-release` completes, certify the just-cut
-#     (latest) release automatically ("release ⟺ certified"). If the `conformance` env still has
-#     a required reviewer the auto-run just waits for one click; drop it for fully hands-off.
-# The promotion gate on a green cert is deferred (impl [R78] / C5).
 name: conformance
+
+# Tests a release of oak on the test paper repository and uploads the result to the release.
+# https://scholar.nexus/oaktree-sapling/reference/cli#conformance
 
 on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Engine version under test (e.g. v0.0.0-dev.18). Certifies push→main when set.'
+        description: 'Release to test; empty only resets the test repository'
         required: false
       only-reset:
-        description: 'Run just the teardown of prior cert state, then stop (ignore tag).'
+        description: 'Only reset the test repository'
         type: boolean
         default: false
   workflow_run:
     workflows: ['cut-engine-release']
     types: [completed]
 
-# The harness holds ONLY the fixture-scoped PAT (CONFORMANCE_PAT); CF/Zenodo creds stay the
-# fixture repo's own secrets, read back from the fixture run. The ambient GITHUB_TOKEN cannot
-# drive the fixture (cross-repo reach + the recursion guard); see plan §credentials.
 permissions:
   contents: read
 
@@ -40,13 +27,10 @@ concurrency:
 jobs:
   certify:
     runs-on: ubuntu-latest
-    # Skip the post-cut auto-trigger when the cut itself failed; nothing valid to certify.
     if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
-    # A cert run is a deliberate act: the PAT lives behind a required-reviewer environment
-    # (personal-account interim home; org-shared secrets come with the open-scholar-nexus move).
     environment: conformance
     permissions:
-      contents: write # attach the cert record to the engine tag's GH Release (ambient token)
+      contents: write # upload cert.json to the release
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -57,20 +41,16 @@ jobs:
 
       - run: npm ci
 
-      # dist/cli.cjs is gitignored; the harness runs the engine's CURRENT bundle (the code under
-      # review IS the harness), so build it before invoking `oak conformance`.
+      # Tests with the oak built from this checkout.
       - run: npm run bundle
 
-      # Resolve what to certify: the dispatch input, or (on the post-cut hook) the just-cut
-      # (latest) release. `only_reset` is dispatch-only. Both surface as string outputs.
-      - name: Resolve tag + mode
+      - name: Pick the release
         id: r
         env:
-          GH_TOKEN: ${{ github.token }} # engine repo is public; read releases with the ambient token
+          GH_TOKEN: ${{ github.token }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_run" ]; then
+          if [ "${{ github.event_name }}" = workflow_run ]; then
             tag=$(gh release list -R "$GITHUB_REPOSITORY" --limit 1 --json tagName --jq '.[0].tagName')
-            echo "post-cut hook: certifying latest release $tag"
             echo "tag=$tag" >> "$GITHUB_OUTPUT"
             echo "only_reset=false" >> "$GITHUB_OUTPUT"
           else
@@ -78,63 +58,46 @@ jobs:
             echo "only_reset=${{ inputs.only-reset }}" >> "$GITHUB_OUTPUT"
           fi
 
-      # With a `tag` and not only-reset: certify push→main + preview + deposit + fork (`certify`
-      # resets first and tears down after). Else: just reset. The certify exit code (0=CERTIFIED,
-      # 1=FAILED, 2=INCONCLUSIVE) is stashed for the outcome step below.
-      - name: Certify (or reset)
+      - name: Test the release, or reset
         id: cert
         env:
           GH_TOKEN: ${{ secrets.CONFORMANCE_PAT }}
           FIXTURE: ${{ vars.CONFORMANCE_FIXTURE_REPO }}
           TAG: ${{ steps.r.outputs.tag }}
           ONLY_RESET: ${{ steps.r.outputs.only_reset }}
-          # Optional fork-PR preview phase: the second-account fork + its own PAT. Unset means the
-          # flag is not passed at all and the phase self-skips, so certs keep working. The fork
-          # phase drives the fork via `gh api` under this PAT, so it needs no git credentials.
-          FORK_REPO: ${{ vars.CONFORMANCE_FORK_REPO }}
+          FORK_REPO: ${{ vars.CONFORMANCE_FORK_REPO }} # unset skips the fork preview
           CONFORMANCE_FORK_PAT: ${{ secrets.CONFORMANCE_FORK_PAT }}
         run: |
-          # `oak upgrade --repo` clones the fixture and `git push`es a branch; a bare-GH_TOKEN
-          # runner has no git credential helper, so teach git to use the PAT for github.com.
+          # `oak upgrade` pushes to the test repository over https, and the runner has no credential helper.
           git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
-          if [ "$ONLY_RESET" = "true" ] || [ -z "$TAG" ]; then
+          if [ "$ONLY_RESET" = true ] || [ -z "$TAG" ]; then
             node dist/cli.cjs conformance reset --repo "$FIXTURE"
             exit 0
           fi
           set +e
-          # Pass --fork-repo only when it HAS a value: an empty flag value is refused ([R134]),
-          # and this phase is meant to self-skip when the fork is not provisioned.
           fork=()
-          [ -n "$FORK_REPO" ] && fork=(--fork-repo "$FORK_REPO")
+          [ -n "$FORK_REPO" ] && fork=(--fork-repo "$FORK_REPO") # an empty value is refused [R134]
           node dist/cli.cjs conformance certify --repo "$FIXTURE" --tag "$TAG" --run-id "${{ github.run_id }}" "${fork[@]}" --record cert.json
           echo "code=$?" >> "$GITHUB_OUTPUT"
-          set -e
 
-      # Persist the tag-keyed cert record on the engine release (the C5 promotion-gate seam). Uses
-      # the ambient token; the fixture-scoped PAT can't write the engine repo.
-      - name: Record cert verdict on the engine release
+      - name: Upload the result to the release
         if: ${{ steps.r.outputs.tag != '' && steps.r.outputs.only_reset != 'true' && hashFiles('cert.json') != '' }}
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ github.token }} # the PAT cannot write this repo
         run: gh release upload "${{ steps.r.outputs.tag }}" cert.json --clobber
 
-      # FAILED (1) reddens; INCONCLUSIVE (3, third-party outage) does not, because red must mean
-      # us. Everything else reddens, including no record at all: a run that reached no verdict is
-      # not a passing run ([R111]).
-      - name: Reflect cert outcome
+      # Fails on 1 or on no result [R111]; 3 means a third party timed out, which is not oak's fault.
+      - name: Fail if the test failed
         if: ${{ steps.r.outputs.tag != '' && steps.r.outputs.only_reset != 'true' }}
         env:
           CODE: ${{ steps.cert.outputs.code }}
         run: |
-          echo "cert exit code: ${CODE:-<none>}"
           if [ ! -f cert.json ]; then
-            echo "::error::certify wrote no cert.json, so it reached no verdict (exit ${CODE:-<none>})"
+            echo "::error::the test wrote no cert.json (exit ${CODE:-none})"
             exit 1
           fi
-          case "${CODE}" in
+          case "$CODE" in
             0) exit 0 ;;
             3) echo "::warning::INCONCLUSIVE: a third party did not respond in time"; exit 0 ;;
             *) exit 1 ;;
           esac
-
-  # Remaining (not built): C5 promotion gate reading the cert record attached above (deferred).

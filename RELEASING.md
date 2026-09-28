@@ -51,6 +51,14 @@ making every stable release depend on the harness being available. Until that is
 stable cut as a two-step act: **cut, then watch the conformance run, and yank or supersede the
 release if it does not come back green.** Do not announce a version to tenants before it has.
 
+## Conformance
+
+`conformance.yml` tests each release on the test paper repository named by `CONFORMANCE_FIXTURE_REPO`, with `oak conformance` ([what it runs](https://scholar.nexus/oaktree-sapling/reference/cli#conformance)), and uploads the result to the release as `cert.json`. It starts after every successful cut and can be started by hand from Actions. A run takes several real CI round trips, so it tests releases rather than pull requests, and it is not a required check.
+
+It uses two secrets of the `conformance` environment: `CONFORMANCE_PAT`, a fine-grained token for the test repository, and `CONFORMANCE_FORK_PAT`, for the account that owns the fork. The environment has a required reviewer, so every run waits for an approval, including the one after a cut. The test repository keeps its own Cloudflare and Zenodo secrets. `GITHUB_TOKEN` cannot replace the PAT: it does not reach another repository, and events it causes start no workflows.
+
+A run where a third party timed out stays green, so that a red run always means oak is at fault.
+
 ## Before a cut
 
 - **`npm test`** (includes the integration canary that renders the fixture PDF through the bundled
