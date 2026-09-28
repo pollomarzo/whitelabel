@@ -389,7 +389,19 @@ describe('check-post refuses a report the artifact made up ([R137])', () => {
     const dir = mkdtempSync(join(tmpdir(), 'oak-report-'));
     const f = join(dir, 'report.json');
     writeFileSync(f, body);
-    return oak(['check-post', '--report', f, '--repo', 'o/r', '--sha', 'deadbeef']);
+    return oak([
+      'check-post',
+      '--report',
+      f,
+      '--repo',
+      'o/r',
+      '--sha',
+      'deadbeef',
+      '--base',
+      'main',
+      '--verified-head',
+      'deadbeef',
+    ]);
   };
 
   it('refuses JSON it cannot parse', () => {
@@ -406,6 +418,12 @@ describe('check-post refuses a report the artifact made up ([R137])', () => {
       expect(r.code, body).toBe(1);
       expect(r.stderr, body).toContain('is not a checks report');
     }
+  });
+
+  it('refuses to run without the event-sourced --base and --verified-head', () => {
+    const r = oak(['check-post', '--report', 'r.json', '--repo', 'o/r', '--sha', 'deadbeef']);
+    expect(r.code).toBe(2);
+    expect(r.stderr).toContain('--verified-head <headsha> are required');
   });
 });
 

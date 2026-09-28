@@ -159,15 +159,6 @@ describe('preview-deploy refuses a PR number the artifact made up ([R136])', () 
   });
 });
 
-describe('the Stage-1 artifact stays readable by the PREVIOUS Stage 2 ([R146])', () => {
-  const script = stepScript('.github/workflows/check.yml', undefined, 'Record PR number');
-
-  it('still writes head-sha, which an older check-post.yml cats', () => {
-    // An upgrade PR runs new Stage 1 against old Stage 2, which still cats this field.
-    expect(script).toContain('> head-sha');
-  });
-});
-
 describe('the dispatch step takes args as data, not as script ([R153])', () => {
   const script = stepScript('.github/actions/engine/action.yml', 'dispatch');
 

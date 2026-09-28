@@ -1,9 +1,7 @@
 name: Journal checks
 
-# Stage 1: compute only, no secrets, safe on a fork's content. Writes a report to an artifact;
-# check-post.yml posts it from the base context. Succeeds whenever a VALID report exists, even a
-# failing one, so Stage 2 always fires; only a crash that produces none fails it.
-# https://scholar.nexus/oaktree-sapling/design/paper-ci
+# Stage 1 of the journal checks: validates with no secrets; check-post.yml posts the report.
+# https://scholar.nexus/oaktree-sapling/design/paper-ci#design-paper-ci-two-stages
 
 on:
   pull_request:
@@ -12,11 +10,10 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read # checkout only; the untrusted compute job holds nothing else
+  contents: read
 
 concurrency:
-  # Head repo as well as branch (see ci.yml): a cancelled Stage 1 uploads no artifact, so Stage 2
-  # never fires and the PR waits on a check that never arrives.
+  # Head repo in the key: forks share branch names.
   group: ${{ github.event_name == 'pull_request' && format('check-pr-{0}-{1}', github.event.pull_request.head.repo.full_name, github.head_ref) || 'check-push-main' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
@@ -26,8 +23,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      # A blocking failure exits 1 by contract, which must NOT fail Stage 1: only the report
-      # matters here. The guard below re-imposes "fail on a genuine crash".
+      # Stage 1 passes on a failing verdict, or Stage 2 never posts it; only a missing report fails.
       - id: validate
         continue-on-error: true
         uses: ./.github/actions/engine
@@ -35,8 +31,6 @@ jobs:
           args: validate --report report.json
           paper-env: true
 
-      # Reached only when the engine died before writing anything, since even a usage error
-      # produces a report. Points at the step holding the real message.
       - name: Ensure a valid report was produced
         env:
           VALIDATE_OUTCOME: ${{ steps.validate.outcome }}
@@ -47,17 +41,11 @@ jobs:
           fi
           echo "report ok; conclusion: $(jq -r '.checkRun.conclusion' report.json)"
 
-      # Stage 2 cannot get this from its own event: workflow_run.pull_requests is EMPTY for forks.
-      # Stage 2 takes the head sha from its OWN event and must never read it here: this file is
-      # fork-controlled. It is still WRITTEN, unread, so that an upgrade PR whose Stage 2 is still
-      # the previous version keeps working; drop it once no repo runs a shim older than v0.0.3.
       - name: Record PR number
         env:
-          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
           EVENT_NAME: ${{ github.event_name }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
-          printf '%s\n' "$HEAD_SHA" > head-sha
           if [ "$EVENT_NAME" = "pull_request" ]; then
             printf '%s\n' "$PR_NUMBER" > pr-number
           fi
@@ -67,6 +55,5 @@ jobs:
           name: journal-checks
           path: |
             report.json
-            head-sha
             pr-number
           if-no-files-found: error

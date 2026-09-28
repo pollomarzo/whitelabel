@@ -806,10 +806,10 @@ async function cmdCheckPost(argv: string[]): Promise<number> {
   const pr = flag(argv, 'pr');
   // Frozen-shim advisory ([R83]): --base + --verified-head come from the workflow_run event
   // (GitHub-set, not the fork-controlled artifact), so a PR that edits `.github/`/`CODEOWNERS`
-  // is flagged even if the artifact lies. Absent ⇒ no advisory (back-compat).
+  // is flagged even if the artifact lies.
   const base = flag(argv, 'base');
   const verifiedHead = flag(argv, 'verified-head');
-  if (!reportPath || !repo || !sha) {
+  if (!reportPath || !repo || !sha || !base || !verifiedHead) {
     process.stderr.write(msg.workflow.checkPostArgs + '\n');
     return 2;
   }
@@ -834,8 +834,7 @@ async function cmdCheckPost(argv: string[]): Promise<number> {
 
   const gh = await import('./gh.js');
   const { cmdCheckPost: run, frozenPathsTouched } = await import('./checks.js');
-  const shimTouched =
-    base && verifiedHead ? frozenPathsTouched(gh.changedFiles(repo, base, verifiedHead)) : [];
+  const shimTouched = frozenPathsTouched(gh.changedFiles(repo, base, verifiedHead));
   const out = run(
     { report, repo, sha, pr, shimTouched },
     {

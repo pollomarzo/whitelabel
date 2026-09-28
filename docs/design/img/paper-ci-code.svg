@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 330" role="img" aria-label="All seven workflows call action.yml. The action takes the engine repository from pins.yml, installs paper-environment.yml if present, and takes the version from myst.yml, then checks out the engine at that version and runs the verb. Everything except myst.yml is inside the CODEOWNERS gate. Local oak also reads pins.yml.">
+<style>
+svg{--bg:#f6f7f5;--panel:#ffffff;--ink:#1c2320;--muted:#5b6762;--blue:#2f6fd6;--green:#23875a;--grey:#80878a;--gate:#b27417;--blue-soft:rgba(47,111,214,.10);--green-soft:rgba(35,135,90,.10);--grey-soft:rgba(128,135,138,.10);--band:rgba(28,35,32,.035);--gate-soft:rgba(178,116,23,.06)}
+@media (prefers-color-scheme: dark){svg{--panel:#1b201e;--ink:#e3e8e5;--muted:#9aa5a0;--blue:#72a4f7;--green:#5cc28c;--grey:#9ba3a6;--gate:#e2a64a;--blue-soft:rgba(114,164,247,.12);--green-soft:rgba(92,194,140,.12);--grey-soft:rgba(155,163,166,.12);--band:rgba(227,232,229,.04);--gate-soft:rgba(226,166,74,.07)}}
+svg{height:auto;color:var(--ink);font-family:"IBM Plex Sans",system-ui,sans-serif}
+.box{fill:var(--panel);stroke:currentColor;stroke-width:1.2}
+.box.b{stroke:var(--blue);fill:var(--blue-soft)}
+.box.g{stroke:var(--green);fill:var(--green-soft)}
+.box.n{stroke:var(--grey);fill:var(--grey-soft)}
+.box.q{stroke:var(--muted);stroke-dasharray:3 3}
+.box.act{stroke-width:2}
+.band{fill:var(--band)}
+.gate{fill:var(--gate-soft);stroke:var(--gate);stroke-width:1.5;stroke-dasharray:6 4}
+svg text{fill:currentColor;font-size:13px}
+.t-mono{font-family:"IBM Plex Mono",monospace;font-size:12.5px}
+.t-verb{font-family:"IBM Plex Mono",monospace;font-size:11px;fill:var(--muted)}
+.t-sm{font-size:11px;fill:var(--muted)}
+.t-hd{font-size:11px;fill:var(--muted);letter-spacing:.05em;text-transform:uppercase}
+.t-gate{font-size:11px;fill:var(--gate);font-weight:500}
+.t-b{fill:var(--blue);font-size:11px;font-family:"IBM Plex Mono",monospace}
+.t-g{fill:var(--green);font-size:11px;font-family:"IBM Plex Mono",monospace}
+.t-k{fill:var(--muted);font-size:11px;font-family:"IBM Plex Mono",monospace}
+.l{fill:none;stroke-width:2}
+.l.b{stroke:var(--blue)} .l.g{stroke:var(--green)} .l.n{stroke:var(--grey)}
+.l.k{stroke:currentColor;stroke-width:1.4}
+.l.dash{stroke-dasharray:4 3}
+.m-b{fill:var(--blue)} .m-g{fill:var(--green)} .m-n{fill:var(--grey)} .m-k{fill:currentColor}
+svg{font-family:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif}
+.t-mono,.t-verb,.t-b,.t-g,.t-k{font-family:"IBM Plex Mono",ui-monospace,"SFMono-Regular",Menlo,monospace}
+</style>
+        <defs>
+          <marker id="k2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="m-k"/></marker>
+        </defs>
+
+        <rect x="20" y="28" width="485" height="290" rx="10" class="gate"/>
+        <text x="32" y="46" class="t-gate">gated by CODEOWNERS</text>
+
+        <!-- callers -->
+        <rect x="40" y="58"  width="190" height="28" rx="5" class="box b"/><text x="52" y="77"  class="t-mono">ci.yml</text>
+        <rect x="40" y="94"  width="190" height="28" rx="5" class="box b"/><text x="52" y="113" class="t-mono">preview-deploy.yml</text>
+        <rect x="40" y="130" width="190" height="28" rx="5" class="box g"/><text x="52" y="149" class="t-mono">check.yml</text>
+        <rect x="40" y="166" width="190" height="28" rx="5" class="box g"/><text x="52" y="185" class="t-mono">check-post.yml</text>
+        <rect x="40" y="202" width="190" height="28" rx="5" class="box n"/><text x="52" y="221" class="t-mono">publish.yml</text>
+        <rect x="40" y="238" width="190" height="28" rx="5" class="box n"/><text x="52" y="257" class="t-mono">prepare.yml</text>
+        <rect x="40" y="274" width="190" height="28" rx="5" class="box n"/><text x="52" y="293" class="t-mono">version-bump.yml</text>
+
+        <!-- bracket -->
+        <path d="M230,72 H250 M230,108 H250 M230,144 H250 M230,180 H250 M230,216 H250 M230,252 H250 M230,288 H250 M250,72 V288" class="l k"/>
+        <line x1="250" y1="178" x2="323" y2="178" class="l k" marker-end="url(#k2)"/>
+        <text x="258" y="170" class="t-k">calls, with</text>
+        <text x="258" y="196" class="t-k">its verb</text>
+
+        <!-- action -->
+        <rect x="325" y="155" width="160" height="46" rx="6" class="box act"/>
+        <text x="405" y="175" text-anchor="middle" class="t-mono" font-weight="500">action.yml</text>
+        <text x="405" y="192" text-anchor="middle" class="t-sm">resolve · check out · run</text>
+
+        <!-- pins -->
+        <rect x="325" y="58" width="160" height="40" rx="6" class="box"/>
+        <text x="405" y="83" text-anchor="middle" class="t-mono">pins.yml</text>
+        <line x1="405" y1="98" x2="405" y2="153" class="l k dash" marker-end="url(#k2)"/>
+        <text x="411" y="130" class="t-k">engine repo</text>
+
+        <!-- env -->
+        <rect x="325" y="255" width="160" height="40" rx="6" class="box"/>
+        <text x="405" y="280" text-anchor="middle" class="t-mono">paper-environment.yml</text>
+        <line x1="405" y1="255" x2="405" y2="203" class="l k dash" marker-end="url(#k2)"/>
+        <text x="411" y="234" class="t-k">build jobs only</text>
+
+        <!-- local oak -->
+        <rect x="540" y="62" width="110" height="32" rx="6" class="box q"/>
+        <text x="595" y="83" text-anchor="middle" class="t-mono">local oak</text>
+        <line x1="540" y1="78" x2="487" y2="78" class="l k dash" marker-end="url(#k2)"/>
+
+        <!-- myst -->
+        <rect x="530" y="255" width="140" height="40" rx="6" class="box"/>
+        <text x="600" y="273" text-anchor="middle" class="t-mono">myst.yml</text>
+        <text x="600" y="288" text-anchor="middle" class="t-sm">author, ungated</text>
+        <path d="M600,255 V192 H487" class="l k dash" marker-end="url(#k2)"/>
+        <text x="606" y="232" class="t-k">version</text>
+
+        <!-- engine -->
+        <line x1="485" y1="168" x2="688" y2="168" class="l k" marker-end="url(#k2)"/>
+        <text x="630" y="160" text-anchor="middle" class="t-k">checks out at version</text>
+        <rect x="690" y="145" width="170" height="46" rx="6" class="box"/>
+        <text x="775" y="165" text-anchor="middle">engine</text>
+        <text x="775" y="182" text-anchor="middle" class="t-sm">runs oak &lt;verb&gt;</text>
+      </svg>

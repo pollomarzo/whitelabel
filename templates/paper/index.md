@@ -1,11 +1,10 @@
+---
+abstract: |
+  Replace this with your abstract. It is lifted into the site, the PDF cover page and the Zenodo
+  deposit.
+---
+
 # A Starter Paper
-
-+++ {"part": "abstract"}
-
-Replace this with your abstract. It is lifted into the site, the PDF cover page and the Zenodo
-deposit.
-
-+++
 
 ## Introduction
 

@@ -213,11 +213,13 @@ export function checksComment(report: ChecksReport, shimTouched: string[] = []):
   ].join('\n');
 }
 
-/** Frozen-shim paths (design §6a): everything under `.github/` plus `CODEOWNERS`. A PR that
+/** Gated paths (design §6a): everything under `.github/`, `CODEOWNERS` and `paper-environment.yml`. A PR that
  *  touches any of these can change how the checks themselves run, so a report produced under it
  *  cannot be fully trusted: check-post surfaces that as an advisory ([R83]). */
 export function frozenPathsTouched(changed: string[]): string[] {
-  return changed.filter((p) => p === 'CODEOWNERS' || p.startsWith('.github/'));
+  return changed.filter(
+    (p) => p === 'CODEOWNERS' || p === 'paper-environment.yml' || p.startsWith('.github/'),
+  );
 }
 
 /** The advisory banner for a PR that edits the frozen shim: a warning, not a gate (it never
