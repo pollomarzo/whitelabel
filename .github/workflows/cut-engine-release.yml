@@ -1,23 +1,21 @@
-# cut-engine-release: the ONE way to make an engine *ref* runnable ([R57]).
-# Builds dist/cli.cjs and commits it onto the tag's leaf commit (never onto main), pushes only
-# the tag, and creates a GH (pre-)release. Manual dispatch; releases are deliberate, not on-push.
 name: cut-engine-release
+
+# Builds oak, commits the build to a new tag (never to a branch) and creates the GitHub release.
+# See RELEASING.md.
 
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Release tag: vX.Y.Z, or vX.Y.Z-dev.N for a dev pre-release (accumulate + prune).'
+        description: 'vX.Y.Z, or vX.Y.Z-dev.N for a pre-release'
         required: true
       ref:
-        description: 'Source ref/SHA to release (default: the branch this workflow runs from).'
+        description: 'Source ref or SHA (default: the branch this runs from)'
         required: false
 
-# Push the tag + create the release. Nothing here writes to a branch, so no forced pull-after-push.
 permissions:
   contents: write
 
-# Never let two cuts race a tag.
 concurrency:
   group: cut-engine-release
   cancel-in-progress: false
@@ -29,16 +27,14 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.ref || github.ref }}
-          fetch-depth: 0 # full history so the tag push is clean (not shallow)
+          fetch-depth: 0
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 24 # matches the dev environment the bundle is validated on
+          node-version: 24
           cache: npm
 
-      # typst is NOT installed here: cut-engine-release.sh fetches the engine-pinned version
-      # (typst.version) into bin/typst, renders the canary with it, and ships it at the tag
-      # leaf ([R34]/[R66]). One source of truth for the typst version, not two.
+      # No typst setup: the script fetches the version in typst.version [R66].
       - name: Cut the release
         env:
           GH_TOKEN: ${{ github.token }}
