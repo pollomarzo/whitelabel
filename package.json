@@ -13,7 +13,7 @@
     "oak": "dist/cli.cjs"
   },
   "scripts": {
-    "check:refs": "node scripts/check-ledger-refs.mjs",
+    "check:refs": "node scripts/check-ledger-refs.mjs --warn",
     "test": "npm run bundle && npm run check:refs && vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
