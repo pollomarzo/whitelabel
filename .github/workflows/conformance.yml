@@ -48,15 +48,23 @@ jobs:
         id: r
         env:
           GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+          INPUT_ONLY_RESET: ${{ inputs.only-reset }}
         run: |
-          if [ "${{ github.event_name }}" = workflow_run ]; then
+          if [ "$EVENT" = workflow_run ]; then
             tag=$(gh release list -R "$GITHUB_REPOSITORY" --limit 1 --json tagName --jq '.[0].tagName')
-            echo "tag=$tag" >> "$GITHUB_OUTPUT"
-            echo "only_reset=false" >> "$GITHUB_OUTPUT"
+            only_reset=false
           else
-            echo "tag=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
-            echo "only_reset=${{ inputs.only-reset }}" >> "$GITHUB_OUTPUT"
+            tag=$INPUT_TAG
+            only_reset=$INPUT_ONLY_RESET
           fi
+          if [ -n "$tag" ] && ! [[ $tag =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-dev\.[0-9]+)?$ ]]; then
+            echo "::error::not a release tag: $tag"
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "only_reset=$only_reset" >> "$GITHUB_OUTPUT"
 
       - name: Test the release, or reset
         id: cert
@@ -65,6 +73,7 @@ jobs:
           FIXTURE: ${{ vars.CONFORMANCE_FIXTURE_REPO }}
           TAG: ${{ steps.r.outputs.tag }}
           ONLY_RESET: ${{ steps.r.outputs.only_reset }}
+          RUN_ID: ${{ github.run_id }}
           FORK_REPO: ${{ vars.CONFORMANCE_FORK_REPO }} # unset skips the fork preview
           CONFORMANCE_FORK_PAT: ${{ secrets.CONFORMANCE_FORK_PAT }}
         run: |
@@ -77,14 +86,15 @@ jobs:
           set +e
           fork=()
           [ -n "$FORK_REPO" ] && fork=(--fork-repo "$FORK_REPO") # an empty value is refused [R134]
-          node dist/cli.cjs conformance certify --repo "$FIXTURE" --tag "$TAG" --run-id "${{ github.run_id }}" "${fork[@]}" --record cert.json
+          node dist/cli.cjs conformance certify --repo "$FIXTURE" --tag "$TAG" --run-id "$RUN_ID" "${fork[@]}" --record cert.json
           echo "code=$?" >> "$GITHUB_OUTPUT"
 
       - name: Upload the result to the release
         if: ${{ steps.r.outputs.tag != '' && steps.r.outputs.only_reset != 'true' && hashFiles('cert.json') != '' }}
         env:
           GH_TOKEN: ${{ github.token }} # the PAT cannot write this repo
-        run: gh release upload "${{ steps.r.outputs.tag }}" cert.json --clobber
+          TAG: ${{ steps.r.outputs.tag }}
+        run: gh release upload "$TAG" cert.json --clobber
 
       # Fails on 1 or on no result [R111]; 3 means a third party timed out, which is not oak's fault.
       - name: Fail if the test failed
