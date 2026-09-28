@@ -9,6 +9,9 @@
  * the feature page that absorbs it. This script does not care which page holds it, only that
  * exactly one does. Superseded by the Layer-3 test, which asserts the same thing against the
  * built `myst.xref.json` and so also catches an anchor that fails to render.
+ *
+ * `--warn` reports unresolved citations without failing, while `record.md` is absent from the
+ * tree. Duplicate ids still fail.
  */
 import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs';
 import { join, resolve, dirname, sep } from 'node:path';
@@ -20,6 +23,7 @@ const CITE = /\[R(\d+)\]/g;
 const SECTION = /design(?:\.md)? §(\d+[a-z]?)/g;
 
 const DESIGN_DIR = join(ROOT, 'docs/design');
+const WARN = process.argv.includes('--warn');
 
 function walk(dir, out = []) {
   if (!existsSync(dir)) return out;
@@ -65,14 +69,29 @@ for (const file of [
   const lines = text.split('\n');
   const at = (i) => text.slice(0, i).split('\n').length;
   const note = (i, what) =>
-    bad.push(`${file.slice(ROOT.length + 1)}:${at(i)}  ${what}  ${lines[at(i) - 1].trim()}`);
+    bad.push({
+      file: file.slice(ROOT.length + 1),
+      line: at(i),
+      what,
+      text: lines[at(i) - 1].trim(),
+    });
   for (const m of text.matchAll(CITE)) if (!defined.has(m[1])) note(m.index, `[R${m[1]}]`);
   for (const m of text.matchAll(SECTION)) if (!sections.has(m[1])) note(m.index, `design §${m[1]}`);
 }
 
+if (bad.length && WARN) {
+  console.warn(`check-ledger-refs: ${bad.length} citation(s) do not resolve under docs/design/`);
+  for (const b of bad)
+    console.warn(
+      process.env.GITHUB_ACTIONS
+        ? `::warning file=${b.file},line=${b.line}::${b.what} does not resolve under docs/design/`
+        : `  ${b.file}:${b.line}  ${b.what}  ${b.text}`,
+    );
+  process.exit(0);
+}
 if (bad.length) {
   console.error(`check-ledger-refs: ${bad.length} citation(s) do not resolve under docs/design/:`);
-  for (const b of bad) console.error(`  ${b}`);
+  for (const b of bad) console.error(`  ${b.file}:${b.line}  ${b.what}  ${b.text}`);
   process.exit(1);
 }
 console.log(
